@@ -941,7 +941,8 @@ export function ProjectModal({ onClose }) {
   const [slug, setSlug] = useState('');
   const [edited, setEdited] = useState(false);
   const [kind, setKind] = useState('existing');
-  const [code, setCode] = useState('folder');
+  const canFolder = Boolean(host?.projectConfigureLocal);
+  const [code, setCode] = useState(canFolder ? 'folder' : 'repo');
   const [repo, setRepo] = useState('');
   const [what, setWhat] = useState('');
   const [goal, setGoal] = useState('');
@@ -1019,7 +1020,7 @@ export function ProjectModal({ onClose }) {
       {receipt?.repoError ? <p role="status" className="aw-callout">Project created; repository setup needs attention: {String(receipt.repoError)}</p> : null}
       {setupError ? <p role="alert" className="aw-callout">{created ? 'Project created. Local setup failed; retry does not create another project. ' : ''}{setupError}</p> : null}
       {existing ? (
-        <ol className="aw-steps" aria-label="Setup steps">
+        <ol className="aw-wizard-steps" aria-label="Setup steps">
           {steps.map((label, index) => (
             <li key={label} data-current={index === step || undefined} data-done={index < step || undefined}>{label}</li>
           ))}
@@ -1028,19 +1029,21 @@ export function ProjectModal({ onClose }) {
       <fieldset disabled={busy || Boolean(created)} className="aw-formset">
         {existing && step === 0 ? (
           <>
-            <Field label="Where is it?">
-              <Segmented value={code} options={[{ value: 'folder', label: 'Folder on this computer' }, { value: 'repo', label: 'Git repository' }]} onChange={(value) => { setCode(value); setStep(0); }} />
-            </Field>
-            {code === 'folder' ? (
+            {canFolder ? (
+              <Field label="Where is it?">
+                <Segmented value={code} options={[{ value: 'folder', label: 'Folder on this computer' }, { value: 'repo', label: 'Git repository' }]} onChange={(value) => { setCode(value); setStep(0); }} />
+              </Field>
+            ) : null}
+            {code === 'folder' && canFolder ? (
               <Field label="Folder" hint="An existing checkout on this computer. Nothing is cloned or created in it.">
-                <input className="aw-mono" value={localPath} placeholder={host?.projectConfigureLocal ? '/Users/you/Projects/acme' : 'Unavailable in this host'} disabled={!host?.projectConfigureLocal} onChange={(e) => { setLocalPath(e.target.value); detect(e.target.value, false); }} />
+                <input className="aw-mono" value={localPath} placeholder="/Users/you/Projects/acme" onChange={(e) => { setLocalPath(e.target.value); detect(e.target.value, false); }} />
               </Field>
             ) : (
               <Field label="Repository URL" hint="Nodes clone this. A private repo needs a node whose git can reach it.">
                 <input className="aw-mono" value={repo} maxLength={300} placeholder="https://github.com/owner/repo" onChange={(e) => { setRepo(e.target.value); detect(e.target.value, true); }} />
               </Field>
             )}
-            <p className="ui-note">{name.trim() ? `Will create “${name.trim()}”${slug ? ` (${slug})` : ''}.` : 'The name and slug are taken from the folder or repository; you can change them next.'}</p>
+            <p className="ui-note">{name.trim() ? `Will create “${name.trim()}”${slug ? ` (${slug})` : ''}.` : canFolder ? 'The name and slug are taken from the folder or repository; you can change them next.' : 'The name and slug are taken from the repository; you can change them next.'}</p>
           </>
         ) : null}
 

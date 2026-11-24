@@ -22,13 +22,13 @@ var __awPlugin = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // src/client.jsx
+  // packages/dsh-admin/src/client.jsx
   var client_exports = {};
   __export(client_exports, {
     default: () => client_default
   });
 
-  // src/ticket-chat.mjs
+  // packages/dsh-admin/src/ticket-chat.mjs
   function linkedTicketDetail(detail, ticketId, sessionId) {
     return typeof sessionId === "string" && sessionId !== "" && detail?.ticket?.id === ticketId && Array.isArray(detail.runs) && detail.runs.some((run) => run?.session_id === sessionId) ? detail : null;
   }
@@ -132,7 +132,7 @@ var __awPlugin = (() => {
   var R = globalThis.__AW_REACT__;
   var { createContext, createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } = R;
 
-  // ../admin-ui/src/run-evidence.js
+  // packages/admin-ui/src/run-evidence.js
   var sortedRuns = (runs = []) => [...runs].sort((a, b) => Number(b.id) - Number(a.id));
   var selectedRun = (runs, id) => id == null ? sortedRuns(runs)[0] ?? null : runs.find((run) => String(run.id) === String(id)) ?? null;
   var recordedPatch = (run) => [run?.diff, run?.diff_stat].find((text) => typeof text === "string" && text.trim()) ?? null;
@@ -148,7 +148,7 @@ var __awPlugin = (() => {
     return null;
   }
 
-  // ../admin-ui/src/request-state.js
+  // packages/admin-ui/src/request-state.js
   function createStepRequest(api, runId, publish) {
     let state = { steps: null, error: null }, after = 0, generation = 0, inflight = null;
     return {
@@ -216,7 +216,7 @@ var __awPlugin = (() => {
     return { access, identity, results: Object.fromEntries(paths.map((path, i) => [path, results[i]])) };
   }
 
-  // ../admin-ui/src/store.js
+  // packages/admin-ui/src/store.js
   var AdminContext = createContext(null);
   var useAdmin = () => useContext(AdminContext);
   var EMPTY = {
@@ -338,7 +338,7 @@ var __awPlugin = (() => {
     return { seconds, running, open };
   }
 
-  // ../../src/lib/pricing.js
+  // src/lib/pricing.js
   var HOURLY_USD = 100;
   var ATTENTION = [
     {
@@ -390,7 +390,7 @@ var __awPlugin = (() => {
     return `${Math.floor(s / 3600)}h ${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}m`;
   }
 
-  // ../admin-ui/src/format.js
+  // packages/admin-ui/src/format.js
   var chargeOf = (t) => billOf({
     humanSeconds: t.human_seconds ?? 0,
     aiMicroUsd: t.ai_micro_usd ?? 0,
@@ -509,7 +509,7 @@ var __awPlugin = (() => {
     };
   }
 
-  // ../admin-ui/src/ui/layer.js
+  // packages/admin-ui/src/ui/layer.js
   var layers = [];
   var isTop = (token) => layers[layers.length - 1] === token;
   function useLayer() {
@@ -541,7 +541,7 @@ var __awPlugin = (() => {
     return R2.createElement(type, key === void 0 ? rest : { ...rest, key }, ...children);
   }
 
-  // ../admin-ui/src/ui/menu.jsx
+  // packages/admin-ui/src/ui/menu.jsx
   var cx = (...parts) => parts.filter(Boolean).join(" ");
   function Menu({ items, at, anchor, onClose, label = "Actions" }) {
     const ref = useRef(null);
@@ -686,7 +686,7 @@ var __awPlugin = (() => {
     );
   }
 
-  // ../admin-ui/src/ui.jsx
+  // packages/admin-ui/src/ui.jsx
   var modalSeq = 0;
   var cx2 = (...parts) => parts.filter(Boolean).join(" ");
   function useMedia(query) {
@@ -1117,7 +1117,7 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: WEIGHT[name] ?? 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", focusable: "false", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] ?? PATHS.list }) });
   }
 
-  // ../admin-ui/src/row-navigation.mjs
+  // packages/admin-ui/src/row-navigation.mjs
   var NEXT_KEYS = /* @__PURE__ */ new Set(["j", "ArrowDown"]);
   var PREV_KEYS = /* @__PURE__ */ new Set(["k", "ArrowUp"]);
   function nextRowIndex(current, count, key) {
@@ -1130,7 +1130,7 @@ var __awPlugin = (() => {
     return null;
   }
 
-  // ../admin-ui/src/ui/tokens.js
+  // packages/admin-ui/src/ui/tokens.js
   var TYPE = Object.freeze({ xs: 11, sm: 12, md: 13, lg: 15, xl: 18 });
   var SPACE = Object.freeze([0, 4, 8, 12, 16, 24, 32]);
   var RADII = Object.freeze({ sm: 4, md: 6, lg: 8 });
@@ -1272,7 +1272,7 @@ ${block(Object.entries(TOKENS))}
 }
 `;
 
-  // ../admin-ui/src/ui/css.js
+  // packages/admin-ui/src/ui/css.js
   var PRIMITIVES_CSS = `
 .ui {
   font-family: var(--ui-font);
@@ -1521,7 +1521,7 @@ ${block(Object.entries(TOKENS))}
 `;
   var UI_CSS = TOKENS_CSS + PRIMITIVES_CSS;
 
-  // ../admin-ui/src/ui/state.js
+  // packages/admin-ui/src/ui/state.js
   var S = (tone2, label, extra = {}) => Object.freeze({ tone: tone2, label, ...extra });
   var STATE_MAP = Object.freeze({
     // tickets
@@ -1569,7 +1569,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // ../admin-ui/src/ui/behavior.js
+  // packages/admin-ui/src/ui/behavior.js
   function tableKeyAction(e, current, count) {
     if (!e || e.metaKey || e.ctrlKey || e.altKey) return null;
     if (e.key === "ContextMenu" || e.shiftKey && e.key === "F10") return { type: "menu" };
@@ -1609,7 +1609,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // ../admin-ui/src/ui/primitives.jsx
+  // packages/admin-ui/src/ui/primitives.jsx
   var storage = () => typeof window === "undefined" ? null : window.localStorage;
   function UiStyles() {
     return /* @__PURE__ */ jsx("style", { "data-ui-styles": "v2", children: UI_CSS });
@@ -1884,7 +1884,7 @@ ${block(Object.entries(TOKENS))}
   }
   var HOST_MODES = Object.freeze(["embedded", "standalone"]);
 
-  // ../admin-ui/src/board.jsx
+  // packages/admin-ui/src/board.jsx
   function useFilters() {
     const { api, boardProject, setBoardProject } = useAdmin();
     const [kind, setKind] = useState("all");
@@ -2503,7 +2503,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../../src/lib/attachments.js
+  // src/lib/attachments.js
   var FILE_LIMITS = {
     /** Per file. */
     bytes: 10 * 1024 * 1024,
@@ -2551,7 +2551,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // ../../src/lib/locales.js
+  // src/lib/locales.js
   var LOCALES = [
     { code: "en-US", native: "English (United States)", english: "English (United States)", m2m: "en" },
     { code: "am", native: "\u12A0\u121B\u122D\u129B", english: "Amharic", m2m: "am", beta: true },
@@ -2598,7 +2598,7 @@ ${block(Object.entries(TOKENS))}
     return typeof code === "string" && /^en(-|$)/i.test(code);
   }
 
-  // ../admin-ui/src/markdown.js
+  // packages/admin-ui/src/markdown.js
   var MAX_INLINE_DEPTH = 4;
   function markdownInline(input, depth = 0) {
     const text = String(input ?? "");
@@ -2681,7 +2681,7 @@ ${block(Object.entries(TOKENS))}
     return blocks;
   }
 
-  // ../admin-ui/src/review.jsx
+  // packages/admin-ui/src/review.jsx
   var portalTicketUrl = (id) => `https://ptechsolutions.net/portal/admin#ticket=${id}`;
   function newestDiff(runs) {
     return [...runs ?? []].sort((a, b) => b.id - a.id).find((run) => recordedPatch(run)) ?? null;
@@ -2932,7 +2932,7 @@ ${block(Object.entries(TOKENS))}
     });
   }
 
-  // ../admin-ui/src/submit-state.js
+  // packages/admin-ui/src/submit-state.js
   function createSubmission() {
     let busy = false, pending2 = null;
     const queueOnly = async () => {
@@ -2970,7 +2970,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // ../admin-ui/src/mention-delivery.js
+  // packages/admin-ui/src/mention-delivery.js
   var visibleRecipients = (recipients, internal) => recipients.filter((person) => !internal || person.memberType === "trusted_developer");
   async function deliverMentions({ api, projectId, ticketId, messageId, recipientUserIds, requestId }) {
     if (!recipientUserIds?.length) return { ok: true, deliveries: [] };
@@ -2991,7 +2991,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // ../admin-ui/src/mention-recipients.jsx
+  // packages/admin-ui/src/mention-recipients.jsx
   function MentionRecipients({ api, projectId, onChange, disabled = false, internal = false }) {
     const [open, setOpen] = useState(false);
     const [state, setState] = useState({ projectId: null, internal: null, recipients: [], loading: true, error: false });
@@ -3050,7 +3050,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/ticket-assistant.mjs
+  // packages/admin-ui/src/ticket-assistant.mjs
   var ASSISTANT_BADGE_MAX = 24;
   function assistantName(ticket) {
     const value = ticket?.assistant_app;
@@ -3069,7 +3069,7 @@ ${block(Object.entries(TOKENS))}
     return name === null ? null : `Filed by the client's assistant (${name}) through PTech's MCP server`;
   }
 
-  // ../admin-ui/src/ticket.jsx
+  // packages/admin-ui/src/ticket.jsx
   var PRIMARY = {
     new: [
       ["approved", "Approve", "primary"],
@@ -3935,7 +3935,7 @@ ${block(Object.entries(TOKENS))}
     );
   }
 
-  // ../admin-ui/src/ui/injected-styles.js
+  // packages/admin-ui/src/ui/injected-styles.js
   function InjectedStyles({ id, css }) {
     useLayoutEffect(() => {
       if (typeof document === "undefined") return void 0;
@@ -3952,7 +3952,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // ../admin-ui/src/health.jsx
+  // packages/admin-ui/src/health.jsx
   var tone = (status) => status === "ok" ? "ok" : status === "fail" ? "bad" : "warn";
   function CheckRow({ check }) {
     return /* @__PURE__ */ jsxs("li", { className: cx2("aw-health__row", `aw-health__row--${tone(check.status)}`), children: [
@@ -4051,7 +4051,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/machine.jsx
+  // packages/admin-ui/src/machine.jsx
   var CONSENT_VERSION = 1;
   var LEND = {
     "dsh-go": { label: "Flash", plan: "OpenCode Go \xB7 DeepSeek v4.1 flash", note: "counts against the OpenCode Go plan\u2019s limits" },
@@ -4420,7 +4420,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/toolbox.jsx
+  // packages/admin-ui/src/toolbox.jsx
   var TARGETS = [
     { value: "claude", label: "Claude Code" },
     { value: "opencode", label: "OpenCode" }
@@ -4608,7 +4608,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/settings-link.js
+  // packages/admin-ui/src/settings-link.js
   var SETTINGS_SECTION_IDS = Object.freeze(["queue", "machine", "portal", "marketing", "seo", "account"]);
   var ALIASES = {
     "work-queue": "queue",
@@ -4653,7 +4653,7 @@ ${block(Object.entries(TOKENS))}
     return () => window.removeEventListener(EVENT, listener);
   }
 
-  // ../admin-ui/src/marketing.jsx
+  // packages/admin-ui/src/marketing.jsx
   var CONTACT_STATUSES = ["new", "queued", "contacted", "replied", "paused", "opted_out", "bounced"];
   var MESSAGE_STATUSES = ["draft", "scheduled", "sending", "sent", "failed", "cancelled"];
   var CHANNELS = [
@@ -7744,7 +7744,7 @@ ${block(Object.entries(TOKENS))}
     );
   }
 
-  // ../admin-ui/src/seo.jsx
+  // packages/admin-ui/src/seo.jsx
   var DAY = 864e5;
   var SEO_INSPECTOR_W = 320;
   var SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
@@ -9745,7 +9745,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/fleet.jsx
+  // packages/admin-ui/src/fleet.jsx
   var pct3 = (a, b) => b ? Math.round(a / b * 100) : 0;
   var capabilityLabel = (id, caps) => caps.find((c) => c.id === id)?.label ?? ({
     "os:darwin": "macOS",
@@ -11177,7 +11177,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/styles.js
+  // packages/admin-ui/src/styles.js
   var LIGHT2 = PALETTE.light;
   var STYLES = `
 .aw {
@@ -12572,12 +12572,12 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   :is(.aw-fleet, .aw-clients, .aw-client) .ui-table td[data-fit] { width: auto; }
   :is(.aw-fleet, .aw-clients, .aw-client) .ui-table td + td { display: inline-block; max-width: 100%; margin: var(--ui-sp-1) var(--ui-sp-3) 0 0; vertical-align: top; }
 }
-.aw-steps { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px); margin: 0 0 var(--ui-sp-4, 16px); padding: 0; list-style: none; counter-reset: aw-step; }
-.aw-steps li { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 999px; font-size: var(--ui-fs-xs, 11px); color: var(--ui-ink-3, inherit); }
-.aw-steps li::before { counter-increment: aw-step; content: counter(aw-step); display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--ui-fill, var(--aw-fill)); font-variant-numeric: tabular-nums; }
-.aw-steps li[data-current] { border-color: var(--ui-accent, var(--aw-accent)); color: var(--ui-ink, inherit); }
-.aw-steps li[data-current]::before { background: var(--ui-accent, var(--aw-accent)); color: var(--aw-accent-ink, var(--ui-accent-ink, inherit)); }
-.aw-steps li[data-done] { color: var(--ui-ink, inherit); }
+.aw-wizard-steps { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px); margin: 0 0 var(--ui-sp-4, 16px); padding: 0; list-style: none; counter-reset: aw-step; }
+.aw-wizard-steps li { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 999px; font-size: var(--ui-fs-xs, 11px); color: var(--ui-ink-3, inherit); }
+.aw-wizard-steps li::before { counter-increment: aw-step; content: counter(aw-step); display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--ui-fill, var(--aw-fill)); font-variant-numeric: tabular-nums; }
+.aw-wizard-steps li[data-current] { border-color: var(--ui-accent, var(--aw-accent)); color: var(--ui-ink, inherit); }
+.aw-wizard-steps li[data-current]::before { background: var(--ui-accent, var(--aw-accent)); color: var(--aw-accent-ink, var(--ui-accent-ink, inherit)); }
+.aw-wizard-steps li[data-done] { color: var(--ui-ink, inherit); }
 .aw-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-3, 12px); margin: 0 0 var(--ui-sp-2, 8px); }
 .aw-section-head .ui-section__title { margin: 0; }
 .aw-assign__list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; margin: var(--ui-sp-3, 12px) 0; padding: 4px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: var(--ui-r-lg, 10px); background: var(--ui-bg-subtle, var(--aw-fill)); }
@@ -12705,7 +12705,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 
 `;
 
-  // ../admin-ui/src/solutions.js
+  // packages/admin-ui/src/solutions.js
   var SOLUTION_CATALOG = [
     {
       id: "web",
@@ -12925,7 +12925,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }
   ];
 
-  // ../admin-ui/src/project-solutions.jsx
+  // packages/admin-ui/src/project-solutions.jsx
   var pathFor = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
   var CLIENT_PORTAL_URL = "https://ptechsolutions.net/portal";
   var SHORT = {
@@ -13188,7 +13188,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
   }
 
-  // ../admin-ui/src/project-model.js
+  // packages/admin-ui/src/project-model.js
   function briefPayload(raw = {}, kind = "existing") {
     const answer = (value) => typeof value === "string" ? value.trim() : "";
     const what = answer(raw.what), goal = answer(raw.goal);
@@ -13280,7 +13280,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     };
   }
 
-  // ../admin-ui/src/project-world-model.mjs
+  // packages/admin-ui/src/project-world-model.mjs
   var ISO_COS = Math.cos(Math.PI / 6);
   var ISO_SIN = 0.5;
   var DEFAULT_ISO = Object.freeze({
@@ -14216,7 +14216,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return { count: items.length, text: parts.join(" \xB7 "), items: rows.map(({ stamp, ...rest }) => rest) };
   }
 
-  // ../admin-ui/src/project-world.jsx
+  // packages/admin-ui/src/project-world.jsx
   var STATE_SPEC = {
     ok: { state: "ok", tone: "ok", key: "world.state.ok", fallback: "Healthy", live: false },
     active: { state: "running", tone: "info", key: "world.state.active", fallback: "Running", live: true },
@@ -15138,7 +15138,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // ../admin-ui/src/project-styles.js
+  // packages/admin-ui/src/project-styles.js
   var project_styles_default = `
 .aw-project { max-width: var(--aw-measure-table, 1180px); margin: 0 auto; width: 100%; min-width: 0; box-sizing: border-box; }
 /* Allow header meta chips and slug to wrap cleanly on narrow widths without clipping glyphs. */
@@ -15316,7 +15316,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 }
 `;
 
-  // ../admin-ui/src/project.jsx
+  // packages/admin-ui/src/project.jsx
   var errorText2 = (error) => error?.message || String(error || "Request failed");
   var pathFor2 = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
   var TABS = ["Overview", "Work", "Setup"];
@@ -16462,7 +16462,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // ../admin-ui/src/workbench.js
+  // packages/admin-ui/src/workbench.js
   function projectCreationRequest(input, access) {
     const { name, slug, kind, code, repo, brief } = input;
     if (access?.superAdmin) return { path: "/admin/projects", body: { name, slug, kind, code, repo } };
@@ -16504,7 +16504,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return ["inbox", "board", "list"].includes(key) || key.startsWith("p:") || key.startsWith("t:");
   }
 
-  // ../admin-ui/src/app.jsx
+  // packages/admin-ui/src/app.jsx
   var isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   function useWorkbenchActions({ api, reload, setAsk, onNotify }) {
     const [toast, setToast] = useState(null);
@@ -16674,7 +16674,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [slug, setSlug] = useState("");
     const [edited, setEdited] = useState(false);
     const [kind, setKind] = useState("existing");
-    const [code, setCode] = useState("folder");
+    const canFolder = Boolean(host?.projectConfigureLocal);
+    const [code, setCode] = useState(canFolder ? "folder" : "repo");
     const [repo, setRepo] = useState("");
     const [what, setWhat] = useState("");
     const [goal, setGoal] = useState("");
@@ -16763,21 +16764,21 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             created ? "Project created. Local setup failed; retry does not create another project. " : "",
             setupError
           ] }) : null,
-          existing ? /* @__PURE__ */ jsx("ol", { className: "aw-steps", "aria-label": "Setup steps", children: steps.map((label, index) => /* @__PURE__ */ jsx("li", { "data-current": index === step || void 0, "data-done": index < step || void 0, children: label }, label)) }) : null,
+          existing ? /* @__PURE__ */ jsx("ol", { className: "aw-wizard-steps", "aria-label": "Setup steps", children: steps.map((label, index) => /* @__PURE__ */ jsx("li", { "data-current": index === step || void 0, "data-done": index < step || void 0, children: label }, label)) }) : null,
           /* @__PURE__ */ jsxs("fieldset", { disabled: busy || Boolean(created), className: "aw-formset", children: [
             existing && step === 0 ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-              /* @__PURE__ */ jsx(Field, { label: "Where is it?", children: /* @__PURE__ */ jsx(Segmented, { value: code, options: [{ value: "folder", label: "Folder on this computer" }, { value: "repo", label: "Git repository" }], onChange: (value) => {
+              canFolder ? /* @__PURE__ */ jsx(Field, { label: "Where is it?", children: /* @__PURE__ */ jsx(Segmented, { value: code, options: [{ value: "folder", label: "Folder on this computer" }, { value: "repo", label: "Git repository" }], onChange: (value) => {
                 setCode(value);
                 setStep(0);
-              } }) }),
-              code === "folder" ? /* @__PURE__ */ jsx(Field, { label: "Folder", hint: "An existing checkout on this computer. Nothing is cloned or created in it.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: localPath, placeholder: host?.projectConfigureLocal ? "/Users/you/Projects/acme" : "Unavailable in this host", disabled: !host?.projectConfigureLocal, onChange: (e) => {
+              } }) }) : null,
+              code === "folder" && canFolder ? /* @__PURE__ */ jsx(Field, { label: "Folder", hint: "An existing checkout on this computer. Nothing is cloned or created in it.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: localPath, placeholder: "/Users/you/Projects/acme", onChange: (e) => {
                 setLocalPath(e.target.value);
                 detect(e.target.value, false);
               } }) }) : /* @__PURE__ */ jsx(Field, { label: "Repository URL", hint: "Nodes clone this. A private repo needs a node whose git can reach it.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => {
                 setRepo(e.target.value);
                 detect(e.target.value, true);
               } }) }),
-              /* @__PURE__ */ jsx("p", { className: "ui-note", children: name.trim() ? `Will create \u201C${name.trim()}\u201D${slug ? ` (${slug})` : ""}.` : "The name and slug are taken from the folder or repository; you can change them next." })
+              /* @__PURE__ */ jsx("p", { className: "ui-note", children: name.trim() ? `Will create \u201C${name.trim()}\u201D${slug ? ` (${slug})` : ""}.` : canFolder ? "The name and slug are taken from the folder or repository; you can change them next." : "The name and slug are taken from the repository; you can change them next." })
             ] }) : null,
             !existing || step === 1 ? /* @__PURE__ */ jsxs(Fragment2, { children: [
               /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(Segmented, { value: kind, options: [{ value: "existing", label: "Existing code or system" }, { value: "new", label: "New website" }], onChange: (value) => {
@@ -16968,7 +16969,7 @@ ${question.text ?? ""}`)) {
     ] });
   }
 
-  // native-project.mjs
+  // packages/dsh-admin/native-project.mjs
   async function openLocalProject({ projectId, mode = "session", appId }, { info, sessions, workspace, remote = {} }) {
     const local = await info({ projectId });
     if (!local.exists || !local.path) throw new Error("Configure an existing local checkout first.");
@@ -16992,7 +16993,7 @@ ${question.text ?? ""}`)) {
     return unwrap(await remote.session.openWorkspacePath({ path: local.path, ...mode === "reveal" ? { action: "reveal" } : appId ? { application: appId } : {} }));
   }
 
-  // src/sidebar-presentation.mjs
+  // packages/dsh-admin/src/sidebar-presentation.mjs
   function sidebarTicketLabel(ticket) {
     return ticket.title?.trim() || ticket.title_en?.trim() || `Ticket #${ticket.id}`;
   }
@@ -17000,7 +17001,7 @@ ${question.text ?? ""}`)) {
     return `Open ${run.kind === "task" ? "my task" : "client ticket"} #${run.ticketId}`;
   }
 
-  // src/conversation-meter.mjs
+  // packages/dsh-admin/src/conversation-meter.mjs
   var LOCK = "ptech-admin:conversation-time";
   var IDLE_MS = 6e4;
   var BATCH = 20;
@@ -17195,7 +17196,7 @@ ${question.text ?? ""}`)) {
     };
   }
 
-  // src/conversation-git-graph.mjs
+  // packages/dsh-admin/src/conversation-git-graph.mjs
   async function graphEligibility(sessionId, signal, fetcher = globalThis.fetch) {
     try {
       const response = await fetcher("api/admin/command", {
@@ -17249,7 +17250,7 @@ ${question.text ?? ""}`)) {
     return createElement(SessionGraph, { key: sessionId, sessionId });
   }
 
-  // src/panel-transport.mjs
+  // packages/dsh-admin/src/panel-transport.mjs
   function panelTransport(legacy, { desktop = false, fetcher = globalThis.fetch } = {}) {
     async function quiet(line) {
       try {
@@ -17271,7 +17272,7 @@ ${question.text ?? ""}`)) {
     return Object.assign(desktop ? quiet : (line) => legacy(line), { quiet });
   }
 
-  // src/conversation-history.mjs
+  // packages/dsh-admin/src/conversation-history.mjs
   var byNewest = (a, b) => b.at - a.at || (b.kind === "run") - (a.kind === "run") || b.item.id - a.item.id;
   function taskHistoryEvents(messages = [], runs = []) {
     return [
@@ -17305,7 +17306,7 @@ ${question.text ?? ""}`)) {
     return groups;
   }
 
-  // src/conversation-history.jsx
+  // packages/dsh-admin/src/conversation-history.jsx
   var clock2 = (unix) => unix ? new Date(unix * 1e3).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
   function ConversationHistory({ api, ticketId, openTicket }) {
     const [{ ticket, messages, runs, loading, error }] = useTicket(api, ticketId);
@@ -17388,7 +17389,7 @@ ${question.text ?? ""}`)) {
     ] });
   }
 
-  // src/client.jsx
+  // packages/dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
   var CLIENT_VERSION = "3.9.0";
