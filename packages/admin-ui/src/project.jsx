@@ -584,7 +584,14 @@ function LocalDevelopment({ project, local, host, refresh }) {
           {connectMode === 'existing' ? (
             <form onSubmit={configure} className="aw-project__form">
               <Field label="Local folder" hint="An existing folder on this device. Connecting does not clone or overwrite it.">
-                <input required value={path} onChange={event => setPath(event.target.value)} placeholder="/Users/you/Projects/site" />
+                <div className="aw-pick">
+                  <input required value={path} onChange={event => setPath(event.target.value)} placeholder="/Users/you/Projects/site" />
+                  {host.canPickDirectory ? (
+                    <Button onClick={async () => {
+                      try { const picked = await host.pickDirectory(); if (picked) setPath(picked); } catch { /* cancelled or unavailable */ }
+                    }}>Choose folder…</Button>
+                  ) : null}
+                </div>
               </Field>
               <div className="aw-project__fields">
                 <Field label="Base ref" hint="Optional Git ref for review"><input value={baseRef} onChange={event => setBaseRef(event.target.value)} placeholder="main" /></Field>
@@ -599,7 +606,16 @@ function LocalDevelopment({ project, local, host, refresh }) {
           ) : (
             <form onSubmit={clone} className="aw-project__form">
               <p className="aw-muted">Creates a new folder; an existing destination is never overwritten. Private repositories use the project’s authorized Git connection.</p>
-              <Field label="Parent folder"><input required value={parentPath} onChange={event => setParentPath(event.target.value)} placeholder="/Users/you/Projects" /></Field>
+              <Field label="Parent folder">
+                <div className="aw-pick">
+                  <input required value={parentPath} onChange={event => setParentPath(event.target.value)} placeholder="/Users/you/Projects" />
+                  {host.canPickDirectory ? (
+                    <Button onClick={async () => {
+                      try { const picked = await host.pickDirectory(); if (picked) setParentPath(picked); } catch { /* cancelled or unavailable */ }
+                    }}>Choose folder…</Button>
+                  ) : null}
+                </div>
+              </Field>
               <Field label="New folder name"><input value={directoryName} onChange={event => setDirectoryName(event.target.value)} /></Field>
               <div className="aw-project__actions">
                 <Button type="submit" disabled={state.busy || Boolean(cloning) || !parentPath.trim()} title={!parentPath.trim() ? 'Enter a parent folder path first.' : undefined}>

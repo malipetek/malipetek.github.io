@@ -15932,7 +15932,16 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           )
         ] }),
         connectMode === "existing" ? /* @__PURE__ */ jsxs("form", { onSubmit: configure, className: "aw-project__form", children: [
-          /* @__PURE__ */ jsx(Field, { label: "Local folder", hint: "An existing folder on this device. Connecting does not clone or overwrite it.", children: /* @__PURE__ */ jsx("input", { required: true, value: path, onChange: (event) => setPath(event.target.value), placeholder: "/Users/you/Projects/site" }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Local folder", hint: "An existing folder on this device. Connecting does not clone or overwrite it.", children: /* @__PURE__ */ jsxs("div", { className: "aw-pick", children: [
+            /* @__PURE__ */ jsx("input", { required: true, value: path, onChange: (event) => setPath(event.target.value), placeholder: "/Users/you/Projects/site" }),
+            host.canPickDirectory ? /* @__PURE__ */ jsx(Button, { onClick: async () => {
+              try {
+                const picked = await host.pickDirectory();
+                if (picked) setPath(picked);
+              } catch {
+              }
+            }, children: "Choose folder\u2026" }) : null
+          ] }) }),
           /* @__PURE__ */ jsxs("div", { className: "aw-project__fields", children: [
             /* @__PURE__ */ jsx(Field, { label: "Base ref", hint: "Optional Git ref for review", children: /* @__PURE__ */ jsx("input", { value: baseRef, onChange: (event) => setBaseRef(event.target.value), placeholder: "main" }) }),
             /* @__PURE__ */ jsx(Field, { label: "Verification command", hint: "Saved for deliberate local execution", children: /* @__PURE__ */ jsx("input", { value: verify, onChange: (event) => setVerify(event.target.value), placeholder: "npm test" }) })
@@ -15940,7 +15949,16 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: /* @__PURE__ */ jsx(Button, { type: "submit", disabled: state.busy || !path.trim() || Boolean(cloning), title: !path.trim() ? "Enter a local folder path first." : void 0, children: state.busy ? "Connecting\u2026" : "Connect folder" }) })
         ] }) : /* @__PURE__ */ jsxs("form", { onSubmit: clone, className: "aw-project__form", children: [
           /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Creates a new folder; an existing destination is never overwritten. Private repositories use the project\u2019s authorized Git connection." }),
-          /* @__PURE__ */ jsx(Field, { label: "Parent folder", children: /* @__PURE__ */ jsx("input", { required: true, value: parentPath, onChange: (event) => setParentPath(event.target.value), placeholder: "/Users/you/Projects" }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Parent folder", children: /* @__PURE__ */ jsxs("div", { className: "aw-pick", children: [
+            /* @__PURE__ */ jsx("input", { required: true, value: parentPath, onChange: (event) => setParentPath(event.target.value), placeholder: "/Users/you/Projects" }),
+            host.canPickDirectory ? /* @__PURE__ */ jsx(Button, { onClick: async () => {
+              try {
+                const picked = await host.pickDirectory();
+                if (picked) setParentPath(picked);
+              } catch {
+              }
+            }, children: "Choose folder\u2026" }) : null
+          ] }) }),
           /* @__PURE__ */ jsx(Field, { label: "New folder name", children: /* @__PURE__ */ jsx("input", { value: directoryName, onChange: (event) => setDirectoryName(event.target.value) }) }),
           /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: /* @__PURE__ */ jsx(Button, { type: "submit", disabled: state.busy || Boolean(cloning) || !parentPath.trim(), title: !parentPath.trim() ? "Enter a parent folder path first." : void 0, children: cloning ? "Cloning\u2026" : "Clone repository" }) })
         ] })
