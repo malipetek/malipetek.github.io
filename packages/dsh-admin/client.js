@@ -2551,16 +2551,36 @@ ${block(Object.entries(TOKENS))}
     "Which previews are waiting to be published?",
     "Move this week\u2019s reviews to done"
   ];
+  var counted = (list2, one, more) => `${list2.length} ${list2.length === 1 ? one : more}`;
+  function briefingOf(data) {
+    const n = needsYou(data);
+    const running = data.running ?? [];
+    return [
+      n.stalled.length ? { tone: "bad", text: counted(n.stalled, "ticket stalled", "tickets stalled"), go: "inbox" } : null,
+      n.waiting.length ? { tone: "warn", text: counted(n.waiting, "client waiting on a reply", "clients waiting on a reply"), go: "inbox" } : null,
+      n.new.length ? { tone: "warn", text: counted(n.new, "request to approve or decline", "requests to approve or decline"), go: "inbox" } : null,
+      n.stuck.length ? { tone: "bad", text: counted(n.stuck, "approved ticket no node can take", "approved tickets no node can take"), go: "work" } : null,
+      n.review.length ? { tone: "info", text: counted(n.review, "ticket in review", "tickets in review"), go: "inbox" } : null,
+      n.offline.length ? { tone: "bad", text: counted(n.offline, "node offline", "nodes offline"), go: "fleet" } : null,
+      running.length ? { tone: "ok", text: counted(running, "run going", "runs going"), go: "fleet" } : null
+    ].filter(Boolean);
+  }
   function SuperagentView() {
-    const { data, host } = useAdmin();
+    const { data, host, open } = useAdmin();
     const [scope, setScope] = useState("all");
     const [draft, setDraft] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
     const [started, setStarted] = useState(null);
+    const composer = useRef(null);
     const superagent = host?.superagent ?? null;
     const available = Boolean(superagent?.start);
     const last = superagent?.last?.() ?? null;
+    const briefing = useMemo(() => data.loaded ? briefingOf(data) : null, [data]);
+    const ask = (question) => {
+      setDraft(question);
+      composer.current?.focus();
+    };
     const scopes = useMemo(() => [
       { value: "all", label: "All system" },
       ...(data.projects ?? []).map((p) => ({ value: `p:${p.id}`, label: p.name })),
@@ -2610,6 +2630,23 @@ ${block(Object.entries(TOKENS))}
         /* @__PURE__ */ jsx("select", { id: "aw-superagent-scope", value: scope, onChange: (e) => setScope(e.target.value), children: scopes.map((s) => /* @__PURE__ */ jsx("option", { value: s.value, children: s.label }, s.value)) }),
         /* @__PURE__ */ jsx(MetaChip, { children: available ? "Connected" : "Not in this host" })
       ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-brief", "aria-label": "Right now", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-brief__head", children: [
+          /* @__PURE__ */ jsx("h2", { className: "aw-brief__title", children: "Right now" }),
+          briefing?.length ? /* @__PURE__ */ jsx(
+            Button,
+            {
+              size: "sm",
+              onClick: () => ask(`Right now: ${briefing.map((line) => line.text).join(", ")}. What is stuck, and why?`),
+              children: "Ask about this"
+            }
+          ) : null
+        ] }),
+        briefing === null ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Reading the system\u2026" }) : briefing.length === 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing needs you. No stalled work, no requests waiting, every node online." }) : /* @__PURE__ */ jsx("ul", { className: "aw-brief__list", children: briefing.map((line) => /* @__PURE__ */ jsxs("li", { children: [
+          /* @__PURE__ */ jsx(Dot, { state: line.tone }),
+          /* @__PURE__ */ jsx("button", { type: "button", className: "aw-brief__link", onClick: () => open(line.go), children: line.text })
+        ] }, line.text)) })
+      ] }),
       /* @__PURE__ */ jsxs("form", { className: "aw-superagent__composer", onSubmit: (e) => {
         e.preventDefault();
         void start();
@@ -2617,6 +2654,7 @@ ${block(Object.entries(TOKENS))}
         /* @__PURE__ */ jsx(
           "textarea",
           {
+            ref: composer,
             rows: 3,
             value: draft,
             disabled: !available || busy,
@@ -11746,6 +11784,13 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-run { padding: var(--aw-space-3) 0; }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
 .aw-superagent { max-width: 1000px; }
+.aw-brief { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); padding: var(--aw-space-3, 12px); border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 10px; background: var(--ui-surface, var(--aw-surface-raised)); }
+.aw-brief__head { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-2, 8px); }
+.aw-brief__title { margin: 0; font-size: var(--aw-type-sm); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ui-text-secondary, var(--aw-ink-muted)); }
+.aw-brief__list { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px) var(--aw-space-4, 16px); list-style: none; margin: 0; padding: 0; }
+.aw-brief__list li { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); }
+.aw-brief__link { padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
+.aw-brief__link:hover { text-decoration: underline; }
 .aw-superagent__composer-hint { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); margin-top: -6px; font-size: var(--aw-type-sm); color: var(--ui-text-secondary, var(--aw-ink-muted)); }
 .aw-superagent__prompts { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px); }
 .aw-superagent__prompt { padding: 8px 12px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 999px; background: transparent; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }

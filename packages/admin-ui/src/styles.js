@@ -387,6 +387,13 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-run { padding: var(--aw-space-3) 0; }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
 .aw-superagent { max-width: 1000px; }
+.aw-brief { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); padding: var(--aw-space-3, 12px); border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 10px; background: var(--ui-surface, var(--aw-surface-raised)); }
+.aw-brief__head { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-2, 8px); }
+.aw-brief__title { margin: 0; font-size: var(--aw-type-sm); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ui-text-secondary, var(--aw-ink-muted)); }
+.aw-brief__list { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px) var(--aw-space-4, 16px); list-style: none; margin: 0; padding: 0; }
+.aw-brief__list li { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); }
+.aw-brief__link { padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
+.aw-brief__link:hover { text-decoration: underline; }
 .aw-superagent__composer-hint { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); margin-top: -6px; font-size: var(--aw-type-sm); color: var(--ui-text-secondary, var(--aw-ink-muted)); }
 .aw-superagent__prompts { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px); }
 .aw-superagent__prompt { padding: 8px 12px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 999px; background: transparent; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }

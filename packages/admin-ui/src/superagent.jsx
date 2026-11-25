@@ -7,9 +7,10 @@
  * The conversation, the tool calls and their confirmations are the app's, not a
  * second chat rendered here.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { needsYou } from './format.js';
 import { useAdmin } from './store.js';
-import { Button, Empty, FilterBar, Icon, MetaChip, PageHeader, UiStyles } from './ui/index.js';
+import { Button, Dot, Empty, FilterBar, Icon, MetaChip, PageHeader, UiStyles } from './ui/index.js';
 
 /** What the agent can do, in the words the tool descriptions use. */
 const ABILITIES = [
@@ -27,16 +28,45 @@ const EXAMPLES = [
   'Move this week’s reviews to done',
 ];
 
+/** `3 tickets stalled`, `1 ticket stalled` — the count reads as a sentence. */
+const counted = (list, one, more) => `${list.length} ${list.length === 1 ? one : more}`;
+
+/**
+ * What the system is saying, before anyone asks. The same rule as Needs you,
+ * so the panel and the inbox never disagree, and each line jumps to the view
+ * that can act on it.
+ */
+function briefingOf(data) {
+  const n = needsYou(data);
+  const running = data.running ?? [];
+  return [
+    n.stalled.length ? { tone: 'bad', text: counted(n.stalled, 'ticket stalled', 'tickets stalled'), go: 'inbox' } : null,
+    n.waiting.length ? { tone: 'warn', text: counted(n.waiting, 'client waiting on a reply', 'clients waiting on a reply'), go: 'inbox' } : null,
+    n.new.length ? { tone: 'warn', text: counted(n.new, 'request to approve or decline', 'requests to approve or decline'), go: 'inbox' } : null,
+    n.stuck.length ? { tone: 'bad', text: counted(n.stuck, 'approved ticket no node can take', 'approved tickets no node can take'), go: 'work' } : null,
+    n.review.length ? { tone: 'info', text: counted(n.review, 'ticket in review', 'tickets in review'), go: 'inbox' } : null,
+    n.offline.length ? { tone: 'bad', text: counted(n.offline, 'node offline', 'nodes offline'), go: 'fleet' } : null,
+    running.length ? { tone: 'ok', text: counted(running, 'run going', 'runs going'), go: 'fleet' } : null,
+  ].filter(Boolean);
+}
+
 export function SuperagentView() {
-  const { data, host } = useAdmin();
+  const { data, host, open } = useAdmin();
   const [scope, setScope] = useState('all');
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [started, setStarted] = useState(null);
+  const composer = useRef(null);
   const superagent = host?.superagent ?? null;
   const available = Boolean(superagent?.start);
   const last = superagent?.last?.() ?? null;
+  const briefing = useMemo(() => (data.loaded ? briefingOf(data) : null), [data]);
+  /** Put the question in the composer and leave the click on Start to the operator. */
+  const ask = (question) => {
+    setDraft(question);
+    composer.current?.focus();
+  };
 
   const scopes = useMemo(() => [
     { value: 'all', label: 'All system' },
@@ -90,8 +120,37 @@ export function SuperagentView() {
         <MetaChip>{available ? 'Connected' : 'Not in this host'}</MetaChip>
       </FilterBar>
 
+      <section className="aw-brief" aria-label="Right now">
+        <div className="aw-brief__head">
+          <h2 className="aw-brief__title">Right now</h2>
+          {briefing?.length ? (
+            <Button
+              size="sm"
+              onClick={() => ask(`Right now: ${briefing.map((line) => line.text).join(', ')}. What is stuck, and why?`)}
+            >
+              Ask about this
+            </Button>
+          ) : null}
+        </div>
+        {briefing === null ? (
+          <p className="aw-muted">Reading the system…</p>
+        ) : briefing.length === 0 ? (
+          <p className="aw-muted">Nothing needs you. No stalled work, no requests waiting, every node online.</p>
+        ) : (
+          <ul className="aw-brief__list">
+            {briefing.map((line) => (
+              <li key={line.text}>
+                <Dot state={line.tone} />
+                <button type="button" className="aw-brief__link" onClick={() => open(line.go)}>{line.text}</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <form className="aw-superagent__composer" onSubmit={(e) => { e.preventDefault(); void start(); }}>
         <textarea
+          ref={composer}
           rows={3}
           value={draft}
           disabled={!available || busy}
