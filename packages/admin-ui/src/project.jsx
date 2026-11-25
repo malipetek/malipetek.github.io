@@ -515,6 +515,7 @@ function LocalDevelopment({ project, local, host, refresh }) {
   const [operationId, setOperationId] = useState(null);
   const [operation, setOperation] = useState(null);
   const [state, write] = useWrite();
+  const [changing, setChanging] = useState(false);
   const found = local?.found ?? local?.exists;
 
   useEffect(() => {
@@ -539,6 +540,7 @@ function LocalDevelopment({ project, local, host, refresh }) {
     if (!path.trim() || !host.projectConfigureLocal) return;
     void write(async () => {
       await host.projectConfigureLocal({ projectId: project.id, path: path.trim(), baseRef: baseRef.trim(), verify: verify.trim() });
+      setChanging(false);
       void refresh();
     }, 'Local checkout connected.');
   };
@@ -566,7 +568,9 @@ function LocalDevelopment({ project, local, host, refresh }) {
           <Button kind="ghost" disabled={state.busy} onClick={() => void write(() => host.projectOpenLocal({ projectId: project.id, mode: 'reveal' }))}>Show folder</Button>
         </div>
       ) : null}
-      {connectExisting || connectClone ? (
+      {found && !changing ? (
+        <Button size="sm" kind="ghost" onClick={() => setChanging(true)}>Change checkout</Button>
+      ) : connectExisting || connectClone ? (
         <div className="aw-project__connect">
           <div className="aw-row-h">
             <h4>Connect a checkout</h4>

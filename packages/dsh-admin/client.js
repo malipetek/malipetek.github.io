@@ -15849,6 +15849,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [operationId, setOperationId] = useState(null);
     const [operation, setOperation] = useState(null);
     const [state, write] = useWrite();
+    const [changing, setChanging] = useState(false);
     const found = local?.found ?? local?.exists;
     useEffect(() => {
       if (!operationId || !host.projectLocalOperation) return;
@@ -15876,6 +15877,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       if (!path.trim() || !host.projectConfigureLocal) return;
       void write(async () => {
         await host.projectConfigureLocal({ projectId: project.id, path: path.trim(), baseRef: baseRef.trim(), verify: verify.trim() });
+        setChanging(false);
         void refresh();
       }, "Local checkout connected.");
     };
@@ -15899,7 +15901,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => void write(() => host.projectOpenLocal({ projectId: project.id, mode: "session" }), "Development conversation opened."), children: "Continue locally" }),
         /* @__PURE__ */ jsx(Button, { kind: "ghost", disabled: state.busy, onClick: () => void write(() => host.projectOpenLocal({ projectId: project.id, mode: "reveal" })), children: "Show folder" })
       ] }) : null,
-      connectExisting || connectClone ? /* @__PURE__ */ jsxs("div", { className: "aw-project__connect", children: [
+      found && !changing ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setChanging(true), children: "Change checkout" }) : connectExisting || connectClone ? /* @__PURE__ */ jsxs("div", { className: "aw-project__connect", children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
           /* @__PURE__ */ jsx("h4", { children: "Connect a checkout" }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
