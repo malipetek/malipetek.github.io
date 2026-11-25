@@ -2612,6 +2612,13 @@ ${block(Object.entries(TOKENS))}
         return [];
       }
     }, [superagent, started]);
+    const recentTotal = useMemo(() => {
+      try {
+        return superagent?.recentTotal?.() ?? recent.length;
+      } catch {
+        return recent.length;
+      }
+    }, [superagent, started, recent.length]);
     const ask = (question) => {
       setDraft(question);
       composer.current?.focus();
@@ -2719,7 +2726,14 @@ ${block(Object.entries(TOKENS))}
         /* @__PURE__ */ jsx("ul", { className: "aw-superagent__recent-list", children: recent.map((row) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-superagent__recent-row", onClick: () => superagent.open(row.id), children: [
           /* @__PURE__ */ jsx("span", { className: "aw-superagent__recent-title", children: row.title }),
           /* @__PURE__ */ jsx("span", { className: "aw-muted", children: row.running ? "working now" : `${ago(Math.floor(row.updatedAt / 1e3))} ago` })
-        ] }) }, row.id)) })
+        ] }) }, row.id)) }),
+        recentTotal > recent.length ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          "Newest ",
+          recent.length,
+          " of ",
+          recentTotal,
+          ". The Superagent workspace lists the rest."
+        ] }) : null
       ] }) : null,
       /* @__PURE__ */ jsx("div", { className: "aw-superagent__prompts", children: EXAMPLES.map((example) => /* @__PURE__ */ jsx(
         "button",
@@ -18071,6 +18085,11 @@ ${question.text ?? ""}`)) {
         return null;
       }
     };
+    const superagentRows = () => {
+      const snapshot = ctx.sessions?.list?.getSnapshot?.();
+      if (!snapshot?.byId) return [];
+      return Object.values(snapshot.byId).filter((row) => typeof row.title === "string" && row.title.startsWith(SUPERAGENT_TITLE)).sort((a, b) => b.updatedAt - a.updatedAt).map((row) => ({ id: String(row.id), title: row.title, updatedAt: row.updatedAt, running: Boolean(row.running) }));
+    };
     const host = {
       version: false ? void 0 : "1.1.0",
       canPickDirectory: Boolean(folderPicker()?.pick),
@@ -18112,11 +18131,9 @@ ${question.text ?? ""}`)) {
           }
         },
         /** The conversations this panel started, newest first, from the session catalog. */
-        recent: () => {
-          const snapshot = ctx.sessions?.list?.getSnapshot?.();
-          if (!snapshot?.byId) return [];
-          return Object.values(snapshot.byId).filter((row) => typeof row.title === "string" && row.title.startsWith(SUPERAGENT_TITLE)).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5).map((row) => ({ id: String(row.id), title: row.title, updatedAt: row.updatedAt, running: Boolean(row.running) }));
-        },
+        recent: () => superagentRows().slice(0, 5),
+        /** How many there are in all, so the list can say it is showing the newest. */
+        recentTotal: () => superagentRows().length,
         open: (sessionId) => {
           if (typeof workspace?.openSession !== "function") throw new Error("This Harness cannot open a conversation from a plugin.");
           workspace.openSession(sessionId);

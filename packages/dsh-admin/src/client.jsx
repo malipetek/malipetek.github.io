@@ -424,6 +424,15 @@ function apply(ctx) {
   const folderPicker = () => {
     try { return ctx.remote?.directoryPicker ?? null; } catch { return null; }
   };
+  /** The panel's own conversations, newest first, from the session catalog. */
+  const superagentRows = () => {
+    const snapshot = ctx.sessions?.list?.getSnapshot?.();
+    if (!snapshot?.byId) return [];
+    return Object.values(snapshot.byId)
+      .filter((row) => typeof row.title === 'string' && row.title.startsWith(SUPERAGENT_TITLE))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map((row) => ({ id: String(row.id), title: row.title, updatedAt: row.updatedAt, running: Boolean(row.running) }));
+  };
   const host = {
     version: typeof __PTECH_ADMIN_VERSION__ === 'undefined' ? undefined : __PTECH_ADMIN_VERSION__,
     canPickDirectory: Boolean(folderPicker()?.pick),
@@ -454,15 +463,9 @@ function apply(ctx) {
         try { return globalThis.localStorage?.getItem(SUPERAGENT_SESSION) || null; } catch { return null; }
       },
       /** The conversations this panel started, newest first, from the session catalog. */
-      recent: () => {
-        const snapshot = ctx.sessions?.list?.getSnapshot?.();
-        if (!snapshot?.byId) return [];
-        return Object.values(snapshot.byId)
-          .filter((row) => typeof row.title === 'string' && row.title.startsWith(SUPERAGENT_TITLE))
-          .sort((a, b) => b.updatedAt - a.updatedAt)
-          .slice(0, 5)
-          .map((row) => ({ id: String(row.id), title: row.title, updatedAt: row.updatedAt, running: Boolean(row.running) }));
-      },
+      recent: () => superagentRows().slice(0, 5),
+      /** How many there are in all, so the list can say it is showing the newest. */
+      recentTotal: () => superagentRows().length,
       open: (sessionId) => {
         if (typeof workspace?.openSession !== 'function') throw new Error('This Harness cannot open a conversation from a plugin.');
         workspace.openSession(sessionId);

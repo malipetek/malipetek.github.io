@@ -67,6 +67,9 @@ export function SuperagentView() {
   const recent = useMemo(() => {
     try { return superagent?.recent?.() ?? []; } catch { return []; }
   }, [superagent, started]);
+  const recentTotal = useMemo(() => {
+    try { return superagent?.recentTotal?.() ?? recent.length; } catch { return recent.length; }
+  }, [superagent, started, recent.length]);
   /** Put the question in the composer and leave the click on Start to the operator. */
   const ask = (question) => {
     setDraft(question);
@@ -187,6 +190,9 @@ export function SuperagentView() {
               </li>
             ))}
           </ul>
+          {recentTotal > recent.length ? (
+            <p className="aw-muted">Newest {recent.length} of {recentTotal}. The Superagent workspace lists the rest.</p>
+          ) : null}
         </section>
       ) : null}
 
