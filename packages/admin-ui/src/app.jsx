@@ -977,7 +977,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
   const repoTaken = Boolean(repo.trim()) && data.projects.some((p) => repoKey(p.repo) === repoKey(repo));
   const readyName = name.trim() && (!data.access?.superAdmin || (/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug) && !slugTaken));
   const readyBrief = data.access?.superAdmin || (what.trim() && goal.trim());
-  const readySource = !existing || (code === 'folder' ? localPath.trim() : code === 'repo' ? Boolean(repo.trim()) && !repoTaken : true);
+  const readySource = !existing || (code === 'folder' ? Boolean(localPath.trim()) : code === 'repo' ? Boolean(repo.trim()) && !repoTaken : code === 'node');
   const ready = readyName && readyBrief && readySource && !(code === 'repo' && repoTaken);
   const stepReady = step === 0 && existing ? readySource : step === detailsStep ? readyName && readyBrief : true;
   const go = (project) => { onClose(); open(`p:${project.id}`); };
@@ -992,7 +992,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
     if (busyRef.current || !ready) return;
     busyRef.current = true; setBusy(true); setSetupError(null);
     try {
-      const project = await submission.current({ name, slug, kind, code, repo: code === 'repo' ? repo.trim() : undefined, brief: { what: what.trim(), goal: goal.trim() }, localPath: localPath.trim() });
+      const project = await submission.current({ name, slug, kind, code: code === 'node' ? 'folder' : code, repo: code === 'repo' ? repo.trim() : undefined, brief: { what: what.trim(), goal: goal.trim() }, localPath: code === 'folder' ? localPath.trim() : '' });
       if (!project) return;
       for (const id of clientIds) {
         await api('PUT', `/admin/clients/${id}/projects/${project.id}`).catch(() => notify?.('Project created, but assigning a client failed.', 'error'));
@@ -1035,12 +1035,14 @@ export function ProjectModal({ onClose, initialClients = [] }) {
       <fieldset disabled={busy || Boolean(created)} className="aw-formset">
         {existing && step === 0 ? (
           <>
-            {canFolder ? (
+            {(canFolder || data.access?.superAdmin) ? (
               <Field label="Where is it?">
-                <Segmented value={code} options={[{ value: 'folder', label: 'Folder on this computer' }, { value: 'repo', label: 'Git repository' }]} onChange={(value) => { setCode(value); setStep(0); }} />
+                <Segmented value={code} options={[...(canFolder ? [{ value: 'folder', label: 'Folder on this computer' }] : []), { value: 'repo', label: 'Git repository' }, ...(data.access?.superAdmin ? [{ value: 'node', label: 'Folder on a node' }] : [])]} onChange={(value) => { setCode(value); setStep(0); }} />
               </Field>
             ) : null}
-            {code === 'folder' && canFolder ? (
+            {code === 'node' ? (
+              <p className="ui-note">A node with a folder named after this project's slug shares its origin; nothing is cloned. The node picks it up on its next sync.</p>
+            ) : code === 'folder' && canFolder ? (
               <Field label="Folder" hint="An existing checkout on this computer. Nothing is cloned or created in it.">
                 <div className="aw-pick">
                   <input className="aw-mono" value={localPath} placeholder="/Users/you/Projects/acme" onChange={(e) => { setLocalPath(e.target.value); detect(e.target.value, false); }} />
@@ -1059,7 +1061,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
                 <input className="aw-mono" value={repo} maxLength={300} aria-invalid={repoTaken || undefined} placeholder="https://github.com/owner/repo" onChange={(e) => { setRepo(e.target.value); detect(e.target.value, true); }} />
               </Field>
             )}
-            <p className="ui-note">{name.trim() ? `Will create “${name.trim()}”${slug ? ` (${slug})` : ''}.` : canFolder ? 'The name and slug are taken from the folder or repository; you can change them next.' : 'The name and slug are taken from the repository; you can change them next.'}</p>
+            <p className="ui-note">{name.trim() ? `Will create “${name.trim()}”${slug ? ` (${slug})` : ''}.` : code === 'node' ? 'The name and slug are yours; the node folder follows the slug.' : canFolder ? 'The name and slug are taken from the folder or repository; you can change them next.' : 'The name and slug are taken from the repository; you can change them next.'}</p>
             <Button kind="ghost" size="sm" onClick={() => { setKind('new'); setCode('create'); setStep(0); }}>This is a new website instead →</Button>
           </>
         ) : null}
@@ -1131,7 +1133,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
           <dl className="ui-props">
             <dt>Name</dt><dd>{name}</dd>
             <dt>Slug</dt><dd className="aw-mono">{slug || '—'}</dd>
-            {existing ? <><dt>Source</dt><dd className="aw-mono">{code === 'folder' ? localPath : repo}</dd></> : <><dt>Code</dt><dd>{code === 'create' ? 'New repo from the site template' : code === 'repo' ? repo : 'Folder on a node'}</dd></>}
+            {existing ? <><dt>Source</dt><dd className="aw-mono">{code === 'folder' ? localPath : code === 'node' ? 'Folder on a node (named after the slug)' : repo}</dd></> : <><dt>Code</dt><dd>{code === 'create' ? 'New repo from the site template' : code === 'repo' ? repo : 'Folder on a node'}</dd></>}
             <dt>Clients</dt><dd>{clientIds.length ? clientIds.map((id) => clients.find((c) => c.id === id)?.name || clients.find((c) => c.id === id)?.email).join(', ') : 'None yet'}</dd>
             {!data.access?.superAdmin ? <><dt>Brief</dt><dd>{what}</dd></> : null}
           </dl>

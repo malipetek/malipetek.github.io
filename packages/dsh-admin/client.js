@@ -16763,7 +16763,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const repoTaken = Boolean(repo.trim()) && data.projects.some((p) => repoKey(p.repo) === repoKey(repo));
     const readyName = name.trim() && (!data.access?.superAdmin || /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug) && !slugTaken);
     const readyBrief = data.access?.superAdmin || what.trim() && goal.trim();
-    const readySource = !existing || (code === "folder" ? localPath.trim() : code === "repo" ? Boolean(repo.trim()) && !repoTaken : true);
+    const readySource = !existing || (code === "folder" ? Boolean(localPath.trim()) : code === "repo" ? Boolean(repo.trim()) && !repoTaken : code === "node");
     const ready = readyName && readyBrief && readySource && !(code === "repo" && repoTaken);
     const stepReady = step === 0 && existing ? readySource : step === detailsStep ? readyName && readyBrief : true;
     const go = (project) => {
@@ -16783,7 +16783,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       setBusy(true);
       setSetupError(null);
       try {
-        const project = await submission.current({ name, slug, kind, code, repo: code === "repo" ? repo.trim() : void 0, brief: { what: what.trim(), goal: goal.trim() }, localPath: localPath.trim() });
+        const project = await submission.current({ name, slug, kind, code: code === "node" ? "folder" : code, repo: code === "repo" ? repo.trim() : void 0, brief: { what: what.trim(), goal: goal.trim() }, localPath: code === "folder" ? localPath.trim() : "" });
         if (!project) return;
         for (const id of clientIds) {
           await api("PUT", `/admin/clients/${id}/projects/${project.id}`).catch(() => notify?.("Project created, but assigning a client failed.", "error"));
@@ -16826,11 +16826,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           steps.length > 1 ? /* @__PURE__ */ jsx("ol", { className: "aw-wizard-steps", "aria-label": "Setup steps", children: steps.map((label, index) => /* @__PURE__ */ jsx("li", { "data-current": index === step || void 0, "data-done": index < step || void 0, children: label }, label)) }) : null,
           /* @__PURE__ */ jsxs("fieldset", { disabled: busy || Boolean(created), className: "aw-formset", children: [
             existing && step === 0 ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-              canFolder ? /* @__PURE__ */ jsx(Field, { label: "Where is it?", children: /* @__PURE__ */ jsx(Segmented, { value: code, options: [{ value: "folder", label: "Folder on this computer" }, { value: "repo", label: "Git repository" }], onChange: (value) => {
+              canFolder || data.access?.superAdmin ? /* @__PURE__ */ jsx(Field, { label: "Where is it?", children: /* @__PURE__ */ jsx(Segmented, { value: code, options: [...canFolder ? [{ value: "folder", label: "Folder on this computer" }] : [], { value: "repo", label: "Git repository" }, ...data.access?.superAdmin ? [{ value: "node", label: "Folder on a node" }] : []], onChange: (value) => {
                 setCode(value);
                 setStep(0);
               } }) }) : null,
-              code === "folder" && canFolder ? /* @__PURE__ */ jsx(Field, { label: "Folder", hint: "An existing checkout on this computer. Nothing is cloned or created in it.", children: /* @__PURE__ */ jsxs("div", { className: "aw-pick", children: [
+              code === "node" ? /* @__PURE__ */ jsx("p", { className: "ui-note", children: "A node with a folder named after this project's slug shares its origin; nothing is cloned. The node picks it up on its next sync." }) : code === "folder" && canFolder ? /* @__PURE__ */ jsx(Field, { label: "Folder", hint: "An existing checkout on this computer. Nothing is cloned or created in it.", children: /* @__PURE__ */ jsxs("div", { className: "aw-pick", children: [
                 /* @__PURE__ */ jsx("input", { className: "aw-mono", value: localPath, placeholder: "/Users/you/Projects/acme", onChange: (e) => {
                   setLocalPath(e.target.value);
                   detect(e.target.value, false);
@@ -16850,7 +16850,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                 setRepo(e.target.value);
                 detect(e.target.value, true);
               } }) }),
-              /* @__PURE__ */ jsx("p", { className: "ui-note", children: name.trim() ? `Will create \u201C${name.trim()}\u201D${slug ? ` (${slug})` : ""}.` : canFolder ? "The name and slug are taken from the folder or repository; you can change them next." : "The name and slug are taken from the repository; you can change them next." }),
+              /* @__PURE__ */ jsx("p", { className: "ui-note", children: name.trim() ? `Will create \u201C${name.trim()}\u201D${slug ? ` (${slug})` : ""}.` : code === "node" ? "The name and slug are yours; the node folder follows the slug." : canFolder ? "The name and slug are taken from the folder or repository; you can change them next." : "The name and slug are taken from the repository; you can change them next." }),
               /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", onClick: () => {
                 setKind("new");
                 setCode("create");
@@ -16919,7 +16919,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               /* @__PURE__ */ jsx("dd", { className: "aw-mono", children: slug || "\u2014" }),
               existing ? /* @__PURE__ */ jsxs(Fragment2, { children: [
                 /* @__PURE__ */ jsx("dt", { children: "Source" }),
-                /* @__PURE__ */ jsx("dd", { className: "aw-mono", children: code === "folder" ? localPath : repo })
+                /* @__PURE__ */ jsx("dd", { className: "aw-mono", children: code === "folder" ? localPath : code === "node" ? "Folder on a node (named after the slug)" : repo })
               ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
                 /* @__PURE__ */ jsx("dt", { children: "Code" }),
                 /* @__PURE__ */ jsx("dd", { children: code === "create" ? "New repo from the site template" : code === "repo" ? repo : "Folder on a node" })
