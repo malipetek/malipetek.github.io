@@ -3213,7 +3213,7 @@ function apply(ctx) {
     if (target.startsWith('t:')) { void openTicketRun({ id: Number(target.slice(2)) }); return; }
     if (target.startsWith('p:')) { openProjectPage({ id: target.slice(2) }); return; }
     if (target.startsWith('c:')) { openClientPage({ id: target.slice(2) }); return; }
-    if (target === 'inbox') { ctx.layout?.selectPanel?.(HOME_PANEL); return; }
+    if (target === 'inbox') { ctx.layout?.selectPanel?.(SUPERAGENT_PANEL); return; }
     if (target === 'board' || target === 'list' || target === 'work') { ctx.layout?.selectPanel?.(WORK_PANEL); return; }
     if (target === 'marketing') { ctx.layout?.selectPanel?.(MARKETING_PANEL); return; }
     if (target === 'seo') { ctx.layout?.selectPanel?.(SEO_PANEL); return; }
@@ -3628,7 +3628,7 @@ function apply(ctx) {
     }
     if (route === 'inbox') {
       handledDeepLink = true;
-      ctx.layout?.selectPanel?.(HOME_PANEL);
+      ctx.layout?.selectPanel?.(SUPERAGENT_PANEL);
       return true;
     }
     if (route === 'work' || route === 'board' || route === 'list') {
@@ -3729,7 +3729,7 @@ function apply(ctx) {
     const timer = setTimeout(() => {
       try {
         if (window.location.hash !== '' || handledDeepLink) return;
-        ctx.layout?.selectPanel?.(HOME_PANEL);
+        ctx.layout?.selectPanel?.(SUPERAGENT_PANEL);
       } catch {
         // The host may not have the panel registry ready yet; keep the conversation.
       }

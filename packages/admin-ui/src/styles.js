@@ -387,6 +387,19 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-run { padding: var(--aw-space-3) 0; }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
 .aw-superagent { max-width: 1000px; }
+.aw-superagent--chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.aw-superagent__head { flex: none; }
+.aw-superagent__thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--aw-space-3, 12px); max-width: 760px; padding: var(--aw-space-2, 8px) 0 var(--aw-space-3, 12px); }
+.aw-superagent__turn { display: flex; flex-direction: column; gap: 6px; }
+.aw-superagent__turn p { margin: 0; line-height: 1.55; }
+.aw-superagent__who { font-size: var(--aw-type-sm); font-weight: 600; color: var(--ui-text-secondary, var(--aw-ink-muted)); }
+.aw-superagent__lines { display: flex; flex-direction: column; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.aw-superagent__lines li { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); }
+.aw-superagent__line { padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; cursor: pointer; text-align: left; }
+.aw-superagent__line:hover { text-decoration: underline; }
+.aw-superagent__abilities-more { margin-top: var(--aw-space-2, 8px); }
+.aw-superagent__abilities-more > summary { cursor: pointer; font-size: var(--aw-type-sm); color: var(--ui-text-secondary, var(--aw-ink-muted)); }
+.aw-superagent--chat .aw-superagent__composer { flex: none; margin-top: 0; border-top: 1px solid var(--ui-border, var(--aw-hairline)); padding: var(--aw-space-3, 12px) 0 0; max-width: 760px; }
 .aw-brief { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); padding: var(--aw-space-3, 12px); border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 10px; background: var(--ui-surface, var(--aw-surface-raised)); }
 .aw-brief__head { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-2, 8px); }
 .aw-brief__title { margin: 0; font-size: var(--aw-type-sm); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ui-text-secondary, var(--aw-ink-muted)); }

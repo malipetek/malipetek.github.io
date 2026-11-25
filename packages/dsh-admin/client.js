@@ -2619,10 +2619,6 @@ ${block(Object.entries(TOKENS))}
         return recent.length;
       }
     }, [superagent, started, recent.length]);
-    const ask = (question) => {
-      setDraft(question);
-      composer.current?.focus();
-    };
     const scopes = useMemo(() => [
       { value: "all", label: "All system" },
       ...(data.projects ?? []).map((p) => ({ value: `p:${p.id}`, label: p.name })),
@@ -2630,6 +2626,10 @@ ${block(Object.entries(TOKENS))}
     ], [data.projects, data.clients]);
     const scopeLabel = scopes.find((s) => s.value === scope)?.label ?? "All system";
     const brief = (text) => superagentBrief({ scope, label: scopeLabel, text });
+    const ask = (question) => {
+      setDraft(question);
+      composer.current?.focus();
+    };
     const start = async (text = draft) => {
       const content = String(text).trim();
       if (!content || !available || busy) return;
@@ -2648,37 +2648,83 @@ ${block(Object.entries(TOKENS))}
         setBusy(false);
       }
     };
-    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace aw-superagent", children: [
+    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace aw-superagent aw-superagent--chat", children: [
       /* @__PURE__ */ jsx(UiStyles, {}),
-      /* @__PURE__ */ jsx(
-        PageHeader,
-        {
-          title: "Superagent",
-          subtitle: "Ask the system, then watch it work. Every form action has a tool here, and every write waits for your yes.",
-          actions: last && recent.length === 0 ? /* @__PURE__ */ jsx(Button, { onClick: () => superagent.open(last), children: "Continue last conversation" }) : null
-        }
-      ),
-      /* @__PURE__ */ jsxs(FilterBar, { label: "Superagent scope", children: [
-        /* @__PURE__ */ jsx("label", { className: "aw-field__label", htmlFor: "aw-superagent-scope", children: "Scope" }),
-        /* @__PURE__ */ jsx("select", { id: "aw-superagent-scope", value: scope, onChange: (e) => setScope(e.target.value), children: scopes.map((s) => /* @__PURE__ */ jsx("option", { value: s.value, children: s.label }, s.value)) }),
-        /* @__PURE__ */ jsx(MetaChip, { children: available ? "Connected" : "Not in this host" })
+      /* @__PURE__ */ jsxs("div", { className: "aw-superagent__head", children: [
+        /* @__PURE__ */ jsx(
+          PageHeader,
+          {
+            title: "Superagent",
+            subtitle: "Ask the system, then watch it work. Every write waits for your yes.",
+            actions: last && recent.length === 0 ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => superagent.open(last), children: "Continue last" }) : null
+          }
+        ),
+        /* @__PURE__ */ jsxs(FilterBar, { label: "Superagent scope", children: [
+          /* @__PURE__ */ jsx("label", { className: "aw-field__label", htmlFor: "aw-superagent-scope", children: "Scope" }),
+          /* @__PURE__ */ jsx("select", { id: "aw-superagent-scope", value: scope, onChange: (e) => setScope(e.target.value), children: scopes.map((s) => /* @__PURE__ */ jsx("option", { value: s.value, children: s.label }, s.value)) }),
+          /* @__PURE__ */ jsx(MetaChip, { children: available ? "Connected" : "Not in this host" })
+        ] })
       ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-brief", "aria-label": "Right now", children: [
-        /* @__PURE__ */ jsxs("div", { className: "aw-brief__head", children: [
-          /* @__PURE__ */ jsx("h2", { className: "aw-brief__title", children: "Right now" }),
-          briefing?.length ? /* @__PURE__ */ jsx(
-            Button,
-            {
-              size: "sm",
-              onClick: () => ask(`Right now: ${briefing.map((line) => line.text).join(", ")}. What is stuck, and why?`),
-              children: "Ask about this"
-            }
-          ) : null
+      /* @__PURE__ */ jsxs("div", { className: "aw-superagent__thread", "aria-live": "polite", children: [
+        /* @__PURE__ */ jsxs("article", { className: "aw-superagent__turn aw-superagent__turn--agent", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-superagent__who", children: "Superagent" }),
+          briefing === null ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Reading the system\u2026" }) : briefing.length === 0 ? /* @__PURE__ */ jsx("p", { children: "Nothing needs you. No stalled work, no requests waiting, every node online." }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx("p", { children: "Right now:" }),
+            /* @__PURE__ */ jsx("ul", { className: "aw-superagent__lines", children: briefing.map((line) => /* @__PURE__ */ jsxs("li", { children: [
+              /* @__PURE__ */ jsx(Dot, { state: line.tone }),
+              /* @__PURE__ */ jsx("button", { type: "button", className: "aw-superagent__line", onClick: () => open(line.go), children: line.text })
+            ] }, line.text)) }),
+            /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => ask(`Right now: ${briefing.map((line) => line.text).join(", ")}. What is stuck, and why?`), children: "Ask about this" })
+          ] })
         ] }),
-        briefing === null ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Reading the system\u2026" }) : briefing.length === 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing needs you. No stalled work, no requests waiting, every node online." }) : /* @__PURE__ */ jsx("ul", { className: "aw-brief__list", children: briefing.map((line) => /* @__PURE__ */ jsxs("li", { children: [
-          /* @__PURE__ */ jsx(Dot, { state: line.tone }),
-          /* @__PURE__ */ jsx("button", { type: "button", className: "aw-brief__link", onClick: () => open(line.go), children: line.text })
-        ] }, line.text)) })
+        recent.length > 0 ? /* @__PURE__ */ jsxs("article", { className: "aw-superagent__turn aw-superagent__turn--agent", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-superagent__who", children: "Earlier conversations" }),
+          /* @__PURE__ */ jsx("ul", { className: "aw-superagent__recent-list", children: recent.map((row) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-superagent__recent-row", onClick: () => superagent.open(row.id), children: [
+            /* @__PURE__ */ jsx("span", { className: "aw-superagent__recent-title", children: row.title }),
+            /* @__PURE__ */ jsx("span", { className: "aw-muted", children: row.running ? "working now" : `${ago(Math.floor(row.updatedAt / 1e3))} ago` })
+          ] }) }, row.id)) }),
+          recentTotal > recent.length ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+            "Newest ",
+            recent.length,
+            " of ",
+            recentTotal,
+            ". The Superagent workspace lists the rest."
+          ] }) : null
+        ] }) : null,
+        !available ? /* @__PURE__ */ jsx(
+          Empty,
+          {
+            title: "The superagent runs in the desktop app",
+            hint: "It starts a conversation with the admin tools registered by the Host, so every step is a tool call you can watch and confirm. This page keeps the forms."
+          }
+        ) : null,
+        /* @__PURE__ */ jsx("div", { className: "aw-superagent__prompts", children: EXAMPLES.map((example) => /* @__PURE__ */ jsx(
+          "button",
+          {
+            type: "button",
+            className: "aw-superagent__prompt",
+            disabled: !available || busy,
+            onClick: () => ask(example),
+            children: example
+          },
+          example
+        )) }),
+        /* @__PURE__ */ jsxs("details", { className: "aw-superagent__abilities-more", children: [
+          /* @__PURE__ */ jsx("summary", { children: "What it can do" }),
+          /* @__PURE__ */ jsx("div", { className: "aw-superagent__abilities", children: ABILITIES.map((ability) => /* @__PURE__ */ jsxs("article", { className: "aw-superagent__ability", children: [
+            /* @__PURE__ */ jsx(Icon, { name: ability.icon, size: 16 }),
+            /* @__PURE__ */ jsxs("div", { children: [
+              /* @__PURE__ */ jsx("strong", { children: ability.title }),
+              /* @__PURE__ */ jsx("p", { className: "aw-muted", children: ability.detail })
+            ] })
+          ] }, ability.title)) })
+        ] }),
+        error ? /* @__PURE__ */ jsx("p", { className: "aw-callout", role: "alert", children: error }) : null,
+        started ? /* @__PURE__ */ jsxs("p", { className: "aw-callout", role: "status", children: [
+          "Started in a conversation",
+          host?.superagent?.open ? " \u2014 opened in the main view" : ". Find it in the session list",
+          "."
+        ] }) : null
       ] }),
       /* @__PURE__ */ jsxs("form", { className: "aw-superagent__composer", onSubmit: (e) => {
         e.preventDefault();
@@ -2688,7 +2734,7 @@ ${block(Object.entries(TOKENS))}
           "textarea",
           {
             ref: composer,
-            rows: 3,
+            rows: 2,
             value: draft,
             disabled: !available || busy,
             "aria-label": "Ask the superagent",
@@ -2702,57 +2748,8 @@ ${block(Object.entries(TOKENS))}
             }
           }
         ),
-        /* @__PURE__ */ jsx(Button, { type: "submit", kind: "primary", disabled: !available || busy || !draft.trim(), disabledReason: available ? void 0 : "The superagent runs in the desktop app, where the admin tools are registered.", children: busy ? "Starting\u2026" : "Start conversation" })
-      ] }),
-      available ? /* @__PURE__ */ jsxs("p", { className: "aw-superagent__composer-hint", children: [
-        /* @__PURE__ */ jsx("kbd", { children: "\u2318\u21B5" }),
-        " starts it and opens the conversation in the main view."
-      ] }) : null,
-      !available ? /* @__PURE__ */ jsx(
-        Empty,
-        {
-          title: "The superagent runs in the desktop app",
-          hint: "It starts a conversation with the admin tools registered by the Host, so every step is a tool call you can watch and confirm. This page keeps the forms."
-        }
-      ) : null,
-      error ? /* @__PURE__ */ jsx("p", { className: "aw-callout", role: "alert", children: error }) : null,
-      started ? /* @__PURE__ */ jsxs("p", { className: "aw-callout", role: "status", children: [
-        "Started in a conversation",
-        host?.superagent?.open ? " \u2014 opened in the main view" : ". Find it in the session list",
-        "."
-      ] }) : null,
-      recent.length > 0 ? /* @__PURE__ */ jsxs("section", { className: "aw-superagent__recent", "aria-label": "Superagent conversations", children: [
-        /* @__PURE__ */ jsx("h2", { className: "aw-brief__title", children: "Conversations" }),
-        /* @__PURE__ */ jsx("ul", { className: "aw-superagent__recent-list", children: recent.map((row) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-superagent__recent-row", onClick: () => superagent.open(row.id), children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-superagent__recent-title", children: row.title }),
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: row.running ? "working now" : `${ago(Math.floor(row.updatedAt / 1e3))} ago` })
-        ] }) }, row.id)) }),
-        recentTotal > recent.length ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "Newest ",
-          recent.length,
-          " of ",
-          recentTotal,
-          ". The Superagent workspace lists the rest."
-        ] }) : null
-      ] }) : null,
-      /* @__PURE__ */ jsx("div", { className: "aw-superagent__prompts", children: EXAMPLES.map((example) => /* @__PURE__ */ jsx(
-        "button",
-        {
-          type: "button",
-          className: "aw-superagent__prompt",
-          disabled: !available || busy,
-          onClick: () => setDraft(example),
-          children: example
-        },
-        example
-      )) }),
-      /* @__PURE__ */ jsx("section", { className: "aw-superagent__abilities", "aria-label": "What the superagent can do", children: ABILITIES.map((ability) => /* @__PURE__ */ jsxs("article", { className: "aw-superagent__ability", children: [
-        /* @__PURE__ */ jsx(Icon, { name: ability.icon, size: 16 }),
-        /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("strong", { children: ability.title }),
-          /* @__PURE__ */ jsx("p", { className: "aw-muted", children: ability.detail })
-        ] })
-      ] }, ability.title)) })
+        /* @__PURE__ */ jsx(Button, { type: "submit", kind: "primary", disabled: !available || busy || !draft.trim(), disabledReason: available ? void 0 : "The superagent runs in the desktop app, where the admin tools are registered.", children: busy ? "Starting\u2026" : "Send" })
+      ] })
     ] });
   }
 
@@ -11881,6 +11878,19 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-run { padding: var(--aw-space-3) 0; }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
 .aw-superagent { max-width: 1000px; }
+.aw-superagent--chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.aw-superagent__head { flex: none; }
+.aw-superagent__thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--aw-space-3, 12px); max-width: 760px; padding: var(--aw-space-2, 8px) 0 var(--aw-space-3, 12px); }
+.aw-superagent__turn { display: flex; flex-direction: column; gap: 6px; }
+.aw-superagent__turn p { margin: 0; line-height: 1.55; }
+.aw-superagent__who { font-size: var(--aw-type-sm); font-weight: 600; color: var(--ui-text-secondary, var(--aw-ink-muted)); }
+.aw-superagent__lines { display: flex; flex-direction: column; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.aw-superagent__lines li { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); }
+.aw-superagent__line { padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; cursor: pointer; text-align: left; }
+.aw-superagent__line:hover { text-decoration: underline; }
+.aw-superagent__abilities-more { margin-top: var(--aw-space-2, 8px); }
+.aw-superagent__abilities-more > summary { cursor: pointer; font-size: var(--aw-type-sm); color: var(--ui-text-secondary, var(--aw-ink-muted)); }
+.aw-superagent--chat .aw-superagent__composer { flex: none; margin-top: 0; border-top: 1px solid var(--ui-border, var(--aw-hairline)); padding: var(--aw-space-3, 12px) 0 0; max-width: 760px; }
 .aw-brief { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); padding: var(--aw-space-3, 12px); border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 10px; background: var(--ui-surface, var(--aw-surface-raised)); }
 .aw-brief__head { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-2, 8px); }
 .aw-brief__title { margin: 0; font-size: var(--aw-type-sm); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ui-text-secondary, var(--aw-ink-muted)); }
@@ -20541,7 +20551,7 @@ ${question.text ?? ""}`)) {
         return;
       }
       if (target === "inbox") {
-        ctx.layout?.selectPanel?.(HOME_PANEL);
+        ctx.layout?.selectPanel?.(SUPERAGENT_PANEL);
         return;
       }
       if (target === "board" || target === "list" || target === "work") {
@@ -20934,7 +20944,7 @@ ${question.text ?? ""}`)) {
       }
       if (route === "inbox") {
         handledDeepLink = true;
-        ctx.layout?.selectPanel?.(HOME_PANEL);
+        ctx.layout?.selectPanel?.(SUPERAGENT_PANEL);
         return true;
       }
       if (route === "work" || route === "board" || route === "list") {
@@ -21023,7 +21033,7 @@ ${question.text ?? ""}`)) {
       const timer = setTimeout(() => {
         try {
           if (window.location.hash !== "" || handledDeepLink) return;
-          ctx.layout?.selectPanel?.(HOME_PANEL);
+          ctx.layout?.selectPanel?.(SUPERAGENT_PANEL);
         } catch {
         }
       }, 900);
