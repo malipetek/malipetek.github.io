@@ -7994,7 +7994,7 @@ ${SITE_LINK}` : SITE_LINK;
       {
         kind: "create",
         title: "Import contacts",
-        subtitle: "Upload a CSV with email, name, business, site, gap, source URL, notes, and optionally source kind and two-letter country code (DE, AT, CH, IT, ES, PL, DK, NO and TR are never mailed cold). The gap is the one specific, true observation the first email opens with.",
+        subtitle: "Upload a CSV with email, name, business, site, gap, the trigger and its source link, and the day you verified it \u2014 the gap is the one specific, true observation the first email opens with, the trigger is what changed on their side, and a cold sequence is refused without both. Optionally a source kind and a two-letter country code (DE, AT, CH, IT, ES, PL, DK, NO and TR are never mailed cold).",
         onClose,
         wide: true,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
