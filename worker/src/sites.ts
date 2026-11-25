@@ -966,19 +966,48 @@ export function sourceListing(paths: string[]): { files: string[]; complete: boo
   const files = paths.filter((p) => !p.split('/').slice(0, -1).some((part) => NOT_SOURCE.has(part))).sort();
   const complete = paths.length < SOURCE_LIMITS.files && files.length === paths.length;
   if (complete) return { files, complete };
-  return {
-    files,
-    complete,
-    note: 'This preview stored an incomplete source list, so files you need may be missing. Do not guess paths. Tell the client PTech must rebuild the preview before you can edit it, and say so in the request with portal_reply; a developer is notified.',
-  };
+  return { files, complete };
+}
+
+/** What the agent is told while an incomplete source list is being rebuilt. */
+export const SOURCE_REFRESHING =
+  'This preview stored an incomplete source list, so PTech is rebuilding it now; that usually takes a few minutes. Do not guess paths. Tell the client the files are being refreshed, then call workspace_files again; when `complete` is true every file is there.';
+
+/** What the agent is told when a rebuild already ran and the list is still incomplete. */
+export const SOURCE_STILL_INCOMPLETE =
+  'The source list is still incomplete after a rebuild, so some files cannot be read yet. Work with the files listed; for anything missing, say so in the request with portal_reply and a developer will restore it.';
+
+/**
+ * Start a rebuild for a preview whose source list is incomplete, once per
+ * broken deploy: a marker in R2 keeps a still-broken result from looping.
+ * The client never has to ask for it, so their agent can keep changing the
+ * site; a node rebuilds and the next listing is whole.
+ * @returns 'started' when this call queued it, 'pending' while it waits for a node, 'tried' when it ran and the list is still incomplete.
+ */
+export async function healSource(env: Env, projectId: string): Promise<'started' | 'pending' | 'tried' | 'none'> {
+  if (!env.SITES) return 'none';
+  const site = await getSite(env, projectId);
+  if (!site?.preview_deploy || site.state !== 'ready') return 'none';
+  const marker = `sites/${site.slug}/heal/${site.preview_deploy}`;
+  if (await env.SITES.head(marker)) return site.rebuild_requested_at ? 'pending' : 'tried';
+  await env.SITES.put(marker, String(now()));
+  await env.DB.prepare(
+    `UPDATE sites SET rebuild_requested_at = COALESCE(rebuild_requested_at, ?), rebuild_error = NULL WHERE id = ? AND state = 'ready'`,
+  )
+    .bind(now(), site.id)
+    .run();
+  return 'started';
 }
 
 /** The source tree the current preview was built from. */
 export async function workspaceFor(env: Env, projectId: string) {
   const found = await previewManifest(env, projectId);
   if (!found) return null;
+  const listing = sourceListing(Object.keys(found.manifest.source ?? {}));
+  const healed = listing.complete ? 'none' : await healSource(env, projectId);
   return {
-    ...sourceListing(Object.keys(found.manifest.source ?? {})),
+    ...listing,
+    ...(listing.complete ? {} : { note: healed === 'tried' ? SOURCE_STILL_INCOMPLETE : SOURCE_REFRESHING, refreshing: healed !== 'tried' }),
     siteConfig: found.manifest.siteConfig ?? null,
   };
 }

@@ -540,7 +540,7 @@ async function portalCall(env: Env, ctx: Ctx, token: string, method: string, pat
       unauthorized: 'The agent token is missing, wrong or revoked. Make a new one in the portal: Connect an assistant.',
       not_found: 'No such request or project on this account.',
       not_hosted: 'This project has no hosted preview yet. A developer must set up the site first.',
-      file_not_found: 'That path is not in the current preview. Use a path exactly as workspace_files listed it; if workspace_files says the list is incomplete, do not guess: ask PTech to rebuild the preview.',
+      file_not_found: 'That path is not in the current preview. Use a path exactly as workspace_files listed it; if workspace_files says the list is incomplete, it is being rebuilt: do not guess, call workspace_files again in a few minutes.',
       rate_limited: 'Too many requests for now; try again later.',
       bad_ticket: 'The title (up to 140 characters) and the body are both required; attention must be auto, checked or hands_on; a budget is 1–10000 whole dollars.',
       bad_budget: 'A budget is a whole number of dollars from 1 to 10000, or null for none.',

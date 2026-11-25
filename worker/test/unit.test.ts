@@ -42,7 +42,7 @@ import { billOf } from '../../src/lib/pricing.js';
 import { acceptTranslations, catalogWork, mailBundleSource, orderedCatalog } from '../../src/lib/i18nSync.js';
 import { cleanVerify, normalizeReport, sharedLine } from '../src/runs.ts';
 import { setupFor, slugify, type SetupInput } from '../src/setup.ts';
-import { cleanDeployManifest, cleanSiteSlug, siteView, sourceListing, type SiteRow } from '../src/sites.ts';
+import { cleanDeployManifest, cleanSiteSlug, healSource, siteView, sourceListing, SOURCE_REFRESHING, workspaceFor, type SiteRow } from '../src/sites.ts';
 import { checkUploads, cleanFileName, fileType } from '../src/files.ts';
 import {
   cleanCountry,
@@ -2231,19 +2231,78 @@ test('a source list full of package cache says it is incomplete and lists only s
   const out = sourceListing(liftor);
   assert.deepEqual(out.files, ['.gitignore']);
   assert.equal(out.complete, false);
-  assert.match(out.note ?? '', /rebuild the preview/);
-  assert.match(out.note ?? '', /Do not guess paths/);
 });
 
-test('a normal source list is complete and carries no note', () => {
+test('a normal source list is complete', () => {
   const out = sourceListing(['src/pages/index.astro', 'package.json', 'astro.config.mjs']);
   assert.deepEqual(out.files, ['astro.config.mjs', 'package.json', 'src/pages/index.astro']);
   assert.equal(out.complete, true);
-  assert.equal(out.note, undefined);
 });
 
 test('a list cut at the 500-file cap is incomplete even without cache entries', () => {
   const out = sourceListing(Array.from({ length: 500 }, (_, i) => `src/content/p${i}.md`));
   assert.equal(out.files.length, 500);
   assert.equal(out.complete, false);
+});
+
+/** A site row and an R2 bucket in memory: enough for healSource and workspaceFor. */
+function healEnv(source: Record<string, { sha: string; size: number }>) {
+  const site: Record<string, unknown> = { id: 's1', project_id: 'p1', slug: 'liftor-co', state: 'ready', preview_deploy: 'd1', rebuild_requested_at: null };
+  const objects = new Map<string, string>([['sites/liftor-co/deploys/d1/manifest.json', JSON.stringify({ files: {}, source })]]);
+  const env = {
+    SITES: {
+      head: async (key: string) => (objects.has(key) ? {} : null),
+      get: async (key: string) => (objects.has(key) ? { json: async () => JSON.parse(objects.get(key)!), text: async () => objects.get(key)! } : null),
+      put: async (key: string, value: string) => { objects.set(key, value); },
+    },
+    DB: {
+      prepare: (sql: string) => ({
+        bind: (...args: unknown[]) => ({
+          first: async () => ({ ...site }),
+          run: async () => {
+            if (sql.startsWith('UPDATE sites SET rebuild_requested_at')) site.rebuild_requested_at = site.rebuild_requested_at ?? args[0];
+            return { meta: { changes: 1 } };
+          },
+        }),
+      }),
+    },
+  } as unknown as Parameters<typeof healSource>[0];
+  return { env, site, objects };
+}
+
+const cacheOnly = Object.fromEntries([['.gitignore', { sha: 'a'.repeat(64), size: 41 }], ...Array.from({ length: 499 }, (_, i) => [`.pnpm-store/f/${i}`, { sha: 'b'.repeat(64), size: 1 }])]);
+
+test('an incomplete source list starts a rebuild by itself and tells the agent to check back', async () => {
+  const { env, site } = healEnv(cacheOnly);
+  const out = await workspaceFor(env, 'p1');
+  assert.equal(out?.complete, false);
+  assert.equal(out?.refreshing, true);
+  assert.equal(out?.note, SOURCE_REFRESHING);
+  assert.ok(site.rebuild_requested_at, 'a rebuild is queued without anyone asking');
+});
+
+test('asking again while the rebuild waits still says refreshing, and queues nothing new', async () => {
+  const { env, site } = healEnv(cacheOnly);
+  assert.equal(await healSource(env, 'p1'), 'started');
+  const queuedAt = site.rebuild_requested_at;
+  assert.equal(await healSource(env, 'p1'), 'pending');
+  assert.equal(site.rebuild_requested_at, queuedAt);
+});
+
+test('a rebuild that leaves the same broken deploy does not loop', async () => {
+  const { env, site } = healEnv(cacheOnly);
+  assert.equal(await healSource(env, 'p1'), 'started');
+  site.rebuild_requested_at = null; // a node took it and produced the same content-addressed deploy
+  assert.equal(await healSource(env, 'p1'), 'tried');
+  const out = await workspaceFor(env, 'p1');
+  assert.equal(out?.refreshing, false);
+  assert.match(out?.note ?? '', /still incomplete/);
+});
+
+test('a complete source list never queues a rebuild', async () => {
+  const { env, site } = healEnv({ 'src/pages/index.astro': { sha: 'c'.repeat(64), size: 10 } });
+  const out = await workspaceFor(env, 'p1');
+  assert.equal(out?.complete, true);
+  assert.equal(out?.note, undefined);
+  assert.equal(site.rebuild_requested_at, null);
 });
