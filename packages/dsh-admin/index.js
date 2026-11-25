@@ -16,6 +16,7 @@
  *
  * @module @malipetek/dsh-admin
  */
+import { superagentSection } from './superagent-prompt.mjs';
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { access, link, mkdir, readdir, readFile, realpath, unlink, writeFile } from 'node:fs/promises';
@@ -2053,6 +2054,11 @@ export function apply(ctx) {
    * operator-facing write asks through the Harness approval card and fails
    * closed when nobody answers. The panel's own writes never pass through here.
    */
+  // A superagent conversation's role and write rule ride the system prompt,
+  // so its first chat bubble is the operator's question, not the brief.
+  ctx.inject(['systemPrompt'], (scoped) => {
+    scoped.systemPrompt.section(superagentSection(SUPERAGENT_WORKSPACE));
+  });
   ctx.effect(
     () => ctx.on('tools/pre-execute', async (exec, next) => {
       const ask = writeApproval(exec.name, exec.arguments);

@@ -19,6 +19,7 @@
     "project-operations.mjs",
     "workspace-recovery.mjs",
     "ticket-workspace-source.mjs",
+    "superagent-prompt.mjs",
     "client.js",
     "cordis.patch.yml",
     "icon.svg",

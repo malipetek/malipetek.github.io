@@ -1,35 +1,28 @@
 /**
  * The first prompt and the title of a superagent conversation.
  *
- * The panel and a ticket's "Ask the superagent" both start one, so the role,
- * the scope and the write rule are written once here. Pure: no React, no host.
+ * The panel and the Ask actions on a ticket, project or client all start one.
+ * The role and the write rule are not here: the desktop Host adds them to the
+ * system prompt of every session in the Superagent folder, so the chat opens
+ * on the operator's question. Pure: no React, no host.
  */
 
-const ROLE =
-  'You are the PTech Admin superagent. You manage ptechsolutions.net — tickets, the work queue, nodes, clients, projects and their sites — through the admin tools.';
-
-const RULE =
-  'Read freely. Every write (a status change, a reply, a publish, a project or client change) shows an approval card before it runs: say in one line what you are about to change, then call the tool and let the card be the yes. After it runs, say what you did and what you could not verify.';
-
-/** How far the conversation may go, in the words the operator picked. */
+/** How far the conversation may go: one short line, read by the Host's scope rule. */
 export function scopeLine(scope, label) {
-  if (!scope || scope === 'all') return 'Scope: the whole system.';
-  if (scope.startsWith('t:')) {
-    return `Scope: ticket ${label} (${scope}) — its thread, its runs and its project. Do not change other tickets.`;
-  }
-  if (scope.startsWith('p:')) {
-    return `Scope: the project “${label}” (${scope}). Work only there unless the answer needs the rest of the system.`;
-  }
-  return `Scope: the client “${label}” (${scope}). Work only there unless the answer needs the rest of the system.`;
+  if (!scope || scope === 'all') return '';
+  if (scope.startsWith('t:')) return `Scope: ticket ${label} (${scope})`;
+  if (scope.startsWith('p:')) return `Scope: project “${label}” (${scope})`;
+  return `Scope: client “${label}” (${scope})`;
 }
 
 /**
- * The first prompt of a conversation.
+ * The first prompt of a conversation: the scope line when one was picked, then the ask.
  * @param {{scope?: string, label?: string, text: string}} options - scope id, its human label, and the ask.
- * @returns {string} the brief, verbatim.
+ * @returns {string} the prompt, verbatim.
  */
 export function superagentBrief({ scope = 'all', label = '', text }) {
-  return [ROLE, scopeLine(scope, label), RULE, '', String(text)].join('\n');
+  const line = scopeLine(scope, label);
+  return line ? `${line}\n\n${String(text)}` : String(text);
 }
 
 /**
