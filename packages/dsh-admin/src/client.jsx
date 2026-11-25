@@ -12,6 +12,7 @@
  * @module @malipetek/dsh-admin
  */
 import { createTicketDetailReader, ticketActivity, sendTicketMessage, requestTicketWorkspace, migrateTicketView } from './ticket-chat.mjs';
+import { startSuperagent } from '../superagent-start.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ClientPage, ProjectPage, TicketPage } from '../../admin-ui/src/index.js';
 import { TaskModal, ProjectModal } from '../../admin-ui/src/app.jsx';
@@ -22,6 +23,7 @@ import { AdminContext, useAdminData } from '../../admin-ui/src/store.js';
 import { ConversationGitGraph } from './conversation-git-graph.mjs';
 import { BoardView, ListView } from '../../admin-ui/src/board.jsx';
 import { ClientsView, FleetView, SettingsView } from '../../admin-ui/src/fleet.jsx';
+import { SuperagentView } from '../../admin-ui/src/superagent.jsx';
 import { isSettingsKey, openSettings, settingsSection } from '../../admin-ui/src/settings-link.js';
 import { MarketingView } from '../../admin-ui/src/marketing.jsx';
 import { SeoView } from '../../admin-ui/src/seo.jsx';
@@ -39,6 +41,8 @@ const PANEL_ID = 'admin';
 const NAMESPACE = 'admin';
 /** Reported to the Host on activation, so "did the panel load?" has an answer. */
 const CLIENT_VERSION = '3.9.0';
+/** The conversation the Superagent panel started, so it can be continued. */
+const SUPERAGENT_SESSION = 'pta.superagent.session';
 const DICTIONARY = { title: 'Admin' };
 
 /**
@@ -430,6 +434,31 @@ function apply(ctx) {
     }),
     // The workbench's project destination selects this panel instead of an in-panel copy.
     openProject: (id) => openProjectPage({ id }),
+    /**
+     * The superagent is a Harness session, not a second chat: the Host registers
+     * the admin tools, so the panel starts a conversation with the admin brief
+     * and hands it to the main view. `start` resolves the conversation id.
+     */
+    superagent: {
+      last: () => {
+        try { return globalThis.localStorage?.getItem(SUPERAGENT_SESSION) || null; } catch { return null; }
+      },
+      open: (sessionId) => {
+        if (typeof workspace?.openSession !== 'function') throw new Error('This Harness cannot open a conversation from a plugin.');
+        workspace.openSession(sessionId);
+      },
+      start: ({ brief, title }) => startSuperagent({
+        sessions: ctx.sessions,
+        brief,
+        title,
+        open: (sessionId) => {
+          if (typeof workspace?.openSession === 'function') workspace.openSession(sessionId);
+        },
+        remember: (sessionId) => {
+          try { globalThis.localStorage?.setItem(SUPERAGENT_SESSION, String(sessionId)); } catch { /* ignore */ }
+        },
+      }),
+    },
   };
   const api = (method, path, body) => json(`api ${method} ${path}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`);
   // The public portal (and non-desktop Harness clients) keep the legacy meter.
@@ -912,6 +941,7 @@ function apply(ctx) {
   /** Where Command-K can go, independent of the current panel. */
   const PALETTE_DESTINATIONS = [
     { id: 'admin', label: 'Inbox', hint: 'tickets that want a decision' },
+    { id: 'admin-superagent', label: 'Superagent', hint: 'ask the system, confirm changes' },
     { id: 'admin-work', label: 'Work', hint: 'list and board of all work' },
     { id: 'admin-marketing', label: 'Marketing', hint: 'contacts, email, social' },
     { id: 'admin-seo', label: 'SEO', hint: 'audit, rankings, citations' },
@@ -1287,6 +1317,10 @@ function apply(ctx) {
 
   function WorkEntryIcon(props) {
     return <AdminIcon size={props?.size ?? 16} />;
+  }
+
+  function SuperagentEntryIcon(props) {
+    return <Icon name="spark" size={props?.size ?? 16} />;
   }
 
   function MarketingEntryIcon(props) {
@@ -2336,6 +2370,7 @@ function apply(ctx) {
   /** A deep link arrived before the initial-view timer: it owns the first screen. */
   let handledDeepLink = false;
   const HOME_PANEL = 'admin';
+  const SUPERAGENT_PANEL = 'admin-superagent';
   const WORK_PANEL = 'admin-work';
   const MARKETING_PANEL = 'admin-marketing';
   const SEO_PANEL = 'admin-seo';
@@ -3308,6 +3343,10 @@ function apply(ctx) {
     return <DeskPage><MarketingView /></DeskPage>;
   }
 
+  function SuperagentPage() {
+    return <DeskPage withData><SuperagentView /></DeskPage>;
+  }
+
   function SeoPage() {
     return <DeskPage><SeoView /></DeskPage>;
   }
@@ -3616,11 +3655,13 @@ function apply(ctx) {
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: HOME_PANEL, locale: NAMESPACE }, InboxPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: WORK_PANEL, locale: NAMESPACE }, WorkPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: MARKETING_PANEL, locale: NAMESPACE }, MarketingPage));
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: SUPERAGENT_PANEL, locale: NAMESPACE }, SuperagentPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: SEO_PANEL, locale: NAMESPACE }, SeoPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: CLIENTS_PANEL, locale: NAMESPACE }, ClientsPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: FLEET_PANEL, locale: NAMESPACE }, FleetPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: SETTINGS_PANEL, locale: NAMESPACE }, SettingsPage));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: HOME_PANEL, order: 11, label: 'Inbox' }, InboxEntryIcon));
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: SUPERAGENT_PANEL, order: 11.5, label: 'Superagent' }, SuperagentEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: WORK_PANEL, order: 12, label: 'Work' }, WorkEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: MARKETING_PANEL, order: 13, label: 'Marketing' }, MarketingEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: SEO_PANEL, order: 14, label: 'SEO' }, SeoEntryIcon));

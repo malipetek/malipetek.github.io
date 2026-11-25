@@ -386,6 +386,21 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-fold__more { margin-top: 4px; font-size: var(--aw-type-sm); }
 .aw-run { padding: var(--aw-space-3) 0; }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
+.aw-superagent { max-width: 1000px; }
+.aw-superagent__composer-hint { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); margin-top: -6px; font-size: var(--aw-type-sm); color: var(--ui-text-secondary, var(--aw-ink-muted)); }
+.aw-superagent__prompts { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px); }
+.aw-superagent__prompt { padding: 8px 12px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 999px; background: transparent; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
+.aw-superagent__prompt:hover:not(:disabled) { background: var(--ui-hover, var(--aw-hover)); }
+.aw-superagent__prompt:disabled { opacity: .55; cursor: default; }
+.aw-superagent__composer { display: flex; gap: var(--ui-sp-2, 8px); align-items: flex-end; padding: var(--aw-space-3, 12px) 0; }
+@media (max-width: 620px) {
+  .aw-superagent__composer { flex-direction: column; align-items: stretch; }
+  .aw-superagent__composer-hint { display: none; }
+}
+.aw-superagent__composer textarea { flex: 1; min-width: 0; resize: vertical; }
+.aw-superagent__abilities { display: grid; gap: var(--aw-space-3, 12px); grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); max-width: 900px; }
+.aw-superagent__ability { display: flex; gap: var(--ui-sp-3, 12px); align-items: flex-start; padding: var(--aw-space-3, 12px); border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 10px; }
+.aw-superagent__ability p { margin: 2px 0 0; font-size: var(--aw-type-sm); }
 .aw-pick { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); }
 .aw-pick > input { flex: 1; min-width: 0; }
 .aw-pick > .ui-btn { flex: none; }

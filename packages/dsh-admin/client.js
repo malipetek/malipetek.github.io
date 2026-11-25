@@ -128,6 +128,26 @@ var __awPlugin = (() => {
     }
   }
 
+  // packages/dsh-admin/superagent-start.mjs
+  async function startSuperagent({ sessions, open, brief, title, remember }) {
+    if (typeof sessions?.create !== "function") throw new Error("This host cannot start a conversation.");
+    const sessionId = await sessions.create({});
+    const reference = sessions.retain(sessionId, { source: "workspaceOperation" });
+    try {
+      await reference.ready;
+      const result = await reference.binding.session.prompt([{ type: "text", text: String(brief) }], "queue");
+      if (result?.ok === false) throw new Error(result.error?.message ?? "The conversation rejected the brief.");
+      if (title && typeof reference.binding.session.rename === "function") {
+        await reference.binding.session.rename(title).catch(() => void 0);
+      }
+      if (typeof open === "function") open(sessionId);
+    } finally {
+      reference.release();
+    }
+    if (typeof remember === "function") remember(sessionId);
+    return String(sessionId);
+  }
+
   // host-react:react
   var R = globalThis.__AW_REACT__;
   var { createContext, createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } = R;
@@ -1100,6 +1120,7 @@ var __awPlugin = (() => {
     clients: "M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM22 19v-1a4 4 0 0 0-3-3.9M16 4.1a3 3 0 0 1 0 5.8",
     settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z",
     plus: "M12 5v14M5 12h14",
+    spark: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z",
     search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3",
     refresh: "M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5",
     ticket: "M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z",
@@ -2509,6 +2530,140 @@ ${block(Object.entries(TOKENS))}
           ] }, r.id);
         }) })
       ] }) : null
+    ] });
+  }
+
+  // packages/admin-ui/src/superagent.jsx
+  var ABILITIES = [
+    { icon: "inbox", title: "Read the work", detail: "Tickets with their threads, the queue, nodes, running runs and cost." },
+    { icon: "ticket", title: "Move a ticket", detail: "Approve, decline, set status, reply to the client, write a private note." },
+    { icon: "board", title: "Do the work", detail: "Claim an approved ticket, work it in a worktree, report the run." },
+    { icon: "projects", title: "Change a project", detail: "Create it, set its folder on this machine, clone it, publish its site." },
+    { icon: "clients", title: "Handle clients", detail: "Invite them, attach projects, turn email copies on or off." }
+  ];
+  var EXAMPLES = [
+    "What is stuck, and why?",
+    "Create a project for a new bakery client",
+    "Which previews are waiting to be published?",
+    "Move this week\u2019s reviews to done"
+  ];
+  function SuperagentView() {
+    const { data, host } = useAdmin();
+    const [scope, setScope] = useState("all");
+    const [draft, setDraft] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const [started, setStarted] = useState(null);
+    const superagent = host?.superagent ?? null;
+    const available = Boolean(superagent?.start);
+    const last = superagent?.last?.() ?? null;
+    const scopes = useMemo(() => [
+      { value: "all", label: "All system" },
+      ...(data.projects ?? []).map((p) => ({ value: `p:${p.id}`, label: p.name })),
+      ...(data.clients ?? []).map((c) => ({ value: `c:${c.id}`, label: c.name || c.email }))
+    ], [data.projects, data.clients]);
+    const scopeLabel = scopes.find((s) => s.value === scope)?.label ?? "All system";
+    const brief = (text) => {
+      const focus = scope === "all" ? "Scope: the whole system." : `Scope: ${scope.startsWith("p:") ? "the project" : "the client"} \u201C${scopeLabel}\u201D (${scope}). Work only there unless the answer needs the rest of the system.`;
+      return [
+        "You are the PTech Admin superagent. You manage ptechsolutions.net \u2014 tickets, the work queue, nodes, clients, projects and their sites \u2014 through the admin tools.",
+        focus,
+        "Read freely. Before any write (a status change, a reply, publishing, a project or client change), say exactly what you will do and wait for a yes. Say what you did, and what you could not verify.",
+        "",
+        text
+      ].join("\n");
+    };
+    const start = async (text = draft) => {
+      const content = String(text).trim();
+      if (!content || !available || busy) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const id = await superagent.start({
+          brief: brief(content),
+          title: `Superagent \xB7 ${scope === "all" ? "whole system" : scopeLabel}`
+        });
+        setStarted(id);
+        setDraft("");
+      } catch (e) {
+        setError(e?.message ?? "The superagent could not start.");
+      } finally {
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace aw-superagent", children: [
+      /* @__PURE__ */ jsx(UiStyles, {}),
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: "Superagent",
+          subtitle: "Ask the system, then watch it work. Every form action has a tool here, and every write waits for your yes.",
+          actions: last ? /* @__PURE__ */ jsx(Button, { onClick: () => superagent.open(last), children: "Continue last conversation" }) : null
+        }
+      ),
+      /* @__PURE__ */ jsxs(FilterBar, { label: "Superagent scope", children: [
+        /* @__PURE__ */ jsx("label", { className: "aw-field__label", htmlFor: "aw-superagent-scope", children: "Scope" }),
+        /* @__PURE__ */ jsx("select", { id: "aw-superagent-scope", value: scope, onChange: (e) => setScope(e.target.value), children: scopes.map((s) => /* @__PURE__ */ jsx("option", { value: s.value, children: s.label }, s.value)) }),
+        /* @__PURE__ */ jsx(MetaChip, { children: available ? "Connected" : "Not in this host" })
+      ] }),
+      /* @__PURE__ */ jsxs("form", { className: "aw-superagent__composer", onSubmit: (e) => {
+        e.preventDefault();
+        void start();
+      }, children: [
+        /* @__PURE__ */ jsx(
+          "textarea",
+          {
+            rows: 3,
+            value: draft,
+            disabled: !available || busy,
+            "aria-label": "Ask the superagent",
+            placeholder: available ? "Ask for an outcome\u2026" : "The superagent runs in the desktop app",
+            onChange: (e) => setDraft(e.target.value),
+            onKeyDown: (e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                void start();
+              }
+            }
+          }
+        ),
+        /* @__PURE__ */ jsx(Button, { type: "submit", kind: "primary", disabled: !available || busy || !draft.trim(), disabledReason: available ? void 0 : "The superagent runs in the desktop app, where the admin tools are registered.", children: busy ? "Starting\u2026" : "Start conversation" })
+      ] }),
+      available ? /* @__PURE__ */ jsxs("p", { className: "aw-superagent__composer-hint", children: [
+        /* @__PURE__ */ jsx("kbd", { children: "\u2318\u21B5" }),
+        " starts it and opens the conversation in the main view."
+      ] }) : null,
+      !available ? /* @__PURE__ */ jsx(
+        Empty,
+        {
+          title: "The superagent runs in the desktop app",
+          hint: "It starts a conversation with the admin tools registered by the Host, so every step is a tool call you can watch and confirm. This page keeps the forms."
+        }
+      ) : null,
+      error ? /* @__PURE__ */ jsx("p", { className: "aw-callout", role: "alert", children: error }) : null,
+      started ? /* @__PURE__ */ jsxs("p", { className: "aw-callout", role: "status", children: [
+        "Started in a conversation",
+        host?.superagent?.open ? " \u2014 opened in the main view" : ". Find it in the session list",
+        "."
+      ] }) : null,
+      /* @__PURE__ */ jsx("div", { className: "aw-superagent__prompts", children: EXAMPLES.map((example) => /* @__PURE__ */ jsx(
+        "button",
+        {
+          type: "button",
+          className: "aw-superagent__prompt",
+          disabled: !available || busy,
+          onClick: () => setDraft(example),
+          children: example
+        },
+        example
+      )) }),
+      /* @__PURE__ */ jsx("section", { className: "aw-superagent__abilities", "aria-label": "What the superagent can do", children: ABILITIES.map((ability) => /* @__PURE__ */ jsxs("article", { className: "aw-superagent__ability", children: [
+        /* @__PURE__ */ jsx(Icon, { name: ability.icon, size: 16 }),
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("strong", { children: ability.title }),
+          /* @__PURE__ */ jsx("p", { className: "aw-muted", children: ability.detail })
+        ] })
+      ] }, ability.title)) })
     ] });
   }
 
@@ -11586,6 +11741,21 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-fold__more { margin-top: 4px; font-size: var(--aw-type-sm); }
 .aw-run { padding: var(--aw-space-3) 0; }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
+.aw-superagent { max-width: 1000px; }
+.aw-superagent__composer-hint { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); margin-top: -6px; font-size: var(--aw-type-sm); color: var(--ui-text-secondary, var(--aw-ink-muted)); }
+.aw-superagent__prompts { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px); }
+.aw-superagent__prompt { padding: 8px 12px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 999px; background: transparent; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
+.aw-superagent__prompt:hover:not(:disabled) { background: var(--ui-hover, var(--aw-hover)); }
+.aw-superagent__prompt:disabled { opacity: .55; cursor: default; }
+.aw-superagent__composer { display: flex; gap: var(--ui-sp-2, 8px); align-items: flex-end; padding: var(--aw-space-3, 12px) 0; }
+@media (max-width: 620px) {
+  .aw-superagent__composer { flex-direction: column; align-items: stretch; }
+  .aw-superagent__composer-hint { display: none; }
+}
+.aw-superagent__composer textarea { flex: 1; min-width: 0; resize: vertical; }
+.aw-superagent__abilities { display: grid; gap: var(--aw-space-3, 12px); grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); max-width: 900px; }
+.aw-superagent__ability { display: flex; gap: var(--ui-sp-3, 12px); align-items: flex-start; padding: var(--aw-space-3, 12px); border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 10px; }
+.aw-superagent__ability p { margin: 2px 0 0; font-size: var(--aw-type-sm); }
 .aw-pick { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); }
 .aw-pick > input { flex: 1; min-width: 0; }
 .aw-pick > .ui-btn { flex: none; }
@@ -16631,6 +16801,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         return /* @__PURE__ */ jsx(FleetView, {});
       case "clients":
         return /* @__PURE__ */ jsx(ClientsView, {});
+      case "superagent":
+        return /* @__PURE__ */ jsx(SuperagentView, {});
       case "settings":
         return /* @__PURE__ */ jsx(SettingsView, {});
       default:
@@ -17494,6 +17666,7 @@ ${question.text ?? ""}`)) {
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
   var CLIENT_VERSION = "3.9.0";
+  var SUPERAGENT_SESSION = "pta.superagent.session";
   var DICTIONARY = { title: "Admin" };
   var STATUS_TINT = {
     stalled: "var(--dsw-alias-state-danger-primary, #e5534b)",
@@ -17776,7 +17949,39 @@ ${question.text ?? ""}`)) {
         remote: ctx.remote
       }),
       // The workbench's project destination selects this panel instead of an in-panel copy.
-      openProject: (id) => openProjectPage({ id })
+      openProject: (id) => openProjectPage({ id }),
+      /**
+       * The superagent is a Harness session, not a second chat: the Host registers
+       * the admin tools, so the panel starts a conversation with the admin brief
+       * and hands it to the main view. `start` resolves the conversation id.
+       */
+      superagent: {
+        last: () => {
+          try {
+            return globalThis.localStorage?.getItem(SUPERAGENT_SESSION) || null;
+          } catch {
+            return null;
+          }
+        },
+        open: (sessionId) => {
+          if (typeof workspace?.openSession !== "function") throw new Error("This Harness cannot open a conversation from a plugin.");
+          workspace.openSession(sessionId);
+        },
+        start: ({ brief, title }) => startSuperagent({
+          sessions: ctx.sessions,
+          brief,
+          title,
+          open: (sessionId) => {
+            if (typeof workspace?.openSession === "function") workspace.openSession(sessionId);
+          },
+          remember: (sessionId) => {
+            try {
+              globalThis.localStorage?.setItem(SUPERAGENT_SESSION, String(sessionId));
+            } catch {
+            }
+          }
+        })
+      }
     };
     const api = (method, path, body) => json(`api ${method} ${path}${body === void 0 ? "" : ` ${JSON.stringify(body)}`}`);
     api.conversationMeter = desktop;
@@ -18173,6 +18378,7 @@ ${question.text ?? ""}`)) {
     }
     const PALETTE_DESTINATIONS = [
       { id: "admin", label: "Inbox", hint: "tickets that want a decision" },
+      { id: "admin-superagent", label: "Superagent", hint: "ask the system, confirm changes" },
       { id: "admin-work", label: "Work", hint: "list and board of all work" },
       { id: "admin-marketing", label: "Marketing", hint: "contacts, email, social" },
       { id: "admin-seo", label: "SEO", hint: "audit, rankings, citations" },
@@ -18540,6 +18746,9 @@ ${question.text ?? ""}`)) {
     }
     function WorkEntryIcon(props) {
       return /* @__PURE__ */ jsx(AdminIcon, { size: props?.size ?? 16 });
+    }
+    function SuperagentEntryIcon(props) {
+      return /* @__PURE__ */ jsx(Icon, { name: "spark", size: props?.size ?? 16 });
     }
     function MarketingEntryIcon(props) {
       return /* @__PURE__ */ jsx(MarketingGlyph, { size: props?.size ?? 16 });
@@ -19455,6 +19664,7 @@ ${question.text ?? ""}`)) {
     const CLIENT_VISIBLE_STATUSES = /* @__PURE__ */ new Set(["approved", "declined", "done"]);
     let handledDeepLink = false;
     const HOME_PANEL = "admin";
+    const SUPERAGENT_PANEL = "admin-superagent";
     const WORK_PANEL = "admin-work";
     const MARKETING_PANEL = "admin-marketing";
     const SEO_PANEL = "admin-seo";
@@ -20305,6 +20515,9 @@ ${question.text ?? ""}`)) {
     function MarketingPage() {
       return /* @__PURE__ */ jsx(DeskPage, { children: /* @__PURE__ */ jsx(MarketingView, {}) });
     }
+    function SuperagentPage() {
+      return /* @__PURE__ */ jsx(DeskPage, { withData: true, children: /* @__PURE__ */ jsx(SuperagentView, {}) });
+    }
     function SeoPage() {
       return /* @__PURE__ */ jsx(DeskPage, { children: /* @__PURE__ */ jsx(SeoView, {}) });
     }
@@ -20595,11 +20808,13 @@ ${question.text ?? ""}`)) {
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: HOME_PANEL, locale: NAMESPACE }, InboxPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: WORK_PANEL, locale: NAMESPACE }, WorkPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: MARKETING_PANEL, locale: NAMESPACE }, MarketingPage));
+    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: SUPERAGENT_PANEL, locale: NAMESPACE }, SuperagentPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: SEO_PANEL, locale: NAMESPACE }, SeoPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: CLIENTS_PANEL, locale: NAMESPACE }, ClientsPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: FLEET_PANEL, locale: NAMESPACE }, FleetPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: SETTINGS_PANEL, locale: NAMESPACE }, SettingsPage));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: HOME_PANEL, order: 11, label: "Inbox" }, InboxEntryIcon));
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: SUPERAGENT_PANEL, order: 11.5, label: "Superagent" }, SuperagentEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: WORK_PANEL, order: 12, label: "Work" }, WorkEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: MARKETING_PANEL, order: 13, label: "Marketing" }, MarketingEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: SEO_PANEL, order: 14, label: "SEO" }, SeoEntryIcon));
