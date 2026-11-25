@@ -38,6 +38,7 @@
 import { existsSync, mkdirSync, cpSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { sourceManifest } from './source.mjs';
 import { homedir, hostname, platform } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { ACCOUNT, DSH_FAMILY, DSH_MODELS, EXECUTORS, agentProfileReady, fallbackChain, findSessionLog, isQuotaError, routeTask, run } from './executors.mjs';
@@ -413,38 +414,6 @@ function deployManifest(dir) {
   return { files, total };
 }
 
-const SOURCE_LIMITS = { files: 500, fileBytes: 512 * 1024, totalBytes: 20 * 1024 * 1024 };
-
-/**
- * The worktree's source files, same content-addressed shape: this is what a
- * client's own agent reads through the workspace tools, so the portal can
- * show it the site without git access. Text-sized files only; the build
- * output dir, node_modules and .git are not source.
- */
-function sourceManifest(dir, outputRel) {
-  const files = [];
-  let total = 0;
-  const skip = new Set(['.git', 'node_modules', '.malipetek-files', '.astro', outputRel].filter(Boolean));
-  const walk = (root, prefix) => {
-    for (const entry of readdirSync(root, { withFileTypes: true })) {
-      // In a worktree `.git` is a file pointing at the main repo, not a folder.
-      if (entry.name === '.git') continue;
-      if (entry.isDirectory()) {
-        if (!skip.has(entry.name)) walk(join(root, entry.name), prefix ? `${prefix}/${entry.name}` : entry.name);
-        continue;
-      }
-      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-      const buf = readFileSync(join(root, entry.name));
-      if (buf.length > SOURCE_LIMITS.fileBytes || buf.subarray(0, 4096).includes(0)) continue;
-      total += buf.length;
-      files.push({ path: rel, sha256: sha256File(buf), size: buf.length, buf });
-      if (files.length > SOURCE_LIMITS.files || total > SOURCE_LIMITS.totalBytes) return;
-    }
-  };
-  try { walk(dir, ''); } catch { /* a missing source dir is not fatal */ }
-  return files.slice(0, SOURCE_LIMITS.files);
-}
-
 /**
  * Build the worktree's site (the repo's own malipetek.site.json says how) and
  * deploy the output as the preview. Returns a line for the summary, never
@@ -478,7 +447,8 @@ async function buildAndDeploy(config, claim, dir, head, steps) {
       steps.push('error', `Site output over the deploy limits (${files.length} files, ${Math.round(total / 1048576)} MB)`);
       return { note: 'site output over the deploy limits' };
     }
-    const source = sourceManifest(dir, output);
+    const { files: source, dropped } = sourceManifest(dir, output);
+    if (dropped) steps.push('error', `Source list over the limit: ${dropped} file(s) left out of what a client's agent can read`);
     const made = await api(config, 'POST', `/node/sites/${claim.site}/deploys`, {
       files: files.map(({ buf, ...f }) => f),
       source: source.map(({ buf, ...f }) => f),
