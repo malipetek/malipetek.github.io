@@ -15686,7 +15686,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         project.kind === "new" ? /* @__PURE__ */ jsx(Field, { label: "Done by hand today", hint: "Optional", children: /* @__PURE__ */ jsx("textarea", { rows: 2, maxLength: 1200, value: draft.manual ?? "", onChange: (event) => setDraft({ ...draft, manual: event.target.value }) }) }) : /* @__PURE__ */ jsx(Field, { label: "Where the code lives", hint: "Context only; connect the actual repository in Setup.", children: /* @__PURE__ */ jsx("textarea", { rows: 2, maxLength: 1200, value: draft.where ?? "", onChange: (event) => setDraft({ ...draft, where: event.target.value }) }) }),
         /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
           /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => setEditing(false), children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { type: "submit", kind: "primary", disabled: state.busy || !payload, title: saveDisabledReason, children: state.busy ? "Saving\u2026" : "Save brief" })
+          /* @__PURE__ */ jsx(Button, { type: "submit", disabled: state.busy || !payload, title: saveDisabledReason, children: state.busy ? "Saving\u2026" : "Save brief" })
         ] })
       ] }) : /* @__PURE__ */ jsxs("dl", { className: "aw-project__brief", children: [
         /* @__PURE__ */ jsx("dt", { children: "What it is" }),

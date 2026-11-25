@@ -346,7 +346,7 @@ function Brief({ project, refresh, setTab }) {
             : <Field label="Where the code lives" hint="Context only; connect the actual repository in Setup."><textarea rows={2} maxLength={1200} value={draft.where ?? ''} onChange={event => setDraft({ ...draft, where: event.target.value })} /></Field>}
           <div className="aw-project__actions">
             <Button disabled={state.busy} onClick={() => setEditing(false)}>Cancel</Button>
-            <Button type="submit" kind="primary" disabled={state.busy || !payload} title={saveDisabledReason}>
+            <Button type="submit" disabled={state.busy || !payload} title={saveDisabledReason}>
               {state.busy ? 'Saving…' : 'Save brief'}
             </Button>
           </div>
