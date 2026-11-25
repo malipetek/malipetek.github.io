@@ -22,13 +22,13 @@ var __awPlugin = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // packages/dsh-admin/src/client.jsx
+  // dsh-admin/src/client.jsx
   var client_exports = {};
   __export(client_exports, {
     default: () => client_default
   });
 
-  // packages/dsh-admin/src/ticket-chat.mjs
+  // dsh-admin/src/ticket-chat.mjs
   function linkedTicketDetail(detail, ticketId, sessionId) {
     return typeof sessionId === "string" && sessionId !== "" && detail?.ticket?.id === ticketId && Array.isArray(detail.runs) && detail.runs.some((run) => run?.session_id === sessionId) ? detail : null;
   }
@@ -128,7 +128,7 @@ var __awPlugin = (() => {
     }
   }
 
-  // packages/dsh-admin/superagent-start.mjs
+  // dsh-admin/superagent-start.mjs
   async function startSuperagent({ sessions, open, brief, title, preset, cwd, remember }) {
     if (typeof sessions?.create !== "function") throw new Error("This host cannot start a conversation.");
     const sessionId = await sessions.create(cwd ? { cwd } : {});
@@ -156,7 +156,7 @@ var __awPlugin = (() => {
   var R = globalThis.__AW_REACT__;
   var { createContext, createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } = R;
 
-  // packages/admin-ui/src/run-evidence.js
+  // admin-ui/src/run-evidence.js
   var sortedRuns = (runs = []) => [...runs].sort((a, b) => Number(b.id) - Number(a.id));
   var selectedRun = (runs, id) => id == null ? sortedRuns(runs)[0] ?? null : runs.find((run) => String(run.id) === String(id)) ?? null;
   var recordedPatch = (run) => [run?.diff, run?.diff_stat].find((text) => typeof text === "string" && text.trim()) ?? null;
@@ -172,7 +172,7 @@ var __awPlugin = (() => {
     return null;
   }
 
-  // packages/admin-ui/src/request-state.js
+  // admin-ui/src/request-state.js
   function createStepRequest(api, runId, publish) {
     let state = { steps: null, error: null }, after = 0, generation = 0, inflight = null;
     return {
@@ -240,7 +240,7 @@ var __awPlugin = (() => {
     return { access, identity, results: Object.fromEntries(paths.map((path, i) => [path, results[i]])) };
   }
 
-  // packages/admin-ui/src/store.js
+  // admin-ui/src/store.js
   var AdminContext = createContext(null);
   var useAdmin = () => useContext(AdminContext);
   var EMPTY = {
@@ -362,7 +362,7 @@ var __awPlugin = (() => {
     return { seconds, running, open };
   }
 
-  // src/lib/pricing.js
+  // ../src/lib/pricing.js
   var HOURLY_USD = 100;
   var ATTENTION = [
     {
@@ -414,7 +414,7 @@ var __awPlugin = (() => {
     return `${Math.floor(s / 3600)}h ${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}m`;
   }
 
-  // packages/admin-ui/src/format.js
+  // admin-ui/src/format.js
   var chargeOf = (t) => billOf({
     humanSeconds: t.human_seconds ?? 0,
     aiMicroUsd: t.ai_micro_usd ?? 0,
@@ -541,7 +541,7 @@ var __awPlugin = (() => {
     };
   }
 
-  // packages/admin-ui/src/ui/layer.js
+  // admin-ui/src/ui/layer.js
   var layers = [];
   var isTop = (token) => layers[layers.length - 1] === token;
   function useLayer() {
@@ -573,7 +573,7 @@ var __awPlugin = (() => {
     return R2.createElement(type, key === void 0 ? rest : { ...rest, key }, ...children);
   }
 
-  // packages/admin-ui/src/ui/menu.jsx
+  // admin-ui/src/ui/menu.jsx
   var cx = (...parts) => parts.filter(Boolean).join(" ");
   function Menu({ items, at, anchor, onClose, label = "Actions" }) {
     const ref = useRef(null);
@@ -718,7 +718,7 @@ var __awPlugin = (() => {
     );
   }
 
-  // packages/admin-ui/src/ui.jsx
+  // admin-ui/src/ui.jsx
   var modalSeq = 0;
   var cx2 = (...parts) => parts.filter(Boolean).join(" ");
   function useMedia(query) {
@@ -1124,6 +1124,7 @@ var __awPlugin = (() => {
     clients: "M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM22 19v-1a4 4 0 0 0-3-3.9M16 4.1a3 3 0 0 1 0 5.8",
     settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z",
     plus: "M12 5v14M5 12h14",
+    arrowUp: "M12 19V5M6 11l6-6 6 6",
     spark: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z",
     search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3",
     refresh: "M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5",
@@ -1150,7 +1151,7 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: WEIGHT[name] ?? 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", focusable: "false", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] ?? PATHS.list }) });
   }
 
-  // packages/admin-ui/src/row-navigation.mjs
+  // admin-ui/src/row-navigation.mjs
   var NEXT_KEYS = /* @__PURE__ */ new Set(["j", "ArrowDown"]);
   var PREV_KEYS = /* @__PURE__ */ new Set(["k", "ArrowUp"]);
   function nextRowIndex(current, count, key) {
@@ -1163,7 +1164,7 @@ var __awPlugin = (() => {
     return null;
   }
 
-  // packages/admin-ui/src/ui/tokens.js
+  // admin-ui/src/ui/tokens.js
   var TYPE = Object.freeze({ xs: 11, sm: 12, md: 13, lg: 15, xl: 18 });
   var SPACE = Object.freeze([0, 4, 8, 12, 16, 24, 32]);
   var RADII = Object.freeze({ sm: 4, md: 6, lg: 8 });
@@ -1305,7 +1306,7 @@ ${block(Object.entries(TOKENS))}
 }
 `;
 
-  // packages/admin-ui/src/ui/css.js
+  // admin-ui/src/ui/css.js
   var PRIMITIVES_CSS = `
 .ui {
   font-family: var(--ui-font);
@@ -1555,7 +1556,7 @@ ${block(Object.entries(TOKENS))}
 `;
   var UI_CSS = TOKENS_CSS + PRIMITIVES_CSS;
 
-  // packages/admin-ui/src/ui/state.js
+  // admin-ui/src/ui/state.js
   var S = (tone2, label, extra = {}) => Object.freeze({ tone: tone2, label, ...extra });
   var STATE_MAP = Object.freeze({
     // tickets
@@ -1603,7 +1604,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // packages/admin-ui/src/ui/behavior.js
+  // admin-ui/src/ui/behavior.js
   function tableKeyAction(e, current, count) {
     if (!e || e.metaKey || e.ctrlKey || e.altKey) return null;
     if (e.key === "ContextMenu" || e.shiftKey && e.key === "F10") return { type: "menu" };
@@ -1643,7 +1644,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // packages/admin-ui/src/ui/primitives.jsx
+  // admin-ui/src/ui/primitives.jsx
   var storage = () => typeof window === "undefined" ? null : window.localStorage;
   function UiStyles() {
     return /* @__PURE__ */ jsx("style", { "data-ui-styles": "v2", children: UI_CSS });
@@ -1918,7 +1919,7 @@ ${block(Object.entries(TOKENS))}
   }
   var HOST_MODES = Object.freeze(["embedded", "standalone"]);
 
-  // packages/admin-ui/src/board.jsx
+  // admin-ui/src/board.jsx
   function useFilters() {
     const { api, boardProject, setBoardProject } = useAdmin();
     const [kind, setKind] = useState("all");
@@ -2537,7 +2538,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/superagent-brief.js
+  // admin-ui/src/superagent-brief.js
   var ROLE = "You are the PTech Admin superagent. You manage ptechsolutions.net \u2014 tickets, the work queue, nodes, clients, projects and their sites \u2014 through the admin tools.";
   var RULE = "Read freely. Every write (a status change, a reply, a publish, a project or client change) shows an approval card before it runs: say in one line what you are about to change, then call the tool and let the card be the yes. After it runs, say what you did and what you could not verify.";
   function scopeLine(scope, label) {
@@ -2565,12 +2566,12 @@ ${block(Object.entries(TOKENS))}
     return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}\u2026`;
   }
 
-  // packages/admin-ui/src/superagent.jsx
+  // admin-ui/src/superagent.jsx
   var ABILITIES = [
     { icon: "inbox", title: "Read the work", detail: "Tickets with their threads, the queue, nodes, running runs and cost." },
     { icon: "ticket", title: "Move a ticket", detail: "Approve, decline, set status, reply to the client, write a private note." },
     { icon: "board", title: "Do the work", detail: "Claim an approved ticket, work it in a worktree, report the run." },
-    { icon: "projects", title: "Change a project", detail: "Create it, set its folder on this machine, clone it, publish its site." },
+    { icon: "folder", title: "Change a project", detail: "Create it, set its folder on this machine, clone it, publish its site." },
     { icon: "clients", title: "Handle clients", detail: "Invite them, attach projects, turn email copies on or off." }
   ];
   var EXAMPLES = [
@@ -2648,48 +2649,56 @@ ${block(Object.entries(TOKENS))}
         setBusy(false);
       }
     };
-    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace aw-superagent aw-superagent--chat", children: [
+    const hasDraft = draft.trim().length > 0;
+    const firstLine = (text) => String(text ?? "").split("\n")[0];
+    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace aw-sa", children: [
       /* @__PURE__ */ jsx(UiStyles, {}),
-      /* @__PURE__ */ jsxs("div", { className: "aw-superagent__head", children: [
-        /* @__PURE__ */ jsx(
-          PageHeader,
-          {
-            title: "Superagent",
-            subtitle: "Ask the system, then watch it work. Every write waits for your yes.",
-            actions: last && recent.length === 0 ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => superagent.open(last), children: "Continue last" }) : null
-          }
-        ),
-        /* @__PURE__ */ jsxs(FilterBar, { label: "Superagent scope", children: [
-          /* @__PURE__ */ jsx("label", { className: "aw-field__label", htmlFor: "aw-superagent-scope", children: "Scope" }),
-          /* @__PURE__ */ jsx("select", { id: "aw-superagent-scope", value: scope, onChange: (e) => setScope(e.target.value), children: scopes.map((s) => /* @__PURE__ */ jsx("option", { value: s.value, children: s.label }, s.value)) }),
-          /* @__PURE__ */ jsx(MetaChip, { children: available ? "Connected" : "Not in this host" })
-        ] })
+      /* @__PURE__ */ jsxs("header", { className: "aw-sa__bar", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-sa__bar-title", children: [
+          /* @__PURE__ */ jsx(Icon, { name: "spark", size: 16 }),
+          /* @__PURE__ */ jsx("h1", { children: "Superagent" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Every write waits for your yes." })
+        ] }),
+        last && recent.length === 0 ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => superagent.open(last), children: "Continue last" }) : null
       ] }),
-      /* @__PURE__ */ jsxs("div", { className: "aw-superagent__thread", "aria-live": "polite", children: [
-        /* @__PURE__ */ jsxs("article", { className: "aw-superagent__turn aw-superagent__turn--agent", children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-superagent__who", children: "Superagent" }),
-          briefing === null ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Reading the system\u2026" }) : briefing.length === 0 ? /* @__PURE__ */ jsx("p", { children: "Nothing needs you. No stalled work, no requests waiting, every node online." }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx("p", { children: "Right now:" }),
-            /* @__PURE__ */ jsx("ul", { className: "aw-superagent__lines", children: briefing.map((line) => /* @__PURE__ */ jsxs("li", { children: [
-              /* @__PURE__ */ jsx(Dot, { state: line.tone }),
-              /* @__PURE__ */ jsx("button", { type: "button", className: "aw-superagent__line", onClick: () => open(line.go), children: line.text })
-            ] }, line.text)) }),
-            /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => ask(`Right now: ${briefing.map((line) => line.text).join(", ")}. What is stuck, and why?`), children: "Ask about this" })
+      /* @__PURE__ */ jsx("div", { className: "aw-sa__scroll", "aria-live": "polite", children: /* @__PURE__ */ jsxs("div", { className: "aw-sa__col", children: [
+        /* @__PURE__ */ jsxs("article", { className: "aw-sa__turn", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-sa__avatar", children: /* @__PURE__ */ jsx(Icon, { name: "spark", size: 14 }) }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-sa__body", children: [
+            /* @__PURE__ */ jsx("span", { className: "aw-sa__who", children: "Superagent" }),
+            briefing === null ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Reading the system\u2026" }) : briefing.length === 0 ? /* @__PURE__ */ jsx("p", { children: "Nothing needs you. No stalled work, no requests waiting, every node online. Ask for an outcome below." }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+              /* @__PURE__ */ jsx("p", { children: "Right now:" }),
+              /* @__PURE__ */ jsx("ul", { className: "aw-sa__lines", children: briefing.map((line) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-sa__line", onClick: () => open(line.go), children: [
+                /* @__PURE__ */ jsx(Dot, { state: line.tone }),
+                /* @__PURE__ */ jsx("span", { children: line.text }),
+                /* @__PURE__ */ jsx(Icon, { name: "chevron", size: 14 })
+              ] }) }, line.text)) }),
+              /* @__PURE__ */ jsx("div", { className: "aw-sa__actions", children: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => ask(`Right now: ${briefing.map((line) => line.text).join(", ")}. What is stuck, and why?`), children: "Ask about this" }) })
+            ] })
           ] })
         ] }),
-        recent.length > 0 ? /* @__PURE__ */ jsxs("article", { className: "aw-superagent__turn aw-superagent__turn--agent", children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-superagent__who", children: "Earlier conversations" }),
-          /* @__PURE__ */ jsx("ul", { className: "aw-superagent__recent-list", children: recent.map((row) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-superagent__recent-row", onClick: () => superagent.open(row.id), children: [
-            /* @__PURE__ */ jsx("span", { className: "aw-superagent__recent-title", children: row.title }),
-            /* @__PURE__ */ jsx("span", { className: "aw-muted", children: row.running ? "working now" : `${ago(Math.floor(row.updatedAt / 1e3))} ago` })
-          ] }) }, row.id)) }),
-          recentTotal > recent.length ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-            "Newest ",
-            recent.length,
-            " of ",
-            recentTotal,
-            ". The Superagent workspace lists the rest."
-          ] }) : null
+        recent.length > 0 ? /* @__PURE__ */ jsxs("article", { className: "aw-sa__turn", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-sa__avatar", children: /* @__PURE__ */ jsx(Icon, { name: "list", size: 14 }) }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-sa__body", children: [
+            /* @__PURE__ */ jsx("span", { className: "aw-sa__who", children: "Earlier conversations" }),
+            /* @__PURE__ */ jsx("ul", { className: "aw-sa__recent", children: recent.map((row) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-sa__recent-row", onClick: () => superagent.open(row.id), children: [
+              /* @__PURE__ */ jsx("span", { className: "aw-sa__recent-title", children: firstLine(row.title).replace(/^Superagent · /, "") }),
+              row.running ? /* @__PURE__ */ jsxs("span", { className: "aw-sa__live", children: [
+                /* @__PURE__ */ jsx(Dot, { state: "ok" }),
+                "working now"
+              ] }) : /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                ago(Math.floor(row.updatedAt / 1e3)),
+                " ago"
+              ] })
+            ] }) }, row.id)) }),
+            recentTotal > recent.length ? /* @__PURE__ */ jsxs("p", { className: "aw-muted aw-sa__note", children: [
+              "Newest ",
+              recent.length,
+              " of ",
+              recentTotal,
+              ". The Superagent workspace lists the rest."
+            ] }) : null
+          ] })
         ] }) : null,
         !available ? /* @__PURE__ */ jsx(
           Empty,
@@ -2698,20 +2707,9 @@ ${block(Object.entries(TOKENS))}
             hint: "It starts a conversation with the admin tools registered by the Host, so every step is a tool call you can watch and confirm. This page keeps the forms."
           }
         ) : null,
-        /* @__PURE__ */ jsx("div", { className: "aw-superagent__prompts", children: EXAMPLES.map((example) => /* @__PURE__ */ jsx(
-          "button",
-          {
-            type: "button",
-            className: "aw-superagent__prompt",
-            disabled: !available || busy,
-            onClick: () => ask(example),
-            children: example
-          },
-          example
-        )) }),
-        /* @__PURE__ */ jsxs("details", { className: "aw-superagent__abilities-more", children: [
+        /* @__PURE__ */ jsxs("details", { className: "aw-sa__abilities", children: [
           /* @__PURE__ */ jsx("summary", { children: "What it can do" }),
-          /* @__PURE__ */ jsx("div", { className: "aw-superagent__abilities", children: ABILITIES.map((ability) => /* @__PURE__ */ jsxs("article", { className: "aw-superagent__ability", children: [
+          /* @__PURE__ */ jsx("div", { className: "aw-sa__ability-grid", children: ABILITIES.map((ability) => /* @__PURE__ */ jsxs("article", { className: "aw-sa__ability", children: [
             /* @__PURE__ */ jsx(Icon, { name: ability.icon, size: 16 }),
             /* @__PURE__ */ jsxs("div", { children: [
               /* @__PURE__ */ jsx("strong", { children: ability.title }),
@@ -2725,35 +2723,57 @@ ${block(Object.entries(TOKENS))}
           host?.superagent?.open ? " \u2014 opened in the main view" : ". Find it in the session list",
           "."
         ] }) : null
-      ] }),
-      /* @__PURE__ */ jsxs("form", { className: "aw-superagent__composer", onSubmit: (e) => {
-        e.preventDefault();
-        void start();
-      }, children: [
-        /* @__PURE__ */ jsx(
-          "textarea",
-          {
-            ref: composer,
-            rows: 2,
-            value: draft,
-            disabled: !available || busy,
-            "aria-label": "Ask the superagent",
-            placeholder: available ? "Ask for an outcome\u2026" : "The superagent runs in the desktop app",
-            onChange: (e) => setDraft(e.target.value),
-            onKeyDown: (e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                e.preventDefault();
-                void start();
+      ] }) }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-sa__dock", children: [
+        !hasDraft && available ? /* @__PURE__ */ jsx("div", { className: "aw-sa__prompts", children: EXAMPLES.map((example) => /* @__PURE__ */ jsx("button", { type: "button", className: "aw-sa__prompt", disabled: busy, onClick: () => ask(example), children: example }, example)) }) : null,
+        /* @__PURE__ */ jsxs("form", { className: "aw-sa__card", onSubmit: (e) => {
+          e.preventDefault();
+          void start();
+        }, children: [
+          /* @__PURE__ */ jsx(
+            "textarea",
+            {
+              ref: composer,
+              rows: 1,
+              value: draft,
+              disabled: !available || busy,
+              "aria-label": "Ask the superagent",
+              placeholder: available ? "Ask for an outcome \u2014 a ticket moved, a project set up, a preview published\u2026" : "The superagent runs in the desktop app",
+              onChange: (e) => setDraft(e.target.value),
+              onKeyDown: (e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  void start();
+                }
               }
             }
-          }
-        ),
-        /* @__PURE__ */ jsx(Button, { type: "submit", kind: "primary", disabled: !available || busy || !draft.trim(), disabledReason: available ? void 0 : "The superagent runs in the desktop app, where the admin tools are registered.", children: busy ? "Starting\u2026" : "Send" })
+          ),
+          /* @__PURE__ */ jsxs("div", { className: "aw-sa__tools", children: [
+            /* @__PURE__ */ jsxs("label", { className: "aw-sa__scope", children: [
+              /* @__PURE__ */ jsx("span", { className: "aw-sr-only", children: "Scope" }),
+              /* @__PURE__ */ jsx(Icon, { name: "globe", size: 14 }),
+              /* @__PURE__ */ jsx("select", { "aria-label": "Superagent scope", value: scope, onChange: (e) => setScope(e.target.value), disabled: !available, children: scopes.map((s) => /* @__PURE__ */ jsx("option", { value: s.value, children: s.label }, s.value)) })
+            ] }),
+            /* @__PURE__ */ jsx("span", { className: "aw-sa__mode", title: "Conversations run under Workspace Write: every change shows an approval card first.", children: "Asks before writes" }),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                type: "submit",
+                className: "aw-sa__send",
+                "aria-label": "Start conversation",
+                title: available ? "Start conversation (Enter)" : "The superagent runs in the desktop app, where the admin tools are registered.",
+                disabled: !available || busy || !hasDraft,
+                children: /* @__PURE__ */ jsx(Icon, { name: busy ? "refresh" : "arrowUp", size: 16 })
+              }
+            )
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx("p", { className: "aw-sa__foot", children: "Enter to send \xB7 Shift+Enter for a new line \xB7 opens as a conversation in the main view" })
       ] })
     ] });
   }
 
-  // src/lib/attachments.js
+  // ../src/lib/attachments.js
   var FILE_LIMITS = {
     /** Per file. */
     bytes: 10 * 1024 * 1024,
@@ -2801,7 +2821,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // src/lib/locales.js
+  // ../src/lib/locales.js
   var LOCALES = [
     { code: "en-US", native: "English (United States)", english: "English (United States)", m2m: "en" },
     { code: "am", native: "\u12A0\u121B\u122D\u129B", english: "Amharic", m2m: "am", beta: true },
@@ -2848,7 +2868,7 @@ ${block(Object.entries(TOKENS))}
     return typeof code === "string" && /^en(-|$)/i.test(code);
   }
 
-  // packages/admin-ui/src/superagent-ask.jsx
+  // admin-ui/src/superagent-ask.jsx
   function AskSuperagentButton({ scope, label, ask, title }) {
     const { host, notify } = useAdmin();
     const superagent = host?.superagent ?? null;
@@ -2870,7 +2890,7 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", busy: asking, title, onClick: () => void run(), children: "Ask the superagent" });
   }
 
-  // packages/admin-ui/src/markdown.js
+  // admin-ui/src/markdown.js
   var MAX_INLINE_DEPTH = 4;
   function markdownInline(input, depth = 0) {
     const text = String(input ?? "");
@@ -2953,7 +2973,7 @@ ${block(Object.entries(TOKENS))}
     return blocks;
   }
 
-  // packages/admin-ui/src/review.jsx
+  // admin-ui/src/review.jsx
   var portalTicketUrl = (id) => `https://ptechsolutions.net/portal/admin#ticket=${id}`;
   function newestDiff(runs) {
     return [...runs ?? []].sort((a, b) => b.id - a.id).find((run) => recordedPatch(run)) ?? null;
@@ -3204,7 +3224,7 @@ ${block(Object.entries(TOKENS))}
     });
   }
 
-  // packages/admin-ui/src/submit-state.js
+  // admin-ui/src/submit-state.js
   function createSubmission() {
     let busy = false, pending2 = null;
     const queueOnly = async () => {
@@ -3242,7 +3262,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // packages/admin-ui/src/mention-delivery.js
+  // admin-ui/src/mention-delivery.js
   var visibleRecipients = (recipients, internal) => recipients.filter((person) => !internal || person.memberType === "trusted_developer");
   async function deliverMentions({ api, projectId, ticketId, messageId, recipientUserIds, requestId }) {
     if (!recipientUserIds?.length) return { ok: true, deliveries: [] };
@@ -3263,7 +3283,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // packages/admin-ui/src/mention-recipients.jsx
+  // admin-ui/src/mention-recipients.jsx
   function MentionRecipients({ api, projectId, onChange, disabled = false, internal = false }) {
     const [open, setOpen] = useState(false);
     const [state, setState] = useState({ projectId: null, internal: null, recipients: [], loading: true, error: false });
@@ -3322,7 +3342,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/ticket-assistant.mjs
+  // admin-ui/src/ticket-assistant.mjs
   var ASSISTANT_BADGE_MAX = 24;
   function assistantName(ticket) {
     const value = ticket?.assistant_app;
@@ -3341,7 +3361,7 @@ ${block(Object.entries(TOKENS))}
     return name === null ? null : `Filed by the client's assistant (${name}) through PTech's MCP server`;
   }
 
-  // packages/admin-ui/src/ticket.jsx
+  // admin-ui/src/ticket.jsx
   var PRIMARY = {
     new: [
       ["approved", "Approve", "primary"],
@@ -4215,7 +4235,7 @@ ${block(Object.entries(TOKENS))}
     );
   }
 
-  // packages/admin-ui/src/ui/injected-styles.js
+  // admin-ui/src/ui/injected-styles.js
   function InjectedStyles({ id, css }) {
     useLayoutEffect(() => {
       if (typeof document === "undefined") return void 0;
@@ -4232,7 +4252,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // packages/admin-ui/src/health.jsx
+  // admin-ui/src/health.jsx
   var tone = (status) => status === "ok" ? "ok" : status === "fail" ? "bad" : "warn";
   function CheckRow({ check }) {
     return /* @__PURE__ */ jsxs("li", { className: cx2("aw-health__row", `aw-health__row--${tone(check.status)}`), children: [
@@ -4331,7 +4351,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/machine.jsx
+  // admin-ui/src/machine.jsx
   var CONSENT_VERSION = 1;
   var LEND = {
     "dsh-go": { label: "Flash", plan: "OpenCode Go \xB7 DeepSeek v4.1 flash", note: "counts against the OpenCode Go plan\u2019s limits" },
@@ -4700,7 +4720,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/toolbox.jsx
+  // admin-ui/src/toolbox.jsx
   var TARGETS = [
     { value: "claude", label: "Claude Code" },
     { value: "opencode", label: "OpenCode" }
@@ -4888,7 +4908,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/post-length.js
+  // admin-ui/src/post-length.js
   var POST_MAX = { x: 280, linkedin: 3e3 };
   var LINK = /https?:\/\/\S+/g;
   var postMax = (channel) => POST_MAX[channel] ?? 3e3;
@@ -4898,7 +4918,7 @@ ${block(Object.entries(TOKENS))}
     return text.replace(LINK, (url) => "x".repeat(Math.min(url.length, 23))).length;
   }
 
-  // packages/admin-ui/src/settings-link.js
+  // admin-ui/src/settings-link.js
   var SETTINGS_SECTION_IDS = Object.freeze(["queue", "machine", "portal", "marketing", "seo", "account"]);
   var ALIASES = {
     "work-queue": "queue",
@@ -4943,7 +4963,7 @@ ${block(Object.entries(TOKENS))}
     return () => window.removeEventListener(EVENT, listener);
   }
 
-  // packages/admin-ui/src/marketing.jsx
+  // admin-ui/src/marketing.jsx
   var CONTACT_STATUSES = ["new", "queued", "contacted", "replied", "paused", "opted_out", "bounced"];
   var MESSAGE_STATUSES = ["draft", "scheduled", "sending", "sent", "failed", "cancelled"];
   var CHANNELS = [
@@ -8034,7 +8054,7 @@ ${block(Object.entries(TOKENS))}
     );
   }
 
-  // packages/admin-ui/src/seo.jsx
+  // admin-ui/src/seo.jsx
   var DAY = 864e5;
   var SEO_INSPECTOR_W = 320;
   var SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
@@ -10035,7 +10055,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/fleet.jsx
+  // admin-ui/src/fleet.jsx
   var pct3 = (a, b) => b ? Math.round(a / b * 100) : 0;
   var capabilityLabel = (id, caps) => caps.find((c) => c.id === id)?.label ?? ({
     "os:darwin": "macOS",
@@ -11504,7 +11524,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/styles.js
+  // admin-ui/src/styles.js
   var LIGHT2 = PALETTE.light;
   var STYLES = `
 .aw {
@@ -11877,47 +11897,64 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-fold__more { margin-top: 4px; font-size: var(--aw-type-sm); }
 .aw-run { padding: var(--aw-space-3) 0; }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
-.aw-superagent { max-width: 1000px; }
-.aw-superagent--chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.aw-superagent__head { flex: none; }
-.aw-superagent__thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--aw-space-3, 12px); max-width: 760px; padding: var(--aw-space-2, 8px) 0 var(--aw-space-3, 12px); }
-.aw-superagent__turn { display: flex; flex-direction: column; gap: 6px; }
-.aw-superagent__turn p { margin: 0; line-height: 1.55; }
-.aw-superagent__who { font-size: var(--aw-type-sm); font-weight: 600; color: var(--ui-text-secondary, var(--aw-ink-muted)); }
-.aw-superagent__lines { display: flex; flex-direction: column; gap: 4px; list-style: none; margin: 0; padding: 0; }
-.aw-superagent__lines li { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); }
-.aw-superagent__line { padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; cursor: pointer; text-align: left; }
-.aw-superagent__line:hover { text-decoration: underline; }
-.aw-superagent__abilities-more { margin-top: var(--aw-space-2, 8px); }
-.aw-superagent__abilities-more > summary { cursor: pointer; font-size: var(--aw-type-sm); color: var(--ui-text-secondary, var(--aw-ink-muted)); }
-.aw-superagent--chat .aw-superagent__composer { flex: none; margin-top: 0; border-top: 1px solid var(--ui-border, var(--aw-hairline)); padding: var(--aw-space-3, 12px) 0 0; max-width: 760px; }
-.aw-brief { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); padding: var(--aw-space-3, 12px); border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 10px; background: var(--ui-surface, var(--aw-surface-raised)); }
-.aw-brief__head { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-2, 8px); }
-.aw-brief__title { margin: 0; font-size: var(--aw-type-sm); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ui-text-secondary, var(--aw-ink-muted)); }
-.aw-brief__list { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px) var(--aw-space-4, 16px); list-style: none; margin: 0; padding: 0; }
-.aw-brief__list li { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); }
-.aw-brief__link { padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
-.aw-brief__link:hover { text-decoration: underline; }
-.aw-superagent__composer-hint { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); margin-top: -6px; font-size: var(--aw-type-sm); color: var(--ui-text-secondary, var(--aw-ink-muted)); }
-.aw-superagent__recent { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); }
-.aw-superagent__recent-list { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 10px; overflow: hidden; }
-.aw-superagent__recent-list li + li { border-top: 1px solid var(--ui-border, var(--aw-hairline)); }
-.aw-superagent__recent-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--aw-space-3, 12px); width: 100%; padding: 10px var(--aw-space-3, 12px); border: 0; background: none; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
-.aw-superagent__recent-row:hover { background: var(--ui-hover, var(--aw-hover)); }
-.aw-superagent__recent-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-superagent__prompts { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px); }
-.aw-superagent__prompt { padding: 8px 12px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 999px; background: transparent; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
-.aw-superagent__prompt:hover:not(:disabled) { background: var(--ui-hover, var(--aw-hover)); }
-.aw-superagent__prompt:disabled { opacity: .55; cursor: default; }
-.aw-superagent__composer { display: flex; gap: var(--ui-sp-2, 8px); align-items: flex-end; padding: var(--aw-space-3, 12px) 0; }
-@media (max-width: 620px) {
-  .aw-superagent__composer { flex-direction: column; align-items: stretch; }
-  .aw-superagent__composer-hint { display: none; }
+/* Superagent \u2014 laid out like the app's chat: a centred column, the thread scrolls, the composer card stays at the foot. */
+.aw-sa { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.aw-sa__bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--aw-space-3); min-height: 48px; padding: 0 var(--aw-space-5); border-bottom: 1px solid var(--aw-hairline); }
+.aw-sa__bar-title { display: flex; align-items: center; gap: var(--aw-space-2); min-width: 0; color: var(--aw-ink); }
+.aw-sa__bar-title h1 { margin: 0; font-size: var(--aw-type-lg); font-weight: 600; }
+.aw-sa__bar-title .aw-muted { font-size: var(--aw-type-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-sa__scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.aw-sa__col, .aw-sa__dock { width: 100%; max-width: 860px; margin: 0 auto; padding: 0 var(--aw-space-5); box-sizing: border-box; }
+.aw-sa__col { display: flex; flex-direction: column; gap: var(--aw-space-6); padding-top: var(--aw-space-6); padding-bottom: var(--aw-space-5); }
+.aw-sa__turn { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--aw-space-3); align-items: start; }
+.aw-sa__avatar { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--aw-radius-pill); background: var(--aw-accent-wash); color: var(--aw-accent); }
+.aw-sa__body { display: flex; flex-direction: column; gap: var(--aw-space-2); min-width: 0; font-size: var(--aw-type-lg); line-height: 1.6; color: var(--aw-ink); }
+.aw-sa__body p { margin: 0; }
+.aw-sa__who { font-size: var(--aw-type-sm); font-weight: 600; line-height: 28px; color: var(--aw-ink-2); }
+.aw-sa__lines { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; }
+.aw-sa__line { display: flex; align-items: center; gap: var(--aw-space-2); width: 100%; margin: 0 calc(-1 * var(--aw-space-2)); padding: var(--aw-space-1) var(--aw-space-2); border: 0; border-radius: var(--aw-radius-lg); background: none; color: var(--aw-ink); font: inherit; cursor: pointer; text-align: left; }
+.aw-sa__line > span:not(.aw-dot) { flex: 1; }
+.aw-sa__line > svg { color: var(--aw-ink-3); opacity: 0; transition: opacity .12s; }
+.aw-sa__line:hover { background: var(--aw-hover); }
+.aw-sa__line:hover > svg, .aw-sa__line:focus-visible > svg { opacity: 1; }
+.aw-sa__actions { display: flex; gap: var(--aw-space-2); padding-top: var(--aw-space-1); }
+.aw-sa__recent { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; }
+.aw-sa__recent-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--aw-space-4); width: 100%; margin: 0 calc(-1 * var(--aw-space-2)); padding: var(--aw-space-2); border: 0; border-radius: var(--aw-radius-lg); background: none; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-md); cursor: pointer; text-align: left; }
+.aw-sa__recent-row:hover { background: var(--aw-hover); }
+.aw-sa__recent-row > .aw-muted, .aw-sa__live { flex: none; font-size: var(--aw-type-sm); }
+.aw-sa__live { display: inline-flex; align-items: center; gap: var(--aw-space-1); color: var(--aw-ink-2); }
+.aw-sa__recent-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-sa__note { font-size: var(--aw-type-sm); }
+.aw-sa__abilities { margin-left: 40px; }
+.aw-sa__abilities > summary { cursor: pointer; font-size: var(--aw-type-sm); color: var(--aw-ink-2); }
+.aw-sa__ability-grid { display: grid; gap: var(--aw-space-3); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: var(--aw-space-3); }
+.aw-sa__ability { display: flex; gap: var(--aw-space-3); align-items: flex-start; padding: var(--aw-space-3); border: 1px solid var(--aw-hairline); border-radius: var(--aw-radius-lg); }
+.aw-sa__ability p { margin: 2px 0 0; font-size: var(--aw-type-sm); }
+.aw-sa__dock { flex: none; display: flex; flex-direction: column; gap: var(--aw-space-2); padding-bottom: var(--aw-space-3); }
+.aw-sa__prompts { display: flex; flex-wrap: wrap; gap: var(--aw-space-2); }
+.aw-sa__prompt { padding: 6px var(--aw-space-3); border: 1px solid var(--aw-hairline); border-radius: var(--aw-radius-pill); background: transparent; color: var(--aw-ink-2); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; }
+.aw-sa__prompt:hover:not(:disabled) { background: var(--aw-hover); color: var(--aw-ink); }
+.aw-sa__prompt:disabled { opacity: .55; cursor: default; }
+.aw-sa__card { display: flex; flex-direction: column; padding-top: var(--aw-space-2); border-radius: 28px; background: color-mix(in srgb, var(--aw-ink) 8%, var(--aw-surface)); box-shadow: 0 0 0 .5px color-mix(in srgb, var(--aw-ink) 14%, transparent), 0 4px 16px color-mix(in srgb, black 4%, transparent); }
+.aw-sa__card:focus-within { box-shadow: 0 0 0 1px color-mix(in srgb, var(--aw-ink) 24%, transparent), 0 4px 16px color-mix(in srgb, black 4%, transparent); }
+.aw-sa__card textarea { field-sizing: content; min-height: 48px; max-height: 240px; padding: var(--aw-space-1) var(--aw-space-4) 0; border: 0; outline: 0; background: transparent; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-lg); line-height: 1.6; resize: none; box-shadow: none; }
+.aw-sa__card textarea::placeholder { color: var(--aw-ink-3); }
+.aw-sa__tools { display: flex; align-items: center; gap: var(--aw-space-2); padding: var(--aw-space-1) var(--aw-space-2) var(--aw-space-2) var(--aw-space-3); }
+.aw-sa__scope { display: inline-flex; align-items: center; gap: var(--aw-space-1); min-width: 0; height: 28px; padding: 0 var(--aw-space-2); border-radius: var(--aw-radius-lg); color: var(--aw-ink-2); }
+.aw-sa__scope:hover { background: var(--aw-hover); }
+.aw-sa__scope select { max-width: 220px; min-width: 0; height: 28px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: var(--aw-type-md); text-overflow: ellipsis; cursor: pointer; box-shadow: none; }
+.aw-sa__mode { font-size: var(--aw-type-sm); color: var(--aw-ink-3); white-space: nowrap; }
+.aw-sa__send { display: grid; place-items: center; flex: none; width: 34px; height: 34px; margin-left: auto; border: 0; border-radius: var(--aw-radius-pill); background: var(--aw-accent); color: var(--aw-accent-ink); cursor: pointer; }
+.aw-sa__send:disabled { opacity: .4; cursor: default; }
+.aw-sa__send:not(:disabled):hover { filter: brightness(1.08); }
+.aw-sa__foot { margin: 0; text-align: center; font-size: var(--aw-type-xs); color: var(--aw-ink-3); }
+@media (max-width: 640px) {
+  .aw-sa__bar-title .aw-muted, .aw-sa__mode, .aw-sa__foot { display: none; }
+  .aw-sa__col, .aw-sa__dock { padding-left: var(--aw-space-3); padding-right: var(--aw-space-3); }
+  .aw-sa__abilities { margin-left: 0; }
+  .aw-sa__prompts { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .aw-sa__prompt { flex: none; white-space: nowrap; }
 }
-.aw-superagent__composer textarea { flex: 1; min-width: 0; resize: vertical; }
-.aw-superagent__abilities { display: grid; gap: var(--aw-space-3, 12px); grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); max-width: 900px; }
-.aw-superagent__ability { display: flex; gap: var(--ui-sp-3, 12px); align-items: flex-start; padding: var(--aw-space-3, 12px); border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 10px; }
-.aw-superagent__ability p { margin: 2px 0 0; font-size: var(--aw-type-sm); }
 .aw-pick { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); }
 .aw-pick > input { flex: 1; min-width: 0; }
 .aw-pick > .ui-btn { flex: none; }
@@ -13078,7 +13115,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 
 `;
 
-  // packages/admin-ui/src/solutions.js
+  // admin-ui/src/solutions.js
   var SOLUTION_CATALOG = [
     {
       id: "web",
@@ -13298,7 +13335,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }
   ];
 
-  // packages/admin-ui/src/project-solutions.jsx
+  // admin-ui/src/project-solutions.jsx
   var pathFor = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
   var CLIENT_PORTAL_URL = "https://ptechsolutions.net/portal";
   var SHORT = {
@@ -13561,7 +13598,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
   }
 
-  // packages/admin-ui/src/project-model.js
+  // admin-ui/src/project-model.js
   function briefPayload(raw = {}, kind = "existing") {
     const answer = (value) => typeof value === "string" ? value.trim() : "";
     const what = answer(raw.what), goal = answer(raw.goal);
@@ -13653,7 +13690,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     };
   }
 
-  // packages/admin-ui/src/project-world-model.mjs
+  // admin-ui/src/project-world-model.mjs
   var ISO_COS = Math.cos(Math.PI / 6);
   var ISO_SIN = 0.5;
   var DEFAULT_ISO = Object.freeze({
@@ -14589,7 +14626,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return { count: items.length, text: parts.join(" \xB7 "), items: rows.map(({ stamp, ...rest }) => rest) };
   }
 
-  // packages/admin-ui/src/project-world.jsx
+  // admin-ui/src/project-world.jsx
   var STATE_SPEC = {
     ok: { state: "ok", tone: "ok", key: "world.state.ok", fallback: "Healthy", live: false },
     active: { state: "running", tone: "info", key: "world.state.active", fallback: "Running", live: true },
@@ -15511,7 +15548,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // packages/admin-ui/src/project-styles.js
+  // admin-ui/src/project-styles.js
   var project_styles_default = `
 .aw-project { max-width: var(--aw-measure-table, 1180px); margin: 0 auto; width: 100%; min-width: 0; box-sizing: border-box; }
 /* Allow header meta chips and slug to wrap cleanly on narrow widths without clipping glyphs. */
@@ -15689,7 +15726,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 }
 `;
 
-  // packages/admin-ui/src/project.jsx
+  // admin-ui/src/project.jsx
   var errorText2 = (error) => error?.message || String(error || "Request failed");
   var pathFor2 = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
   var TABS = ["Overview", "Work", "Setup"];
@@ -16864,7 +16901,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // packages/admin-ui/src/workbench.js
+  // admin-ui/src/workbench.js
   function projectCreationRequest(input, access) {
     const { name, slug, kind, code, repo, brief } = input;
     if (access?.superAdmin) return { path: "/admin/projects", body: { name, slug, kind, code, repo } };
@@ -16906,7 +16943,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return ["inbox", "board", "list"].includes(key) || key.startsWith("p:") || key.startsWith("t:");
   }
 
-  // packages/admin-ui/src/app.jsx
+  // admin-ui/src/app.jsx
   var isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   function useWorkbenchActions({ api, reload, setAsk, onNotify }) {
     const [toast, setToast] = useState(null);
@@ -17413,7 +17450,7 @@ ${question.text ?? ""}`)) {
     ] });
   }
 
-  // packages/dsh-admin/native-project.mjs
+  // dsh-admin/native-project.mjs
   async function openLocalProject({ projectId, mode = "session", appId }, { info, sessions, workspace, remote = {} }) {
     const local = await info({ projectId });
     if (!local.exists || !local.path) throw new Error("Configure an existing local checkout first.");
@@ -17437,7 +17474,7 @@ ${question.text ?? ""}`)) {
     return unwrap(await remote.session.openWorkspacePath({ path: local.path, ...mode === "reveal" ? { action: "reveal" } : appId ? { application: appId } : {} }));
   }
 
-  // packages/dsh-admin/src/sidebar-presentation.mjs
+  // dsh-admin/src/sidebar-presentation.mjs
   function sidebarTicketLabel(ticket) {
     return ticket.title?.trim() || ticket.title_en?.trim() || `Ticket #${ticket.id}`;
   }
@@ -17445,7 +17482,7 @@ ${question.text ?? ""}`)) {
     return `Open ${run.kind === "task" ? "my task" : "client ticket"} #${run.ticketId}`;
   }
 
-  // packages/dsh-admin/src/conversation-meter.mjs
+  // dsh-admin/src/conversation-meter.mjs
   var LOCK = "ptech-admin:conversation-time";
   var IDLE_MS = 6e4;
   var BATCH = 20;
@@ -17640,7 +17677,7 @@ ${question.text ?? ""}`)) {
     };
   }
 
-  // packages/dsh-admin/src/conversation-git-graph.mjs
+  // dsh-admin/src/conversation-git-graph.mjs
   async function graphEligibility(sessionId, signal, fetcher = globalThis.fetch) {
     try {
       const response = await fetcher("api/admin/command", {
@@ -17694,7 +17731,7 @@ ${question.text ?? ""}`)) {
     return createElement(SessionGraph, { key: sessionId, sessionId });
   }
 
-  // packages/dsh-admin/src/panel-transport.mjs
+  // dsh-admin/src/panel-transport.mjs
   function panelTransport(legacy, { desktop = false, fetcher = globalThis.fetch } = {}) {
     async function quiet(line) {
       try {
@@ -17716,7 +17753,7 @@ ${question.text ?? ""}`)) {
     return Object.assign(desktop ? quiet : (line) => legacy(line), { quiet });
   }
 
-  // packages/dsh-admin/src/conversation-history.mjs
+  // dsh-admin/src/conversation-history.mjs
   var byNewest = (a, b) => b.at - a.at || (b.kind === "run") - (a.kind === "run") || b.item.id - a.item.id;
   function taskHistoryEvents(messages = [], runs = []) {
     return [
@@ -17750,7 +17787,7 @@ ${question.text ?? ""}`)) {
     return groups;
   }
 
-  // packages/dsh-admin/src/conversation-history.jsx
+  // dsh-admin/src/conversation-history.jsx
   var clock2 = (unix) => unix ? new Date(unix * 1e3).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
   function ConversationHistory({ api, ticketId, openTicket }) {
     const [{ ticket, messages, runs, loading, error }] = useTicket(api, ticketId);
@@ -17833,7 +17870,7 @@ ${question.text ?? ""}`)) {
     ] });
   }
 
-  // packages/dsh-admin/src/client.jsx
+  // dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
   var CLIENT_VERSION = "3.9.0";
@@ -20551,7 +20588,7 @@ ${question.text ?? ""}`)) {
         return;
       }
       if (target === "inbox") {
-        ctx.layout?.selectPanel?.(SUPERAGENT_PANEL);
+        ctx.layout?.selectPanel?.(HOME_PANEL);
         return;
       }
       if (target === "board" || target === "list" || target === "work") {
@@ -20944,7 +20981,7 @@ ${question.text ?? ""}`)) {
       }
       if (route === "inbox") {
         handledDeepLink = true;
-        ctx.layout?.selectPanel?.(SUPERAGENT_PANEL);
+        ctx.layout?.selectPanel?.(HOME_PANEL);
         return true;
       }
       if (route === "work" || route === "board" || route === "list") {
@@ -21030,15 +21067,47 @@ ${question.text ?? ""}`)) {
       return () => style.remove();
     }, "admin: native styles");
     ctx.effect(() => {
-      const timer = setTimeout(() => {
+      let touched = false;
+      let settled = false;
+      let shown = false;
+      const land = () => {
         try {
-          if (window.location.hash !== "" || handledDeepLink) return;
+          if (window.location.hash !== "" || handledDeepLink || touched) return;
           ctx.layout?.selectPanel?.(SUPERAGENT_PANEL);
         } catch {
         }
-      }, 900);
-      return () => clearTimeout(timer);
-    }, "admin: initial inbox view");
+      };
+      const touch = (event) => {
+        if (event.isTrusted) touched = true;
+      };
+      window.addEventListener("pointerdown", touch, true);
+      window.addEventListener("keydown", touch, true);
+      const timer = setTimeout(land, 900);
+      const panelInfo = ctx.layout?.panelInfo;
+      const unwatch = typeof panelInfo?.subscribe === "function" ? panelInfo.subscribe(() => {
+        if (settled || touched) return;
+        const active = panelInfo.getSnapshot?.().activePanelId ?? null;
+        if (active === SUPERAGENT_PANEL) {
+          shown = true;
+          return;
+        }
+        if (shown && active === null) {
+          settled = true;
+          land();
+        }
+      }) : () => {
+      };
+      const stop = setTimeout(() => {
+        settled = true;
+      }, 6e4);
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(stop);
+        unwatch();
+        window.removeEventListener("pointerdown", touch, true);
+        window.removeEventListener("keydown", touch, true);
+      };
+    }, "admin: initial superagent view");
     ctx.slots.inject("sidebar.panellist", () => syncClientRows());
     ctx.slots.inject("sidebar.workspaces.section", () => {
       sectionAvailable = true;

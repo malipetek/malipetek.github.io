@@ -3213,7 +3213,7 @@ function apply(ctx) {
     if (target.startsWith('t:')) { void openTicketRun({ id: Number(target.slice(2)) }); return; }
     if (target.startsWith('p:')) { openProjectPage({ id: target.slice(2) }); return; }
     if (target.startsWith('c:')) { openClientPage({ id: target.slice(2) }); return; }
-    if (target === 'inbox') { ctx.layout?.selectPanel?.(SUPERAGENT_PANEL); return; }
+    if (target === 'inbox') { ctx.layout?.selectPanel?.(HOME_PANEL); return; }
     if (target === 'board' || target === 'list' || target === 'work') { ctx.layout?.selectPanel?.(WORK_PANEL); return; }
     if (target === 'marketing') { ctx.layout?.selectPanel?.(MARKETING_PANEL); return; }
     if (target === 'seo') { ctx.layout?.selectPanel?.(SEO_PANEL); return; }
@@ -3628,7 +3628,7 @@ function apply(ctx) {
     }
     if (route === 'inbox') {
       handledDeepLink = true;
-      ctx.layout?.selectPanel?.(SUPERAGENT_PANEL);
+      ctx.layout?.selectPanel?.(HOME_PANEL);
       return true;
     }
     if (route === 'work' || route === 'board' || route === 'list') {
@@ -3722,20 +3722,43 @@ function apply(ctx) {
     document.head.append(style);
     return () => style.remove();
   }, 'admin: native styles');
-  // A cold launch lands on Inbox. A deep link that arrived first (a
+  // A cold launch lands on Superagent. A deep link that arrived first (a
   // ticket, a client, a sign-in) wins, and a renderer reload of the same
-  // window simply comes back here.
+  // window simply comes back here. The shell restores its last session once
+  // the session list is ready (seconds later), which would replace the panel;
+  // until the operator touches anything, that restore hands the view back.
   ctx.effect(() => {
-    const timer = setTimeout(() => {
+    let touched = false;
+    let settled = false;
+    let shown = false;
+    const land = () => {
       try {
-        if (window.location.hash !== '' || handledDeepLink) return;
+        if (window.location.hash !== '' || handledDeepLink || touched) return;
         ctx.layout?.selectPanel?.(SUPERAGENT_PANEL);
       } catch {
         // The host may not have the panel registry ready yet; keep the conversation.
       }
-    }, 900);
-    return () => clearTimeout(timer);
-  }, 'admin: initial inbox view');
+    };
+    const touch = (event) => { if (event.isTrusted) touched = true; };
+    window.addEventListener('pointerdown', touch, true);
+    window.addEventListener('keydown', touch, true);
+    const timer = setTimeout(land, 900);
+    const panelInfo = ctx.layout?.panelInfo;
+    const unwatch = typeof panelInfo?.subscribe === 'function'
+      ? panelInfo.subscribe(() => {
+        if (settled || touched) return;
+        const active = panelInfo.getSnapshot?.().activePanelId ?? null;
+        if (active === SUPERAGENT_PANEL) { shown = true; return; }
+        if (shown && active === null) { settled = true; land(); }
+      })
+      : () => {};
+    const stop = setTimeout(() => { settled = true; }, 60_000);
+    return () => {
+      clearTimeout(timer); clearTimeout(stop); unwatch();
+      window.removeEventListener('pointerdown', touch, true);
+      window.removeEventListener('keydown', touch, true);
+    };
+  }, 'admin: initial superagent view');
   // Each client gets a row of its own under Admin.
   ctx.slots.inject('sidebar.panellist', () => syncClientRows());
   // The PTech Admin workspace browser declares `sidebar.workspaces.section`.
