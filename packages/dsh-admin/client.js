@@ -17632,7 +17632,7 @@ ${question.text ?? ""}`)) {
   function AdminIcon({ size = 16 }) {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: "M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v7h-4z" }) });
   }
-  var inject = ["slots", "sessions", "layout", "remote", "remote.commands", "sidebarRightTabs", "sidebarRight"];
+  var inject = ["slots", "sessions", "layout", "remote", "remote.commands", "sidebarRightTabs", "sidebarRight", "remote.directoryPicker"];
   function apply(ctx) {
     migrateTicketView(globalThis.localStorage);
     const desktop = globalThis.location?.protocol === "dsh-app:" && globalThis.location?.hostname === "app";
@@ -17745,18 +17745,18 @@ ${question.text ?? ""}`)) {
     const localProject = (action, args) => json(`project-local ${action} ${JSON.stringify(args)}`);
     const folderPicker = () => {
       try {
-        return ctx.get?.("directoryPicker") ?? null;
+        return ctx.remote?.directoryPicker ?? null;
       } catch {
         return null;
       }
     };
     const host = {
       version: false ? void 0 : "1.1.0",
-      canPickDirectory: true,
+      canPickDirectory: Boolean(folderPicker()?.pick),
       pickDirectory: async () => {
-        const capability = folderPicker()?.capability?.();
-        if (capability?.kind !== "native") throw new Error("No native folder picker is available in this host.");
-        return capability.pick(new AbortController().signal);
+        const picker = folderPicker();
+        if (typeof picker?.pick !== "function") throw new Error("No native folder picker is available in this host.");
+        return picker.pick();
       },
       command,
       json,

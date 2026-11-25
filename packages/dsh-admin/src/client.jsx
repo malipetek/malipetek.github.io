@@ -246,7 +246,7 @@ function AdminIcon({ size = 16 }) {
   );
 }
 
-const inject = ['slots', 'sessions', 'layout', 'remote', 'remote.commands', 'sidebarRightTabs', 'sidebarRight'];
+const inject = ['slots', 'sessions', 'layout', 'remote', 'remote.commands', 'sidebarRightTabs', 'sidebarRight', 'remote.directoryPicker'];
 
 function apply(ctx) {
   migrateTicketView(globalThis.localStorage);
@@ -404,18 +404,18 @@ function apply(ctx) {
   }
   /** One stable object so React effects that depend on it do not re-run. */
   const localProject = (action, args) => json(`project-local ${action} ${JSON.stringify(args)}`);
-  // Resolved lazily: directoryPicker is optional in a host, and requiring it in
-  // the inject list would keep the whole admin from loading where it is absent.
+  // The shell's directory picker, reached through the remote namespace the
+  // workspace picker uses; it is absent in hosts that cannot open one.
   const folderPicker = () => {
-    try { return ctx.get?.('directoryPicker') ?? null; } catch { return null; }
+    try { return ctx.remote?.directoryPicker ?? null; } catch { return null; }
   };
   const host = {
     version: typeof __PTECH_ADMIN_VERSION__ === 'undefined' ? undefined : __PTECH_ADMIN_VERSION__,
-    canPickDirectory: true,
+    canPickDirectory: Boolean(folderPicker()?.pick),
     pickDirectory: async () => {
-      const capability = folderPicker()?.capability?.();
-      if (capability?.kind !== 'native') throw new Error('No native folder picker is available in this host.');
-      return capability.pick(new AbortController().signal);
+      const picker = folderPicker();
+      if (typeof picker?.pick !== 'function') throw new Error('No native folder picker is available in this host.');
+      return picker.pick();
     },
     command, json, gitGraph, conversation, openTicket: (target) => openTicketRun({ id: target?.ticketId ?? target }),
     projectLocalInfo: (args) => localProject('info', args),
