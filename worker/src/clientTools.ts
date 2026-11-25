@@ -458,6 +458,32 @@ export const OWNER_TOOLS: ClientTool[] = [
     readOnly: false,
   },
   {
+    name: 'owner_projects',
+    title: 'The portfolio',
+    description: 'Every project: its kind, its site and whether that site is live, and the people on it.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    readOnly: true,
+  },
+  {
+    name: 'owner_project_work',
+    title: 'A project’s work',
+    description: 'Every request on one project with its status, newest first. Read it before filing or publishing anything on that project.',
+    inputSchema: {
+      type: 'object',
+      properties: { project_id: { type: 'string', description: 'Project id from owner_projects.' } },
+      required: ['project_id'],
+      additionalProperties: false,
+    },
+    readOnly: true,
+  },
+  {
+    name: 'owner_clients',
+    title: 'Clients and their projects',
+    description: 'Every client account, the projects attached to it, and whether it has been invited or has signed in.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    readOnly: true,
+  },
+  {
     name: 'owner_queue',
     title: 'The queue and fleet',
     description: 'The work queue, the nodes, and what each is doing right now.',
@@ -740,6 +766,15 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
         status: 'declined',
         ...(typeof args.reason === 'string' && args.reason.trim() ? { reason: args.reason.trim() } : {}),
       });
+    case 'owner_projects':
+      return portalCall(env, ctx, token, 'GET', '/admin/projects');
+    case 'owner_project_work': {
+      const project = typeof args.project_id === 'string' ? args.project_id.trim() : '';
+      if (!project) throw new Error('bad_request: pass the project id from owner_projects.');
+      return portalCall(env, ctx, token, 'GET', `/admin/tickets?projectId=${encodeURIComponent(project)}`);
+    }
+    case 'owner_clients':
+      return portalCall(env, ctx, token, 'GET', '/admin/clients');
     case 'owner_queue':
       return portalCall(env, ctx, token, 'GET', '/admin/queue');
     case 'owner_runs':

@@ -1067,6 +1067,21 @@ test('first preview: the client is not charged for it, and the run cost is still
   assert.equal(normal.totalCents, 10200);
 });
 
+test('mcp: the admin connector can read the portfolio, its work and the clients', () => {
+  const admin = toolsFor('portal', { kind: 'admin' } as never) as { name: string; annotations?: { readOnlyHint?: boolean } }[];
+  const names = new Set(admin.map((tool) => tool.name));
+  for (const name of ['owner_projects', 'owner_project_work', 'owner_clients', 'owner_queue', 'owner_runs']) {
+    assert.ok(names.has(name), `${name} is advertised to the admin`);
+  }
+  for (const tool of admin.filter((row) => row.name.startsWith('owner_'))) {
+    const read = ['owner_projects', 'owner_project_work', 'owner_clients', 'owner_queue', 'owner_runs', 'owner_requests', 'owner_request'];
+    assert.equal(tool.annotations?.readOnlyHint, read.includes(tool.name), `${tool.name} is annotated as the read it is`);
+  }
+  // A client never sees Ali's tools.
+  const client = toolsFor('portal', null) as { name: string }[];
+  assert.ok(!client.some((tool) => tool.name.startsWith('owner_')));
+});
+
 test('mcp: /mcp describes preview edits without bypassing approval', () => {
   const tools = toolsFor('portal', null) as { name: string; description?: string }[];
   const start = tools.find((tool) => tool.name === 'start_change');
