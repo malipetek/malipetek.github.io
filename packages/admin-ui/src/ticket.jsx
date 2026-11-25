@@ -173,8 +173,9 @@ function TicketActions({ ticket, runs, land, reload }) {
     }
     return setStatus(ticket, s).then(reload);
   };
-  // Landable once a run has left work on the branch, and never mid-run.
-  const canLand = Boolean(ticket.project_id) && ticket.status !== 'in_progress' && runs.length > 0;
+  // Land only finished work: a review, decline or abandoned run still has a
+  // decision to make, and landing is what publishes.
+  const canLand = Boolean(ticket.project_id) && ticket.status === 'done' && runs.length > 0;
   return (
     <div className="aw-ticket__actions">
       <StatusPill status={ticket.status} />

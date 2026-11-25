@@ -3202,7 +3202,7 @@ ${block(Object.entries(TOKENS))}
       }
       return setStatus(ticket, s).then(reload);
     };
-    const canLand = Boolean(ticket.project_id) && ticket.status !== "in_progress" && runs.length > 0;
+    const canLand = Boolean(ticket.project_id) && ticket.status === "done" && runs.length > 0;
     return /* @__PURE__ */ jsxs("div", { className: "aw-ticket__actions", children: [
       /* @__PURE__ */ jsx(StatusPill, { status: ticket.status }),
       (PRIMARY[ticket.status] ?? []).map(([s, label, kind]) => /* @__PURE__ */ jsx(Button, { kind, size: "sm", onClick: () => void move(s), children: label }, s)),
