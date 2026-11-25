@@ -4,7 +4,7 @@ import test from 'node:test';
 import { startSuperagent } from './superagent-start.mjs';
 
 /** A Sessions service that records what the panel asked of it. */
-function fakeSessions({ promptResult = { ok: true }, readyRejects = false, renameRejects = false } = {}) {
+function fakeSessions({ promptResult = { ok: true }, readyRejects = false, renameRejects = false, commandRejects = false } = {}) {
   const calls = [];
   const sessions = {
     create: async (opts) => { calls.push(['create', opts]); return 'session-1'; },
@@ -15,6 +15,11 @@ function fakeSessions({ promptResult = { ok: true }, readyRejects = false, renam
         binding: {
           session: {
             prompt: async (content, mode) => { calls.push(['prompt', content, mode]); return promptResult; },
+            command: async (line) => {
+              calls.push(['command', line]);
+              if (commandRejects) throw new Error('no /permission here');
+              return { ok: true, value: { matched: true } };
+            },
             rename: async (title) => {
               calls.push(['rename', title]);
               if (renameRejects) throw new Error('rename failed');
@@ -82,6 +87,18 @@ test('names the conversation so its first line is not the title', async () => {
   const { sessions, calls } = fakeSessions();
   await startSuperagent({ sessions, brief: 'x', title: 'Superagent · whole system' });
   assert.deepEqual(calls.filter(([kind]) => kind === 'rename'), [['rename', 'Superagent · whole system']]);
+});
+
+test('the conversation runs under the asking preset, before the brief', async () => {
+  const { sessions, calls } = fakeSessions();
+  await startSuperagent({ sessions, brief: 'x', preset: 'workspace-write' });
+  const order = calls.map(([kind, value]) => kind === 'command' ? `command ${value}` : kind);
+  assert.ok(order.indexOf('command /permission workspace-write') < order.indexOf('prompt'), order.join(' < '));
+});
+
+test('a host without /permission still sends the brief', async () => {
+  const { sessions } = fakeSessions({ commandRejects: true });
+  assert.equal(await startSuperagent({ sessions, brief: 'x', preset: 'workspace-write' }), 'session-1');
 });
 
 test('a failed rename still starts the conversation', async () => {

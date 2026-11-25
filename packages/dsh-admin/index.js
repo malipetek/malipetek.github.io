@@ -26,6 +26,7 @@ import { promisify } from 'node:util';
 import { createLocalProjects } from './local-project.mjs';
 import { readConsent, writeConsent } from './machine-consent.mjs';
 import { createToolbox } from './local-toolbox.mjs';
+import { writeApproval } from './admin-approval.mjs';
 import { PROJECT_OPERATIONS, projectOperationRequest } from './project-operations.mjs';
 import { createWorkspaceRecovery } from './workspace-recovery.mjs';
 import { fleetWorkspaceCandidate, verifiedTicketWorkspace } from './ticket-workspace-source.mjs';
@@ -2030,6 +2031,18 @@ export function groupFleetRuns(registry) {
 export function apply(ctx) {
   ctxLogger = ctx.logger ?? null;
   const handleAdmin = makeCommandHandler(ctx);
+  /**
+   * The agent's admin tools reach the same endpoints the panel does, so every
+   * operator-facing write asks through the Harness approval card and fails
+   * closed when nobody answers. The panel's own writes never pass through here.
+   */
+  ctx.effect(
+    () => ctx.on('tools/pre-execute', async (exec, next) => {
+      const ask = writeApproval(exec.name, exec.arguments);
+      return ask ?? next();
+    }),
+    'admin: write approval',
+  );
   ctx.effect(
     () => {
       const dispose = ctx.commands.register({

@@ -129,16 +129,20 @@ var __awPlugin = (() => {
   }
 
   // packages/dsh-admin/superagent-start.mjs
-  async function startSuperagent({ sessions, open, brief, title, remember }) {
+  async function startSuperagent({ sessions, open, brief, title, preset, remember }) {
     if (typeof sessions?.create !== "function") throw new Error("This host cannot start a conversation.");
     const sessionId = await sessions.create({});
     const reference = sessions.retain(sessionId, { source: "workspaceOperation" });
     try {
       await reference.ready;
-      const result = await reference.binding.session.prompt([{ type: "text", text: String(brief) }], "queue");
+      const session = reference.binding.session;
+      if (preset && typeof session.command === "function") {
+        await session.command(`/permission ${preset}`).catch(() => void 0);
+      }
+      const result = await session.prompt([{ type: "text", text: String(brief) }], "queue");
       if (result?.ok === false) throw new Error(result.error?.message ?? "The conversation rejected the brief.");
-      if (title && typeof reference.binding.session.rename === "function") {
-        await reference.binding.session.rename(title).catch(() => void 0);
+      if (title && typeof session.rename === "function") {
+        await session.rename(title).catch(() => void 0);
       }
       if (typeof open === "function") open(sessionId);
     } finally {
@@ -2568,7 +2572,7 @@ ${block(Object.entries(TOKENS))}
       return [
         "You are the PTech Admin superagent. You manage ptechsolutions.net \u2014 tickets, the work queue, nodes, clients, projects and their sites \u2014 through the admin tools.",
         focus,
-        "Read freely. Before any write (a status change, a reply, publishing, a project or client change), say exactly what you will do and wait for a yes. Say what you did, and what you could not verify.",
+        "Read freely. Every write (a status change, a reply, a publish, a project or client change) shows an approval card before it runs: say in one line what you are about to change, then call the tool and let the card be the yes. After it runs, say what you did and what you could not verify.",
         "",
         text
       ].join("\n");
@@ -17667,6 +17671,7 @@ ${question.text ?? ""}`)) {
   var NAMESPACE = "admin";
   var CLIENT_VERSION = "3.9.0";
   var SUPERAGENT_SESSION = "pta.superagent.session";
+  var SUPERAGENT_PRESET = "workspace-write";
   var DICTIONARY = { title: "Admin" };
   var STATUS_TINT = {
     stalled: "var(--dsw-alias-state-danger-primary, #e5534b)",
@@ -17971,6 +17976,7 @@ ${question.text ?? ""}`)) {
           sessions: ctx.sessions,
           brief,
           title,
+          preset: SUPERAGENT_PRESET,
           open: (sessionId) => {
             if (typeof workspace?.openSession === "function") workspace.openSession(sessionId);
           },

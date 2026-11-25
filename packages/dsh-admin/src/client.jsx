@@ -43,6 +43,14 @@ const NAMESPACE = 'admin';
 const CLIENT_VERSION = '3.9.0';
 /** The conversation the Superagent panel started, so it can be continued. */
 const SUPERAGENT_SESSION = 'pta.superagent.session';
+/**
+ * The permission preset a superagent conversation runs under. It has to ask
+ * before a write: under the profile's `danger-full-access` default the Host
+ * answers every approval with "rejected" and the admin write gate blocks the
+ * agent entirely. A host without this preset keeps its own and the gate stays
+ * closed on writes, which is the safe half of the same choice.
+ */
+const SUPERAGENT_PRESET = 'workspace-write';
 const DICTIONARY = { title: 'Admin' };
 
 /**
@@ -451,6 +459,7 @@ function apply(ctx) {
         sessions: ctx.sessions,
         brief,
         title,
+        preset: SUPERAGENT_PRESET,
         open: (sessionId) => {
           if (typeof workspace?.openSession === 'function') workspace.openSession(sessionId);
         },
