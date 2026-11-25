@@ -14,6 +14,7 @@ import { AdminContext, useAdmin as useAdminCtx, useAdminData, useMeter, useTicke
 import { AGENTS, CLIENT_VISIBLE, PRIORITIES, STATUS_ACTION, STATUS_LABEL, errorText, needsYou, predict, slugify } from './format.js';
 import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, Skeleton, Toast, cx, layerOpen, useContextMenu } from './ui.jsx';
 import { BoardView, InboxView, ListView } from './board.jsx';
+import { SuperagentView } from './superagent.jsx';
 import { TicketDetails, TicketView } from './ticket.jsx';
 import { InjectedStyles } from './ui/injected-styles.js';
 import { ClientView, ClientsView, FleetView, SettingsView } from './fleet.jsx';
@@ -29,6 +30,7 @@ import { createTaskSubmission, createProjectSubmission, destinationFromHash, wor
 /** The destinations, in shortcut order. Settings sits at the foot of the bar. */
 const VIEWS = [
   { key: 'inbox', label: 'Needs you', icon: 'inbox' },
+  { key: 'superagent', label: 'Superagent', icon: 'spark' },
   { key: 'board', label: 'Board', icon: 'board' },
   { key: 'list', label: 'All work', icon: 'list' },
   { key: 'marketing', label: 'Marketing', icon: 'megaphone' },
@@ -532,6 +534,8 @@ function View({ name }) {
       return <FleetView />;
     case 'clients':
       return <ClientsView />;
+    case 'superagent':
+      return <SuperagentView />;
     case 'settings':
       return <SettingsView />;
     default:
