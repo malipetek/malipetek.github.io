@@ -9,6 +9,7 @@
  */
 import { useMemo, useRef, useState } from 'react';
 import { ago, needsYou } from './format.js';
+import { shorten, superagentBrief, superagentTitle } from './superagent-brief.js';
 import { useAdmin } from './store.js';
 import { Button, Dot, Empty, FilterBar, Icon, MetaChip, PageHeader, UiStyles } from './ui/index.js';
 
@@ -30,15 +31,6 @@ const EXAMPLES = [
 
 /** `3 tickets stalled`, `1 ticket stalled` — the count reads as a sentence. */
 const counted = (list, one, more) => `${list.length} ${list.length === 1 ? one : more}`;
-
-/** A conversation's title carries its first ask, so the list is scannable. */
-function shorten(ask, max = 48) {
-  const line = String(ask).trim().split('\n')[0];
-  if (line.length <= max) return line;
-  const cut = line.slice(0, max);
-  const space = cut.lastIndexOf(' ');
-  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
-}
 
 /**
  * What the system is saying, before anyone asks. The same rule as Needs you,
@@ -88,18 +80,7 @@ export function SuperagentView() {
   ], [data.projects, data.clients]);
 
   const scopeLabel = scopes.find((s) => s.value === scope)?.label ?? 'All system';
-  const brief = (text) => {
-    const focus = scope === 'all'
-      ? 'Scope: the whole system.'
-      : `Scope: ${scope.startsWith('p:') ? 'the project' : 'the client'} “${scopeLabel}” (${scope}). Work only there unless the answer needs the rest of the system.`;
-    return [
-      'You are the PTech Admin superagent. You manage ptechsolutions.net — tickets, the work queue, nodes, clients, projects and their sites — through the admin tools.',
-      focus,
-      'Read freely. Every write (a status change, a reply, a publish, a project or client change) shows an approval card before it runs: say in one line what you are about to change, then call the tool and let the card be the yes. After it runs, say what you did and what you could not verify.',
-      '',
-      text,
-    ].join('\n');
-  };
+  const brief = (text) => superagentBrief({ scope, label: scopeLabel, text });
 
   const start = async (text = draft) => {
     const content = String(text).trim();
@@ -108,7 +89,7 @@ export function SuperagentView() {
     try {
       const id = await superagent.start({
         brief: brief(content),
-        title: `Superagent · ${scope === 'all' ? 'whole system' : scopeLabel} — ${shorten(content)}`,
+        title: superagentTitle({ scope, label: scopeLabel, ask: content }),
       });
       setStarted(id);
       setDraft('');

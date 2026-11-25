@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ACCEPT, checkPicked, sizeText } from '../../../src/lib/attachments.js';
 import { isEnglish, localeInfo } from '../../../src/lib/locales.js';
 import { useAdmin, useMeter, useTicket } from './store.js';
+import { superagentBrief, superagentTitle } from './superagent-brief.js';
 import {
   ATTENTION,
   AGENTS,
@@ -157,7 +158,32 @@ export function TicketView({ id, active, details = true, chrome = true }) {
  * column, so it stays in reach however far the thread scrolls.
  */
 function TicketActions({ ticket, runs, land, reload }) {
-  const { api, setStatus, act, ask } = useAdmin();
+  const { api, setStatus, act, ask, host, notify } = useAdmin();
+  const superagent = host?.superagent ?? null;
+  const [asking, setAsking] = useState(false);
+  /**
+   * A conversation that already knows this ticket: its thread, its runs and its
+   * project. The panel's launcher does the same for a scope the operator picks.
+   */
+  const askSuperagent = async () => {
+    if (!superagent?.start) return;
+    setAsking(true);
+    const label = `#${ticket.id} ${ticket.title_en || ticket.title}`;
+    try {
+      await superagent.start({
+        brief: superagentBrief({
+          scope: `t:${ticket.id}`,
+          label,
+          text: 'What is the state of this ticket, and what does it need next?',
+        }),
+        title: superagentTitle({ scope: `t:${ticket.id}`, label: `#${ticket.id}`, ask: 'what does it need next?' }),
+      });
+    } catch (error) {
+      notify?.(error?.message ?? 'The superagent could not start.', 'error');
+    } finally {
+      setAsking(false);
+    }
+  };
   const live = runs.find((r) => r.status === 'running');
   const move = (s) => {
     // Queueing again is deliberate: the fleet may resume the old session. System
@@ -226,6 +252,17 @@ function TicketActions({ ticket, runs, land, reload }) {
           }
         >
           Land on main
+        </Button>
+      ) : null}
+      {superagent?.start ? (
+        <Button
+          size="sm"
+          kind="ghost"
+          busy={asking}
+          title="Start a conversation that can read this ticket and its runs"
+          onClick={() => void askSuperagent()}
+        >
+          Ask the superagent
         </Button>
       ) : null}
       {land?.requestedAt ? (

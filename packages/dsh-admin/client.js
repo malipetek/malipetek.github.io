@@ -2537,6 +2537,34 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
+  // packages/admin-ui/src/superagent-brief.js
+  var ROLE = "You are the PTech Admin superagent. You manage ptechsolutions.net \u2014 tickets, the work queue, nodes, clients, projects and their sites \u2014 through the admin tools.";
+  var RULE = "Read freely. Every write (a status change, a reply, a publish, a project or client change) shows an approval card before it runs: say in one line what you are about to change, then call the tool and let the card be the yes. After it runs, say what you did and what you could not verify.";
+  function scopeLine(scope, label) {
+    if (!scope || scope === "all") return "Scope: the whole system.";
+    if (scope.startsWith("t:")) {
+      return `Scope: ticket ${label} (${scope}) \u2014 its thread, its runs and its project. Do not change other tickets.`;
+    }
+    if (scope.startsWith("p:")) {
+      return `Scope: the project \u201C${label}\u201D (${scope}). Work only there unless the answer needs the rest of the system.`;
+    }
+    return `Scope: the client \u201C${label}\u201D (${scope}). Work only there unless the answer needs the rest of the system.`;
+  }
+  function superagentBrief({ scope = "all", label = "", text }) {
+    return [ROLE, scopeLine(scope, label), RULE, "", String(text)].join("\n");
+  }
+  function superagentTitle({ scope = "all", label = "", ask }) {
+    const where = !scope || scope === "all" ? "whole system" : label;
+    return `Superagent \xB7 ${where} \u2014 ${shorten(ask)}`;
+  }
+  function shorten(ask, max = 48) {
+    const line = String(ask).trim().split("\n")[0];
+    if (line.length <= max) return line;
+    const cut = line.slice(0, max);
+    const space = cut.lastIndexOf(" ");
+    return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}\u2026`;
+  }
+
   // packages/admin-ui/src/superagent.jsx
   var ABILITIES = [
     { icon: "inbox", title: "Read the work", detail: "Tickets with their threads, the queue, nodes, running runs and cost." },
@@ -2552,13 +2580,6 @@ ${block(Object.entries(TOKENS))}
     "Move this week\u2019s reviews to done"
   ];
   var counted = (list2, one, more) => `${list2.length} ${list2.length === 1 ? one : more}`;
-  function shorten(ask, max = 48) {
-    const line = String(ask).trim().split("\n")[0];
-    if (line.length <= max) return line;
-    const cut = line.slice(0, max);
-    const space = cut.lastIndexOf(" ");
-    return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}\u2026`;
-  }
   function briefingOf(data) {
     const n = needsYou(data);
     const running = data.running ?? [];
@@ -2601,16 +2622,7 @@ ${block(Object.entries(TOKENS))}
       ...(data.clients ?? []).map((c) => ({ value: `c:${c.id}`, label: c.name || c.email }))
     ], [data.projects, data.clients]);
     const scopeLabel = scopes.find((s) => s.value === scope)?.label ?? "All system";
-    const brief = (text) => {
-      const focus = scope === "all" ? "Scope: the whole system." : `Scope: ${scope.startsWith("p:") ? "the project" : "the client"} \u201C${scopeLabel}\u201D (${scope}). Work only there unless the answer needs the rest of the system.`;
-      return [
-        "You are the PTech Admin superagent. You manage ptechsolutions.net \u2014 tickets, the work queue, nodes, clients, projects and their sites \u2014 through the admin tools.",
-        focus,
-        "Read freely. Every write (a status change, a reply, a publish, a project or client change) shows an approval card before it runs: say in one line what you are about to change, then call the tool and let the card be the yes. After it runs, say what you did and what you could not verify.",
-        "",
-        text
-      ].join("\n");
-    };
+    const brief = (text) => superagentBrief({ scope, label: scopeLabel, text });
     const start = async (text = draft) => {
       const content = String(text).trim();
       if (!content || !available || busy) return;
@@ -2619,7 +2631,7 @@ ${block(Object.entries(TOKENS))}
       try {
         const id = await superagent.start({
           brief: brief(content),
-          title: `Superagent \xB7 ${scope === "all" ? "whole system" : scopeLabel} \u2014 ${shorten(content)}`
+          title: superagentTitle({ scope, label: scopeLabel, ask: content })
         });
         setStarted(id);
         setDraft("");
@@ -3406,7 +3418,28 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
   function TicketActions({ ticket, runs, land, reload }) {
-    const { api, setStatus, act, ask } = useAdmin();
+    const { api, setStatus, act, ask, host, notify } = useAdmin();
+    const superagent = host?.superagent ?? null;
+    const [asking, setAsking] = useState(false);
+    const askSuperagent = async () => {
+      if (!superagent?.start) return;
+      setAsking(true);
+      const label = `#${ticket.id} ${ticket.title_en || ticket.title}`;
+      try {
+        await superagent.start({
+          brief: superagentBrief({
+            scope: `t:${ticket.id}`,
+            label,
+            text: "What is the state of this ticket, and what does it need next?"
+          }),
+          title: superagentTitle({ scope: `t:${ticket.id}`, label: `#${ticket.id}`, ask: "what does it need next?" })
+        });
+      } catch (error) {
+        notify?.(error?.message ?? "The superagent could not start.", "error");
+      } finally {
+        setAsking(false);
+      }
+    };
     const live = runs.find((r) => r.status === "running");
     const move = (s) => {
       if (s === "approved" && ticket.status !== "new" && ticket.kind !== "system") {
@@ -3460,6 +3493,17 @@ ${block(Object.entries(TOKENS))}
             )
           }),
           children: "Land on main"
+        }
+      ) : null,
+      superagent?.start ? /* @__PURE__ */ jsx(
+        Button,
+        {
+          size: "sm",
+          kind: "ghost",
+          busy: asking,
+          title: "Start a conversation that can read this ticket and its runs",
+          onClick: () => void askSuperagent(),
+          children: "Ask the superagent"
         }
       ) : null,
       land?.requestedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-running", children: [
