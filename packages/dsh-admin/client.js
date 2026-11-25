@@ -1948,8 +1948,8 @@ ${block(Object.entries(TOKENS))}
     return { boardProject, setBoardProject, kind, setKind, q, setQ, apply: apply2, hits };
   }
   function NewTaskButton({ f, quiet = false }) {
-    const { setModal } = useAdmin();
-    return /* @__PURE__ */ jsx(Button, { kind: quiet ? "default" : "primary", icon: "plus", shortcut: "N", onClick: () => setModal({ kind: "task", projectId: f.boardProject === "all" ? void 0 : f.boardProject }), children: "New task" });
+    const { setModal: setModal2 } = useAdmin();
+    return /* @__PURE__ */ jsx(Button, { kind: quiet ? "default" : "primary", icon: "plus", shortcut: "N", onClick: () => setModal2({ kind: "task", projectId: f.boardProject === "all" ? void 0 : f.boardProject }), children: "New task" });
   }
   var filtered = (f) => f.boardProject !== "all" || f.kind !== "all" || f.q.trim();
   var clearFilters = (f) => {
@@ -4623,7 +4623,7 @@ ${String(text)}` : String(text);
   };
   function MachinePanel() {
     const m = useMachine();
-    const { openTicket, setModal } = useAdmin();
+    const { openTicket, setModal: setModal2 } = useAdmin();
     if (!m.live) return null;
     if (!m.loaded || m.consentError) return /* @__PURE__ */ jsxs("article", { className: "aw-node aw-machine", children: [
       /* @__PURE__ */ jsx("header", { children: /* @__PURE__ */ jsx("h3", { children: "This Mac" }) }),
@@ -4632,7 +4632,7 @@ ${String(text)}` : String(text);
         /* @__PURE__ */ jsx(Button, { size: "sm", onClick: m.refresh, children: "Retry" })
       ] })
     ] });
-    const askAgain = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(OnboardingModal, { m, onClose: close }) });
+    const askAgain = () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(OnboardingModal, { m, onClose: close }) });
     return /* @__PURE__ */ jsxs("article", { className: cx2("aw-node", "aw-machine", `aw-node--${STATE_DOT[m.state] ?? "warn"}`), children: [
       /* @__PURE__ */ jsxs("header", { children: [
         /* @__PURE__ */ jsx(Dot, { state: STATE_DOT[m.state] }),
@@ -4990,6 +4990,20 @@ ${SITE_LINK}` : SITE_LINK;
     bounce_rate: "Paused itself: the bounce rate passed 4%.",
     complaint_rate: "Paused itself: the complaint rate passed 0.2%."
   };
+  var QUEUE_REASON = {
+    gap_required: "no observation of their site",
+    trigger_required: "no trigger \u2014 nothing says why now",
+    unverified: "the address or its domain is not verified",
+    no_mx: "the domain takes no mail",
+    bounced: "the address bounced before",
+    suppressed: "they opted out",
+    contact_closed: "they replied, so the sequence is closed",
+    role_account: "a role inbox needs a written reason",
+    quality_hold: "held for a quality check",
+    country_requires_consent: "their country needs written consent first",
+    already_queued: "mail is already queued",
+    not_found: "no longer in the list"
+  };
   var WINDOW_REASON = {
     outside_hours: "outside the send window",
     weekend: "weekend",
@@ -5018,6 +5032,21 @@ ${SITE_LINK}` : SITE_LINK;
     opted_out: { state: "opted_out", label: "Opted out" },
     bounced: { state: "bounced", label: "Bounced" }
   };
+  var ROLE_INBOXES = new Set(
+    "info information hello contact sales support admin administrator office team enquiries inquiries enquiry inquiry mail help helpdesk billing marketing noreply donotreply webmaster postmaster abuse reception service customerservice general accounts careers jobs press media privacy legal".split(" ")
+  );
+  function isRoleInbox(email) {
+    if (typeof email !== "string" || !email.includes("@")) return false;
+    return ROLE_INBOXES.has(email.split("@")[0].toLowerCase().split("+")[0].replace(/[._-]/g, ""));
+  }
+  function qualitiesOf(c) {
+    return [
+      c.gap ? null : "no observation",
+      c.trigger ? null : "no trigger",
+      c.verifiedAt ? null : "unverified",
+      c.qualityHold ? String(c.qualityHold).replaceAll("_", " ") : null
+    ].filter(Boolean);
+  }
   function ContactStatus({ status }) {
     const s = CONTACT_STATE[status] ?? { state: status };
     return /* @__PURE__ */ jsx(StateIndicator, { state: s.state, tone: s.tone, label: s.label });
@@ -5181,7 +5210,7 @@ ${SITE_LINK}` : SITE_LINK;
     const { api, act, ask, notify, open } = useAdmin();
     const [selectedBulk, setSelectedBulk] = useState(() => /* @__PURE__ */ new Set());
     const [tab, setTab] = useState("overview");
-    const [modal, setModal] = useState(null);
+    const [modal, setModal2] = useState(null);
     const [inspector, setInspector] = useState(null);
     const [filters, setFilters] = useState({ status: "", q: "", source: "", offset: 0 });
     const filter = useCallback((patch) => {
@@ -5216,7 +5245,7 @@ ${SITE_LINK}` : SITE_LINK;
     const run = useCallback((fn, message) => mutate(fn, message).catch(() => void 0), [mutate]);
     const done = useCallback(
       (message) => {
-        setModal(null);
+        setModal2(null);
         if (message) notify(message);
         refresh();
       },
@@ -5287,18 +5316,18 @@ ${SITE_LINK}` : SITE_LINK;
         settings.live ? sendingOverflowItem : { label: "Review next", run: () => setInspector({ kind: "review" }) },
         { label: "Run now", run: runNow },
         { separator: true },
-        { label: "Add contact", run: () => setModal({ kind: "contact" }) },
-        { label: "Import CSV", run: () => setModal({ kind: "import" }) },
-        { label: "Compose", run: () => setModal({ kind: "compose", channel: "email" }) },
+        { label: "Add contact", run: () => setModal2({ kind: "contact" }) },
+        { label: "Import CSV", run: () => setModal2({ kind: "import" }) },
+        { label: "Compose", run: () => setModal2({ kind: "compose", channel: "email" }) },
         { label: "Draft posts", run: draftPosts },
         { separator: true },
         settingsItem
       ];
     } else if (tab === "contacts") {
-      headerAction = /* @__PURE__ */ jsx(Button, { kind: headerPrimaryKind, onClick: () => setModal({ kind: "contact" }), children: "Add contact" });
+      headerAction = /* @__PURE__ */ jsx(Button, { kind: headerPrimaryKind, onClick: () => setModal2({ kind: "contact" }), children: "Add contact" });
       headerOverflow = [
-        { label: "Import CSV", run: () => setModal({ kind: "import" }) },
-        { label: "Queue everyone", run: () => setModal({ kind: "bulkqueue" }) },
+        { label: "Import CSV", run: () => setModal2({ kind: "import" }) },
+        { label: `Queue selected (${selectedBulk.size})`, run: () => setModal2({ kind: "bulkqueue" }) },
         { separator: true },
         ...deskOverflowItems
       ];
@@ -5313,7 +5342,7 @@ ${SITE_LINK}` : SITE_LINK;
         }
       );
       headerOverflow = [
-        { label: "Compose email", run: () => setModal({ kind: "compose", channel: "email" }) },
+        { label: "Compose email", run: () => setModal2({ kind: "compose", channel: "email" }) },
         {
           label: "Re-render scheduled",
           hint: "Re-render unedited scheduled emails using current sequence wording",
@@ -5325,7 +5354,7 @@ ${SITE_LINK}` : SITE_LINK;
     } else if (tab === "posts") {
       headerAction = /* @__PURE__ */ jsx(Button, { kind: headerPrimaryKind, onClick: draftPosts, children: "Draft posts" });
       headerOverflow = [
-        { label: "Compose post", run: () => setModal({ kind: "compose", channel: "x" }) },
+        { label: "Compose post", run: () => setModal2({ kind: "compose", channel: "x" }) },
         { separator: true },
         ...deskOverflowItems
       ];
@@ -5406,8 +5435,8 @@ ${SITE_LINK}` : SITE_LINK;
           onOptOut: optOutContact,
           onRefresh: refresh,
           notify,
-          onAddContact: () => setModal({ kind: "contact" }),
-          onImport: () => setModal({ kind: "import" })
+          onAddContact: () => setModal2({ kind: "contact" }),
+          onImport: () => setModal2({ kind: "import" })
         }
       ) : null,
       tab === "email" ? /* @__PURE__ */ jsx(
@@ -5452,16 +5481,19 @@ ${SITE_LINK}` : SITE_LINK;
           closeInspector
         }
       ) : null,
-      modal?.kind === "import" ? /* @__PURE__ */ jsx(ImportModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
-      modal?.kind === "bulkqueue" ? /* @__PURE__ */ jsx(BulkQueueModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
-      modal?.kind === "contact" ? /* @__PURE__ */ jsx(ContactModal, { sequences: overview.sequences, api, onClose: () => setModal(null), onSaved: done }) : null,
+      modal?.kind === "import" ? /* @__PURE__ */ jsx(ImportModal, { sequences: overview.sequences, onClose: () => setModal2(null), onDone: done, api }) : null,
+      modal?.kind === "bulkqueue" ? /* @__PURE__ */ jsx(BulkQueueModal, { api, sequences: overview.sequences, ids: [...selectedBulk], onClose: () => setModal2(null), onDone: (message) => {
+        setSelectedBulk(/* @__PURE__ */ new Set());
+        done(message);
+      } }) : null,
+      modal?.kind === "contact" ? /* @__PURE__ */ jsx(ContactModal, { sequences: overview.sequences, api, onClose: () => setModal2(null), onSaved: done }) : null,
       modal?.kind === "compose" ? /* @__PURE__ */ jsx(
         ComposeModal,
         {
           initialChannel: modal.channel,
           contacts: contacts.filter((c) => !["opted_out", "bounced"].includes(c.status)),
           api,
-          onClose: () => setModal(null),
+          onClose: () => setModal2(null),
           onSaved: done
         }
       ) : null
@@ -6139,7 +6171,11 @@ ${SITE_LINK}` : SITE_LINK;
               c.name
             ] }) : null
           ] }),
-          c.gap ? /* @__PURE__ */ jsx("span", { className: "aw-mk-cell-sub", children: snippet(c.gap, 110) }) : null
+          c.gap ? /* @__PURE__ */ jsx("span", { className: "aw-mk-cell-sub", children: snippet(c.gap, 110) }) : null,
+          qualitiesOf(c).length ? /* @__PURE__ */ jsxs("span", { className: "aw-mk-cell-sub aw-muted", title: "The desk refuses a cold queue until these are recorded.", children: [
+            "Needs ",
+            qualitiesOf(c).join(" \xB7 ")
+          ] }) : null
         ] })
       },
       {
@@ -6276,6 +6312,7 @@ ${SITE_LINK}` : SITE_LINK;
         /* @__PURE__ */ jsx("span", { className: "aw-mk-spacer" }),
         selectedBulk.size ? /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx("span", { children: plural(selectedBulk.size, "contact selected", "contacts selected") }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", disabled: selectedBulk.size > 100, onClick: () => setModal({ kind: "bulkqueue" }), children: "Queue selected" }),
           /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => bulk("pause"), children: "Pause" }),
           /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => bulk("opt_out"), children: "Opt out" }),
           /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setSelectedBulk(/* @__PURE__ */ new Set()), children: "Clear" })
@@ -6829,6 +6866,7 @@ ${SITE_LINK}` : SITE_LINK;
     const [editForm, setEditForm] = useState(null);
     const [queueSeq, setQueueSeq] = useState(sequences[0]?.key ?? "cold_a");
     const [genericGap, setGenericGap] = useState(false);
+    const [overrideReason, setOverrideReason] = useState("");
     useEffect(() => {
       setMode(initialMode ?? "view");
       setError(null);
@@ -6841,7 +6879,10 @@ ${SITE_LINK}` : SITE_LINK;
           business: c.business ?? "",
           site: c.site ?? "",
           gap: c.gap ?? "",
-          notes: c.notes ?? ""
+          notes: c.notes ?? "",
+          trigger: c.trigger ?? "",
+          triggerUrl: c.triggerUrl ?? "",
+          verifiedAt: c.verifiedAt ? new Date(c.verifiedAt * 1e3).toISOString().slice(0, 10) : ""
         });
       }
     }, [mode, c, editForm]);
@@ -6852,7 +6893,10 @@ ${SITE_LINK}` : SITE_LINK;
         business: c.business ?? "",
         site: c.site ?? "",
         gap: c.gap ?? "",
-        notes: c.notes ?? ""
+        notes: c.notes ?? "",
+        trigger: c.trigger ?? "",
+        triggerUrl: c.triggerUrl ?? "",
+        verifiedAt: c.verifiedAt ? new Date(c.verifiedAt * 1e3).toISOString().slice(0, 10) : ""
       });
       setError(null);
       setMode("edit");
@@ -6898,7 +6942,11 @@ ${SITE_LINK}` : SITE_LINK;
       setBusy(true);
       setError(null);
       try {
-        const out = await api("POST", `/admin/marketing/contacts/${c.id}/queue`, { sequence: queueSeq, genericGap });
+        const out = await api("POST", `/admin/marketing/contacts/${c.id}/queue`, {
+          sequence: queueSeq,
+          genericGap,
+          ...needsOverride && overrideReason.trim() ? { force: true, reason: overrideReason.trim() } : {}
+        });
         setMode("view");
         resource.reload();
         onSaved(`${out.queued} emails queued for ${c.email}.`);
@@ -6918,6 +6966,17 @@ ${SITE_LINK}` : SITE_LINK;
     };
     const canQueue = Boolean(c && ["new", "paused", "contacted"].includes(c.status) && !c.nextAt);
     const chosenSeq = sequences.find((s) => s.key === queueSeq);
+    const needsTrigger = Boolean(chosenSeq?.needsGap);
+    const needsOverride = Boolean(c?.qualityHold === "role_account" && !isRoleInbox(c?.email));
+    const blockers = !c ? [] : [
+      needsTrigger && !c.gap ? "no observation of the site" : null,
+      needsTrigger && !c.trigger ? "no trigger \u2014 what changed on their side" : null,
+      !c.verifiedAt ? "the address is not verified" : null,
+      c.status === "bounced" ? "the address bounced" : null,
+      c.status === "opted_out" ? "they opted out" : null,
+      c.status === "replied" ? "they replied, so the sequence is closed" : null,
+      c.qualityHold && !needsOverride ? `quality hold: ${String(c.qualityHold).replaceAll("_", " ")}` : null
+    ].filter(Boolean);
     const visibleEvents = (data?.events ?? []).filter((e) => showDmarc || e.kind !== "dmarc_report");
     return /* @__PURE__ */ jsxs(
       Inspector,
@@ -6935,6 +6994,9 @@ ${SITE_LINK}` : SITE_LINK;
             /* @__PURE__ */ jsx(Field, { label: "Business", children: /* @__PURE__ */ jsx("input", { value: editForm.business, onChange: (e) => setEditForm((f) => ({ ...f, business: e.target.value })) }) }),
             /* @__PURE__ */ jsx(Field, { label: "Site", children: /* @__PURE__ */ jsx("input", { value: editForm.site, onChange: (e) => setEditForm((f) => ({ ...f, site: e.target.value })) }) }),
             /* @__PURE__ */ jsx(Field, { label: "The gap", hint: "One specific, true observation. If it is not true, the whole email is spam.", children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: editForm.gap, onChange: (e) => setEditForm((f) => ({ ...f, gap: e.target.value })) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "The trigger", hint: "What changed on their side, in their words. A cold email is refused without one.", children: /* @__PURE__ */ jsx("input", { value: editForm.trigger, onChange: (e) => setEditForm((f) => ({ ...f, trigger: e.target.value })) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Trigger source", children: /* @__PURE__ */ jsx("input", { value: editForm.triggerUrl, placeholder: "https://", onChange: (e) => setEditForm((f) => ({ ...f, triggerUrl: e.target.value })) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Verified on", hint: "The day you checked the trigger and the address yourself.", children: /* @__PURE__ */ jsx("input", { type: "date", value: editForm.verifiedAt, onChange: (e) => setEditForm((f) => ({ ...f, verifiedAt: e.target.value })) }) }),
             /* @__PURE__ */ jsx(Field, { label: "Notes", children: /* @__PURE__ */ jsx("textarea", { rows: 2, value: editForm.notes, onChange: (e) => setEditForm((f) => ({ ...f, notes: e.target.value })) }) }),
             /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
               /* @__PURE__ */ jsx(Button, { kind: "primary", busy, onClick: saveEdit, children: "Save contact" }),
@@ -6943,12 +7005,21 @@ ${SITE_LINK}` : SITE_LINK;
           ] }) : mode === "queue" ? /* @__PURE__ */ jsxs("div", { className: "aw-mk-field-stack", onKeyDown: onFormKey, children: [
             /* @__PURE__ */ jsx("p", { className: "ui-note", children: "Three emails, days 0, 4 and 10. A reply or \u201Cno\u201D cancels the rest." }),
             /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx("select", { value: queueSeq, onChange: (e) => setQueueSeq(e.target.value), children: sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key)) }) }),
+            blockers.length ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
+              "The desk refuses this queue until these are fixed:",
+              /* @__PURE__ */ jsx("ul", { className: "aw-mk-reasons", children: blockers.map((line) => /* @__PURE__ */ jsx("li", { children: line }, line)) }),
+              /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => {
+                setMode("view");
+                startEdit();
+              }, children: "Fix on the contact" })
+            ] }) : /* @__PURE__ */ jsx("p", { className: "ui-note", children: "Observation, trigger and verification are all recorded, so this one queues." }),
             chosenSeq?.needsGap && !c.gap ? /* @__PURE__ */ jsx(Field, { label: "No observation on this contact", hint: "A cold email without one is usually spam.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
               /* @__PURE__ */ jsx("input", { type: "checkbox", checked: genericGap, onChange: (e) => setGenericGap(e.target.checked) }),
               "Queue with a general opener"
             ] }) }) : null,
+            needsOverride ? /* @__PURE__ */ jsx(Field, { label: "Why this address is the right one", hint: "A role inbox (info@, sales@) needs a written reason before the desk will mail it.", children: /* @__PURE__ */ jsx("textarea", { rows: 2, value: overrideReason, onChange: (e) => setOverrideReason(e.target.value) }) }) : null,
             /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
-              /* @__PURE__ */ jsx(Button, { kind: "primary", busy, onClick: submitQueue, children: "Queue" }),
+              /* @__PURE__ */ jsx(Button, { kind: "primary", busy, disabled: Boolean(blockers.length) || needsOverride && !overrideReason.trim(), onClick: submitQueue, children: "Queue" }),
               /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: () => setMode("view"), children: "Cancel" })
             ] })
           ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
@@ -6986,6 +7057,20 @@ ${SITE_LINK}` : SITE_LINK;
               ] }) : null,
               /* @__PURE__ */ jsx("dt", { children: "Observation" }),
               /* @__PURE__ */ jsx("dd", { children: c.gap || /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "None \u2014 plain version used." }) }),
+              /* @__PURE__ */ jsx("dt", { children: "Trigger" }),
+              /* @__PURE__ */ jsx("dd", { children: c.trigger ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                c.trigger,
+                c.triggerUrl ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                  " \xB7 ",
+                  /* @__PURE__ */ jsx("a", { href: c.triggerUrl, target: "_blank", rel: "noreferrer", children: "source" })
+                ] }) : null
+              ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "None \u2014 a cold sequence is refused without one." }) }),
+              /* @__PURE__ */ jsx("dt", { children: "Verified" }),
+              /* @__PURE__ */ jsx("dd", { children: c.verifiedAt ? new Date(c.verifiedAt * 1e3).toISOString().slice(0, 10) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Not recorded \u2014 the address has not been checked by hand." }) }),
+              c.qualityHold ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                /* @__PURE__ */ jsx("dt", { children: "Quality hold" }),
+                /* @__PURE__ */ jsx("dd", { children: String(c.qualityHold).replaceAll("_", " ") })
+              ] }) : null,
               c.notes ? /* @__PURE__ */ jsxs(Fragment2, { children: [
                 /* @__PURE__ */ jsx("dt", { children: "Notes" }),
                 /* @__PURE__ */ jsx("dd", { children: c.notes })
@@ -7940,12 +8025,14 @@ ${SITE_LINK}` : SITE_LINK;
     );
   }
   function ContactModal({ api, sequences, onClose, onSaved }) {
-    const [form, setForm] = useState({ email: "", name: "", business: "", site: "", gap: "", notes: "" });
+    const [form, setForm] = useState({ email: "", name: "", business: "", site: "", gap: "", notes: "", trigger: "", triggerUrl: "", verifiedAt: "" });
     const [queue, setQueue] = useState(true);
     const [sequence, setSequence] = useState(sequences[0]?.key ?? "cold_a");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
     const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+    const chosen = sequences.find((s) => s.key === sequence);
+    const missing = chosen?.needsGap ? [form.gap.trim() ? null : "the gap", form.trigger.trim() ? null : "the trigger", form.verifiedAt ? null : "the verified date"].filter(Boolean) : [];
     const submit = async () => {
       setBusy(true);
       setError(null);
@@ -7977,6 +8064,12 @@ ${SITE_LINK}` : SITE_LINK;
             /* @__PURE__ */ jsx(Field, { label: "Site", children: /* @__PURE__ */ jsx("input", { value: form.site, onChange: (e) => set("site", e.target.value) }) })
           ] }),
           /* @__PURE__ */ jsx(Field, { label: "The gap", hint: "One specific, true observation. If it is not true, the whole email is spam.", children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: form.gap, onChange: (e) => set("gap", e.target.value) }) }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+            /* @__PURE__ */ jsx(Field, { label: "The trigger", hint: "What changed on their side, in their words. A cold sequence is refused without one.", children: /* @__PURE__ */ jsx("input", { value: form.trigger, onChange: (e) => set("trigger", e.target.value) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Trigger source", children: /* @__PURE__ */ jsx("input", { value: form.triggerUrl, placeholder: "https://", onChange: (e) => set("triggerUrl", e.target.value) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Verified on", hint: "The day you checked the address and the trigger yourself.", children: /* @__PURE__ */ jsx("input", { type: "date", value: form.verifiedAt, onChange: (e) => set("verifiedAt", e.target.value) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Found on", children: /* @__PURE__ */ jsx("input", { value: form.sourceUrl, placeholder: "https://", onChange: (e) => set("sourceUrl", e.target.value) }) })
+          ] }),
           /* @__PURE__ */ jsx(Field, { label: "Notes", children: /* @__PURE__ */ jsx("textarea", { rows: 2, value: form.notes, onChange: (e) => set("notes", e.target.value) }) }),
           /* @__PURE__ */ jsx(Field, { label: "Queue now", children: /* @__PURE__ */ jsx(
             Segmented,
@@ -7991,51 +8084,90 @@ ${SITE_LINK}` : SITE_LINK;
             }
           ) }),
           queue ? /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx("select", { value: sequence, onChange: (e) => setSequence(e.target.value), children: sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key)) }) }) : null,
+          queue && missing.length ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+            "This sequence is refused until these are filled in: ",
+            missing.join(", "),
+            ". You can add the contact now and fill them in on it."
+          ] }) : null,
           error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null
         ]
       }
     );
   }
-  function BulkQueueModal({ api, sequences, onClose, onDone }) {
+  function BulkQueueModal({ api, sequences, ids = [], onClose, onDone }) {
     const [sequence, setSequence] = useState(sequences[0]?.key ?? "cold_a");
-    const [campaign, setCampaign] = useState("launch");
+    const [batch, setBatch] = useState("launch");
     const [genericGap, setGenericGap] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
+    const [report, setReport] = useState(null);
     const chosen = sequences.find((s) => s.key === sequence);
+    const count = new Set(ids).size;
     const submit = async () => {
       setBusy(true);
       setError(null);
       try {
-        const result = await api("POST", "/admin/marketing/contacts/queue", { sequence, campaign, genericGap });
-        onDone(
-          `${result.queued} contacts queued (${result.emails} emails)${result.skippedNoGap ? `, ${result.skippedNoGap} skipped without an observation` : ""}.`
-        );
+        setReport(await api("POST", "/admin/marketing/contacts/queue", { sequence, batch, ids, genericGap }));
       } catch (err) {
         setError(errorText(err));
+      } finally {
         setBusy(false);
       }
     };
-    return /* @__PURE__ */ jsxs(
+    const reasonText = (reasons) => reasons.map((reason) => QUEUE_REASON[reason] ?? reason.replaceAll("_", " ")).join(", ");
+    return /* @__PURE__ */ jsx(
       Modal,
       {
         kind: "create",
-        title: "Queue everyone",
-        subtitle: "Every new or paused contact without mail already queued. Contacts with an observation are queued; the rest are skipped unless you choose the general opener.",
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+        title: `Queue ${count} contact${count === 1 ? "" : "s"}`,
+        subtitle: "The desk checks every one first: a bounced, opted-out or unverified address stays out, and so does a cold email with no observation or trigger.",
+        onClose: report ? () => onDone(`${report.batch}: ${report.queued} queued, ${report.excluded.length} left out.`) : onClose,
+        wide: true,
+        actions: report ? /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => onDone(`${report.batch}: ${report.queued} queued, ${report.excluded.length} left out.`), children: "Done" }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: submit, children: busy ? "Queueing\u2026" : "Queue everyone" })
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !count || !batch.trim(), onClick: submit, children: busy ? "Queueing\u2026" : `Queue ${count}` })
         ] }),
-        children: [
+        children: report ? /* @__PURE__ */ jsxs("div", { className: "aw-mk-field-stack", children: [
+          /* @__PURE__ */ jsxs("p", { className: "ui-note", children: [
+            report.queued,
+            " queued (",
+            report.emails,
+            " email",
+            report.emails === 1 ? "" : "s",
+            ") out of ",
+            report.total,
+            " checked."
+          ] }),
+          report.included.length ? /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
+              "Queued (",
+              report.included.length,
+              ")"
+            ] }),
+            /* @__PURE__ */ jsx("ul", { className: "aw-mk-reasons", children: report.included.map(({ id, email }) => /* @__PURE__ */ jsx("li", { children: email }, id)) })
+          ] }) : null,
+          report.excluded.length ? /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
+              "Left out (",
+              report.excluded.length,
+              ")"
+            ] }),
+            /* @__PURE__ */ jsx("ul", { className: "aw-mk-reasons", children: report.excluded.map(({ id, email, reasons }) => /* @__PURE__ */ jsxs("li", { children: [
+              email ?? `Contact ${id}`,
+              ": ",
+              reasonText(reasons)
+            ] }, id)) })
+          ] }) : null
+        ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx("select", { value: sequence, onChange: (e) => setSequence(e.target.value), children: sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Campaign", children: /* @__PURE__ */ jsx("input", { value: campaign, maxLength: 40, onChange: (e) => setCampaign(e.target.value) }) }),
-          chosen?.needsGap ? /* @__PURE__ */ jsx(Field, { label: "Contacts without an observation", hint: "Leave this off to skip them; turn it on to use a general, true opener.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Batch name", hint: "Shown beside every queued email, so you can see which list it came from.", children: /* @__PURE__ */ jsx("input", { value: batch, maxLength: 40, onChange: (e) => setBatch(e.target.value) }) }),
+          chosen?.needsGap ? /* @__PURE__ */ jsx(Field, { label: "Contacts without an observation", hint: "Leave this off to skip them; turn it on to use a general, true opener. A missing trigger still keeps them out.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
             /* @__PURE__ */ jsx("input", { type: "checkbox", checked: genericGap, onChange: (e) => setGenericGap(e.target.checked) }),
             "Queue them anyway with a general opener"
           ] }) }) : null,
+          !count ? /* @__PURE__ */ jsx("p", { className: "aw-warn", children: "Select the contacts first, then open this." }) : null,
           error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null
-        ]
+        ] })
       }
     );
   }
@@ -10221,10 +10353,10 @@ ${SITE_LINK}` : SITE_LINK;
     );
   }
   function NodeInspector({ n, m, onClose }) {
-    const { api, act, ask, data, setModal } = useAdmin();
+    const { api, act, ask, data, setModal: setModal2 } = useAdmin();
     const caps = data.catalog?.capabilities ?? [];
     const sys = n.health?.system;
-    const edit = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(NodeModal, { node: n, local: n.local, onClose: close }) });
+    const edit = () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(NodeModal, { node: n, local: n.local, onClose: close }) });
     const machineReady = n.local && m.loaded && !m.consentError;
     return /* @__PURE__ */ jsxs(Inspector, { title: n.id, label: `Node ${n.id}`, storageKey: "ptech.fleet.inspector.w", onClose, className: "aw-fleet__inspector", children: [
       /* @__PURE__ */ jsxs("div", { className: "ui-meta", children: [
@@ -10741,7 +10873,7 @@ ${SITE_LINK}` : SITE_LINK;
     return states.join(", ") || "Site status unavailable";
   };
   function AssignProjectsModal({ client, onClose }) {
-    const { api, act, data, setModal } = useAdmin();
+    const { api, act, data, setModal: setModal2 } = useAdmin();
     const [picked, setPicked] = useState(() => new Set(client.projectIds ?? []));
     const [query, setQuery] = useState("");
     const [saving, setSaving] = useState(false);
@@ -10773,7 +10905,7 @@ ${SITE_LINK}` : SITE_LINK;
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(Button, { onClick: () => {
             onClose();
-            setModal({ kind: "project", clientIds: [client.id] });
+            setModal2({ kind: "project", clientIds: [client.id] });
           }, children: "New project\u2026" }),
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
           /* @__PURE__ */ jsx(Button, { kind: "primary", busy: saving, disabled: saving || !added.length && !removed.length, onClick: () => void save(), children: saving ? "Saving\u2026" : added.length || removed.length ? `Save \xB7 ${added.length} added, ${removed.length} removed` : "No changes" })
@@ -10816,7 +10948,7 @@ ${SITE_LINK}` : SITE_LINK;
     );
   }
   function ClientProjects({ client }) {
-    const { data, open, api, act, ask, setModal } = useAdmin();
+    const { data, open, api, act, ask, setModal: setModal2 } = useAdmin();
     const tickets = ticketsOf(data, client);
     const projects = data.projects.filter((p) => (client.projectIds ?? []).includes(p.id));
     const stats = (project) => {
@@ -10836,7 +10968,7 @@ ${SITE_LINK}` : SITE_LINK;
           "Projects \xB7 ",
           projects.length
         ] }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(AssignProjectsModal, { client, onClose: close }) }), children: "Assign projects\u2026" })
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(AssignProjectsModal, { client, onClose: close }) }), children: "Assign projects\u2026" })
       ] }),
       /* @__PURE__ */ jsx(
         DataTable,
@@ -10930,7 +11062,7 @@ ${SITE_LINK}` : SITE_LINK;
     { label: "Copy email address", run: () => void navigator.clipboard?.writeText(c.email) }
   ];
   function ClientInspector({ c, onClose }) {
-    const { api, act, ask, data, open, setModal } = useAdmin();
+    const { api, act, ask, data, open, setModal: setModal2 } = useAdmin();
     const tickets = ticketsOf(data, c);
     const openCount = tickets.filter((t) => !closedTicket(t)).length;
     const projects = data.projects.filter((p) => (c.projectIds ?? []).includes(p.id));
@@ -10946,7 +11078,7 @@ ${SITE_LINK}` : SITE_LINK;
       c.pending ? /* @__PURE__ */ jsx(StateIndicator, { state: "invited", tone: "warn", label: "Invited, not signed in yet" }) : null,
       /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
         /* @__PURE__ */ jsx(Button, { onClick: () => open(`c:${c.id}`), title: "Open client page  Enter", children: "Open client page" }),
-        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => setModal({
+        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => setModal2({
           kind: "custom",
           render: (close) => c.pending ? /* @__PURE__ */ jsx(InviteClientModal, { client: c, onClose: close }) : /* @__PURE__ */ jsx(AssignProjectsModal, { client: c, onClose: close })
         }), children: c.pending ? "Add to projects\u2026" : "Assign projects\u2026" }),
@@ -11034,7 +11166,7 @@ ${SITE_LINK}` : SITE_LINK;
     seen: (c) => lastSeenOf(c) ?? 0
   };
   function ClientsView() {
-    const { data, setModal, open } = useAdmin();
+    const { data, setModal: setModal2, open } = useAdmin();
     const root = useRef(null);
     const [sort, setSort] = useState({ key: "name", dir: 1 });
     const [selectedId, setSelectedId] = useState(null);
@@ -11049,7 +11181,7 @@ ${SITE_LINK}` : SITE_LINK;
     const selected = selectedId == null ? null : rows.find((c) => c.id === selectedId) ?? null;
     const close = () => setSelectedId(null);
     useRevealInspector(root, selected?.id ?? null);
-    const invite = () => setModal({ kind: "custom", render: (onClose) => /* @__PURE__ */ jsx(InviteClientModal, { onClose }) });
+    const invite = () => setModal2({ kind: "custom", render: (onClose) => /* @__PURE__ */ jsx(InviteClientModal, { onClose }) });
     return /* @__PURE__ */ jsxs("div", { ref: root, className: "ui-workspace aw-clients", onKeyDown: closeOnEscape4(Boolean(selected), close), children: [
       /* @__PURE__ */ jsx(UiStyles, {}),
       /* @__PURE__ */ jsx(
@@ -11058,7 +11190,7 @@ ${SITE_LINK}` : SITE_LINK;
           title: "Clients",
           subtitle: data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : "Who you work for. Select a client to inspect them; Enter opens their page.",
           actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "project" }), children: "New project" }),
+            /* @__PURE__ */ jsx(Button, { onClick: () => setModal2({ kind: "project" }), children: "New project" }),
             /* @__PURE__ */ jsx(Button, { kind: "primary", icon: "plus", onClick: invite, children: "Invite client" })
           ] })
         }
@@ -15860,7 +15992,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
   function ProjectView({ id, initialTab = "Overview" }) {
-    const { api, data, host, setModal, reload } = useAdmin();
+    const { api, data, host, setModal: setModal2, reload } = useAdmin();
     const load = useCallback(async () => {
       const result = await api("GET", "/admin/projects");
       return { project: (result.projects ?? []).find((project2) => project2.id === id) ?? null };
@@ -15916,7 +16048,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const overflowItems = [
       {
         label: "Edit project",
-        run: () => setModal({
+        run: () => setModal2({
           kind: "custom",
           render: (close) => /* @__PURE__ */ jsx(ProjectEditModal, { project, onClose: () => {
             close();
@@ -15942,7 +16074,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             project.slug
           ] }),
           actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsxs(Button, { kind: "primary", onClick: () => setModal({ kind: "task", projectId: id }), children: [
+            /* @__PURE__ */ jsxs(Button, { kind: "primary", onClick: () => setModal2({ kind: "task", projectId: id }), children: [
               /* @__PURE__ */ jsx(Icon, { name: "plus" }),
               " Add work"
             ] }),
@@ -15987,7 +16119,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return parts.join(" \xB7 ");
   }
   function Overview({ project, refresh, setTab }) {
-    const { data, api, setModal } = useAdmin();
+    const { data, api, setModal: setModal2 } = useAdmin();
     const work = projectWork(data.tickets, project.id);
     const mapTickets = useMemo(() => projectTickets(data.tickets, project.id, { includeSystem: true }), [data.tickets, project.id]);
     const sites = useMemo(
@@ -16016,10 +16148,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const handleMapAction = useCallback((action) => {
       if (action === "work") setTab("Work");
       else if (action === "activity") setTab("Work", "project-activity");
-      else if (action === "add_work") setModal({ kind: "task", projectId: project.id });
+      else if (action === "add_work") setModal2({ kind: "task", projectId: project.id });
       else if (action === "repo") setTab("Setup", "project-repo");
       else if (action === "link_repo") {
-        setModal({
+        setModal2({
           kind: "custom",
           render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
             close();
@@ -16027,7 +16159,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           } })
         });
       } else if (action === "hosting") setTab("Setup", "project-hosting");
-    }, [project, refresh, setModal, setTab]);
+    }, [project, refresh, setModal2, setTab]);
     const needs = work.filter((ticket) => ["new", "review"].includes(ticket.status)).sort((a, b) => (a.status === "review" ? 0 : 1) - (b.status === "review" ? 0 : 1) || (b.updated_at ?? 0) - (a.updated_at ?? 0));
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsxs("section", { className: "aw-project__section", "aria-label": "Needs attention", children: [
@@ -16041,7 +16173,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           {
             title: "Nothing needs you",
             hint: "Every open request is moving. New and review requests appear here.",
-            action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "task", projectId: project.id }), children: "Add work" })
+            action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "task", projectId: project.id }), children: "Add work" })
           }
         )
       ] }),
@@ -16186,7 +16318,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
   function Resources({ project, refresh, host }) {
-    const { api, setModal } = useAdmin();
+    const { api, setModal: setModal2 } = useAdmin();
     const [state, write] = useWrite();
     const native = typeof host?.projectLocalInfo === "function";
     const loadLocal = useCallback(async () => {
@@ -16227,7 +16359,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         ] }) : /* @__PURE__ */ jsxs("div", { className: "aw-project__handoff", children: [
           /* @__PURE__ */ jsx("p", { children: "This browser cannot access your local files. Open this project in PTech Admin to connect a checkout, edit files and continue a development conversation." }),
           /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Repository links, work, recorded agent evidence and hosted deployments remain available here." }),
-          /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: resourceUrl(project.repo) ? /* @__PURE__ */ jsx("a", { className: "aw-btn aw-btn--sm", href: resourceUrl(project.repo), target: "_blank", rel: "noreferrer", children: "Open repository \u2197" }) : /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
+          /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: resourceUrl(project.repo) ? /* @__PURE__ */ jsx("a", { className: "aw-btn aw-btn--sm", href: resourceUrl(project.repo), target: "_blank", rel: "noreferrer", children: "Open repository \u2197" }) : /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
             close();
             void refresh();
           } }) }), children: "Link a repository" }) })
@@ -16237,7 +16369,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
           /* @__PURE__ */ jsx("h3", { children: "Repository & integrations" }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
+          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
             close();
             void refresh();
           } }) }), children: project.repo ? "Change repository" : "Link repository" })
@@ -16528,7 +16660,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   };
   var WORK_FILTER_EMPTY = { open: "Nothing open", review: "Nothing waiting for review", done: "Nothing finished yet", all: "No work yet" };
   function Work({ project }) {
-    const { data, setModal } = useAdmin();
+    const { data, setModal: setModal2 } = useAdmin();
     const tickets = projectWork(data.tickets, project.id);
     const [filter, setFilter] = useState("open");
     const shown = useMemo(() => tickets.filter(WORK_FILTERS[filter] ?? WORK_FILTERS.open), [tickets, filter]);
@@ -16540,7 +16672,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           /* @__PURE__ */ jsx(Segmented, { value: filter, onChange: setFilter, label: "Work filter", options: [{ value: "open", label: "Open" }, { value: "review", label: "Review" }, { value: "done", label: "Done" }, { value: "all", label: "All" }] })
         ] }),
         /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Save a draft for later, queue an agent deliberately, or continue the same work locally. Open a request for its conversation and evidence." }),
-        shown.length ? /* @__PURE__ */ jsx(WorkList, { tickets: shown }) : tickets.length ? /* @__PURE__ */ jsx(Empty, { title: WORK_FILTER_EMPTY[filter] ?? WORK_FILTER_EMPTY.open, hint: "Switch the filter to see the rest of this project's work.", action: filter !== "all" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setFilter("all"), children: "Show all work" }) : null }) : /* @__PURE__ */ jsx(Empty, { title: "No work yet", hint: "Add the first outcome you want to deliver.", action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "task", projectId: project.id }), children: "Add work" }) })
+        shown.length ? /* @__PURE__ */ jsx(WorkList, { tickets: shown }) : tickets.length ? /* @__PURE__ */ jsx(Empty, { title: WORK_FILTER_EMPTY[filter] ?? WORK_FILTER_EMPTY.open, hint: "Switch the filter to see the rest of this project's work.", action: filter !== "all" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setFilter("all"), children: "Show all work" }) : null }) : /* @__PURE__ */ jsx(Empty, { title: "No work yet", hint: "Add the first outcome you want to deliver.", action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "task", projectId: project.id }), children: "Add work" }) })
       ] }),
       /* @__PURE__ */ jsx(Activity, { project })
     ] });
@@ -16762,7 +16894,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
   }
   function People({ project, refresh }) {
-    const { api, data, ask, setModal } = useAdmin();
+    const { api, data, ask, setModal: setModal2 } = useAdmin();
     const load = useCallback(() => api("GET", `${pathFor2(project)}/memberships`), [api, project.id]);
     const [state, refreshPeople] = useProjectResource(load);
     const loadRecipients = useCallback(() => api("GET", `${pathFor2(project)}/recipients`), [api, project.id]);
@@ -16803,7 +16935,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
         /* @__PURE__ */ jsx("h3", { children: "People & access" }),
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        admin ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectInviteModal, { project, onClose: () => {
+        admin ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectInviteModal, { project, onClose: () => {
           close();
           void peopleChanged();
         } }) }), children: "Add people" }) : null
@@ -17371,7 +17503,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [data, reload] = useAdminData(api);
     const [navigation, setNavigation] = useState({ id, destination: `p:${id}` });
     const destination = navigation.id === id ? navigation.destination : `p:${id}`;
-    const [modal, setModal] = useState(null);
+    const [modal, setModal2] = useState(null);
     const [question, setQuestion] = useState(null);
     const [boardProject, setBoardProject] = useState(id);
     const open = useCallback((key) => {
@@ -17382,15 +17514,15 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const openTicket = useCallback((target) => open(`t:${target}`), [open]);
     const onNotify = useCallback((text, kind) => host?.notify?.(text, kind), [host]);
     const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: setQuestion, onNotify });
-    const value = { api, files, host, platform: host ? "dsh" : "web", data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal, boardProject, setBoardProject };
+    const value = { api, files, host, platform: host ? "dsh" : "web", data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal: setModal2, boardProject, setBoardProject };
     return /* @__PURE__ */ jsxs("div", { className: cx2("aw", host && "aw--dsh", "aw--scroll"), children: [
       /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
         destination.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: destination.slice(2) }, destination) : destination.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(destination.slice(2)), active: true }, destination) : workbenchAllowed(destination, data.access) ? /* @__PURE__ */ jsx(View, { name: destination }) : /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "This destination requires administrator access." }),
         /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast }),
-        modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal(null) }) : null,
-        modal?.kind === "project" && data.access?.canUseWorkbench ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal(null), initialClients: modal?.clientIds ?? [] }) : null,
-        modal?.kind === "custom" ? modal.render(() => setModal(null)) : null,
+        modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal2(null) }) : null,
+        modal?.kind === "project" && data.access?.canUseWorkbench ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal2(null), initialClients: modal?.clientIds ?? [] }) : null,
+        modal?.kind === "custom" ? modal.render(() => setModal2(null)) : null,
         question ? /* @__PURE__ */ jsx(Confirm, { ask: question, onClose: () => setQuestion(null) }) : null
       ] })
     ] });
@@ -20656,7 +20788,7 @@ ${question.text ?? ""}`)) {
     }
     function DeskShell({ children, data, reload, allowSignedOut = false }) {
       const [toast, setToast] = useState(null);
-      const [modal, setModal] = useState(null);
+      const [modal, setModal2] = useState(null);
       const [askState, setAskState] = useState(null);
       const [boardProject, setBoardProject] = useState("all");
       const timer = useRef(null);
@@ -20699,7 +20831,7 @@ ${question.text ?? ""}`)) {
         act,
         notify,
         ask: setAskState,
-        setModal,
+        setModal: setModal2,
         setStatus,
         data,
         reload,
@@ -20724,9 +20856,9 @@ ${question.text ?? ""}`)) {
             /* @__PURE__ */ jsx("style", { children: STYLES }),
             /* @__PURE__ */ jsx("div", { className: "aw-content", style: { overflow: "auto", height: "100%" }, children: /* @__PURE__ */ jsxs(AdminContext.Provider, { value: context, children: [
               signedOut ? /* @__PURE__ */ jsx("div", { className: "pta-page", children: /* @__PURE__ */ jsx(PortalSignIn, { onDone: () => void reload() }) }) : !allowSignedOut && !data.loaded ? /* @__PURE__ */ jsx("div", { className: "aw-loading--fill", children: /* @__PURE__ */ jsx(Skeleton, { variant: "pane", label: "Loading\u2026" }) }) : children,
-              modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal(null) }) : null,
-              modal?.kind === "project" ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal(null) }) : null,
-              modal?.kind === "custom" ? modal.render(() => setModal(null)) : null,
+              modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal2(null) }) : null,
+              modal?.kind === "project" ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal2(null) }) : null,
+              modal?.kind === "custom" ? modal.render(() => setModal2(null)) : null,
               askState ? /* @__PURE__ */ jsx(Confirm, { ask: askState, onClose: () => setAskState(null) }) : null
             ] }) }),
             toast ? /* @__PURE__ */ jsx("div", { className: `aw-toast${toast.kind === "error" ? " is-error" : ""}`, role: "status", children: toast.text }) : null
