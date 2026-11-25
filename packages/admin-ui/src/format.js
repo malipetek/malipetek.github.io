@@ -12,6 +12,16 @@ export const chargeOf = (t) =>
   });
 
 export const STATUSES = ['new', 'approved', 'in_progress', 'review', 'done', 'declined'];
+/** The verb for a status move, used on the button that performs it. */
+export const STATUS_ACTION = {
+  new: 'Reopen',
+  approved: 'Approve',
+  in_progress: 'Start',
+  review: 'Send to review',
+  done: 'Mark done',
+  declined: 'Decline',
+};
+
 export const STATUS_LABEL = {
   new: 'New',
   approved: 'Approved',

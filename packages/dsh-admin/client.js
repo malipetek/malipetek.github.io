@@ -397,6 +397,14 @@ var __awPlugin = (() => {
     firstPreview: Boolean(t.first_preview)
   });
   var STATUSES = ["new", "approved", "in_progress", "review", "done", "declined"];
+  var STATUS_ACTION = {
+    new: "Reopen",
+    approved: "Approve",
+    in_progress: "Start",
+    review: "Send to review",
+    done: "Mark done",
+    declined: "Decline"
+  };
   var STATUS_LABEL = {
     new: "New",
     approved: "Approved",
@@ -16592,9 +16600,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         if (ticket.kind !== "system" && CLIENT_VISIBLE.includes(status)) {
           return new Promise(
             (resolve) => setAsk({
-              title: `${STATUS_LABEL[status]}: #${ticket.id}?`,
+              title: `${STATUS_ACTION[status] ?? STATUS_LABEL[status]}: #${ticket.id}?`,
               text: `${ticket.client_email ?? ticket.clientEmail ?? "The client"} is emailed about this change.`,
-              confirm: STATUS_LABEL[status],
+              confirm: STATUS_ACTION[status] ?? STATUS_LABEL[status],
               run: () => run().then(resolve, resolve)
             })
           );

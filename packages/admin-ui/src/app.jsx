@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AdminContext, useAdmin as useAdminCtx, useAdminData, useMeter, useTicket } from './store.js';
-import { AGENTS, CLIENT_VISIBLE, PRIORITIES, STATUS_LABEL, errorText, needsYou, predict, slugify } from './format.js';
+import { AGENTS, CLIENT_VISIBLE, PRIORITIES, STATUS_ACTION, STATUS_LABEL, errorText, needsYou, predict, slugify } from './format.js';
 import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, Skeleton, Toast, cx, layerOpen, useContextMenu } from './ui.jsx';
 import { BoardView, InboxView, ListView } from './board.jsx';
 import { TicketDetails, TicketView } from './ticket.jsx';
@@ -134,9 +134,9 @@ function useWorkbenchActions({ api, reload, setAsk, onNotify }) {
       if (ticket.kind !== 'system' && CLIENT_VISIBLE.includes(status)) {
         return new Promise((resolve) =>
           setAsk({
-            title: `${STATUS_LABEL[status]}: #${ticket.id}?`,
+            title: `${STATUS_ACTION[status] ?? STATUS_LABEL[status]}: #${ticket.id}?`,
             text: `${ticket.client_email ?? ticket.clientEmail ?? 'The client'} is emailed about this change.`,
-            confirm: STATUS_LABEL[status],
+            confirm: STATUS_ACTION[status] ?? STATUS_LABEL[status],
             run: () => run().then(resolve, resolve),
           }),
         );
