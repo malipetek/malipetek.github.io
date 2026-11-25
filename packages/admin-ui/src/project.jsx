@@ -6,6 +6,7 @@ import { RepoModal, ProjectEditModal } from './fleet.jsx';
 import { LOCALES } from '../../../src/lib/locales.js';
 import { ProjectSolutions, SolutionTags } from './project-solutions.jsx';
 import { SitePanel } from './ticket.jsx';
+import { AskSuperagentButton } from './superagent-ask.jsx';
 import { ago } from './format.js';
 import { briefPayload, createProjectResource, projectTickets, projectWork, projectTopology, resourceUrl, singleFlight } from './project-model.js';
 import { operatorTicketCounts, stationsFor, unshippedPreview } from './project-world-model.mjs';
@@ -173,6 +174,12 @@ export function ProjectView({ id, initialTab = 'Overview' }) {
             <Button kind="primary" onClick={() => setModal({ kind: 'task', projectId: id })}>
               <Icon name="plus" /> Add work
             </Button>
+            <AskSuperagentButton
+              scope={`p:${project.id}`}
+              label={project.name}
+              ask="What is the state of this project, and what does it need next?"
+              title="Start a conversation that can read this project, its work and its site"
+            />
             <OverflowMenu items={overflowItems} label="Project actions" />
           </>
         }

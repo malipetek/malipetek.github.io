@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LOCALES } from '../../../src/lib/locales.js';
 import { useAdmin, usePoll } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } from './format.js';
+import { AskSuperagentButton } from './superagent-ask.jsx';
 import {
   Button,
   Chips,
@@ -1013,6 +1014,14 @@ export function ClientView({ id }) {
       <PageHeader
         title={c.name || c.email}
         subtitle={`${c.name ? `${c.email} · ` : ''}${open} open of ${tickets.length} · client for ${ago(c.created_at)}${c.handoff ? ` · hand-off: ${c.handoff}` : ''}`}
+        actions={
+          <AskSuperagentButton
+            scope={`c:${c.id}`}
+            label={c.name || c.email}
+            ask="What is the state of this client, and what do they need next?"
+            title="Start a conversation that can read this client and their projects"
+          />
+        }
       />
       <FormPane className="aw-group">
         <ClientControls c={c} />

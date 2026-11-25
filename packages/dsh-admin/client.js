@@ -2837,6 +2837,28 @@ ${block(Object.entries(TOKENS))}
     return typeof code === "string" && /^en(-|$)/i.test(code);
   }
 
+  // packages/admin-ui/src/superagent-ask.jsx
+  function AskSuperagentButton({ scope, label, ask, title }) {
+    const { host, notify } = useAdmin();
+    const superagent = host?.superagent ?? null;
+    const [asking, setAsking] = useState(false);
+    if (!superagent?.start) return null;
+    const run = async () => {
+      setAsking(true);
+      try {
+        await superagent.start({
+          brief: superagentBrief({ scope, label, text: ask }),
+          title: superagentTitle({ scope, label, ask })
+        });
+      } catch (error) {
+        notify?.(error?.message ?? "The superagent could not start.", "error");
+      } finally {
+        setAsking(false);
+      }
+    };
+    return /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", busy: asking, title, onClick: () => void run(), children: "Ask the superagent" });
+  }
+
   // packages/admin-ui/src/markdown.js
   var MAX_INLINE_DEPTH = 4;
   function markdownInline(input, depth = 0) {
@@ -3418,28 +3440,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
   function TicketActions({ ticket, runs, land, reload }) {
-    const { api, setStatus, act, ask, host, notify } = useAdmin();
-    const superagent = host?.superagent ?? null;
-    const [asking, setAsking] = useState(false);
-    const askSuperagent = async () => {
-      if (!superagent?.start) return;
-      setAsking(true);
-      const label = `#${ticket.id} ${ticket.title_en || ticket.title}`;
-      try {
-        await superagent.start({
-          brief: superagentBrief({
-            scope: `t:${ticket.id}`,
-            label,
-            text: "What is the state of this ticket, and what does it need next?"
-          }),
-          title: superagentTitle({ scope: `t:${ticket.id}`, label: `#${ticket.id}`, ask: "what does it need next?" })
-        });
-      } catch (error) {
-        notify?.(error?.message ?? "The superagent could not start.", "error");
-      } finally {
-        setAsking(false);
-      }
-    };
+    const { api, setStatus, act, ask } = useAdmin();
     const live = runs.find((r) => r.status === "running");
     const move = (s) => {
       if (s === "approved" && ticket.status !== "new" && ticket.kind !== "system") {
@@ -3495,17 +3496,15 @@ ${block(Object.entries(TOKENS))}
           children: "Land on main"
         }
       ) : null,
-      superagent?.start ? /* @__PURE__ */ jsx(
-        Button,
+      /* @__PURE__ */ jsx(
+        AskSuperagentButton,
         {
-          size: "sm",
-          kind: "ghost",
-          busy: asking,
-          title: "Start a conversation that can read this ticket and its runs",
-          onClick: () => void askSuperagent(),
-          children: "Ask the superagent"
+          scope: `t:${ticket.id}`,
+          label: `#${ticket.id} ${ticket.title_en || ticket.title}`,
+          ask: "What is the state of this ticket, and what does it need next?",
+          title: "Start a conversation that can read this ticket and its runs"
         }
-      ) : null,
+      ),
       land?.requestedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-running", children: [
         /* @__PURE__ */ jsx("span", { className: "aw-live" }),
         " landing\u2026"
@@ -10793,7 +10792,16 @@ ${block(Object.entries(TOKENS))}
         PageHeader,
         {
           title: c.name || c.email,
-          subtitle: `${c.name ? `${c.email} \xB7 ` : ""}${open} open of ${tickets.length} \xB7 client for ${ago(c.created_at)}${c.handoff ? ` \xB7 hand-off: ${c.handoff}` : ""}`
+          subtitle: `${c.name ? `${c.email} \xB7 ` : ""}${open} open of ${tickets.length} \xB7 client for ${ago(c.created_at)}${c.handoff ? ` \xB7 hand-off: ${c.handoff}` : ""}`,
+          actions: /* @__PURE__ */ jsx(
+            AskSuperagentButton,
+            {
+              scope: `c:${c.id}`,
+              label: c.name || c.email,
+              ask: "What is the state of this client, and what do they need next?",
+              title: "Start a conversation that can read this client and their projects"
+            }
+          )
         }
       ),
       /* @__PURE__ */ jsx(FormPane, { className: "aw-group", children: /* @__PURE__ */ jsx(ClientControls, { c }) }),
@@ -15824,6 +15832,15 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               /* @__PURE__ */ jsx(Icon, { name: "plus" }),
               " Add work"
             ] }),
+            /* @__PURE__ */ jsx(
+              AskSuperagentButton,
+              {
+                scope: `p:${project.id}`,
+                label: project.name,
+                ask: "What is the state of this project, and what does it need next?",
+                title: "Start a conversation that can read this project, its work and its site"
+              }
+            ),
             /* @__PURE__ */ jsx(OverflowMenu, { items: overflowItems, label: "Project actions" })
           ] })
         }
