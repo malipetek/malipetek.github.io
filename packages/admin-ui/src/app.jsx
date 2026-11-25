@@ -231,11 +231,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
     else setSidebar((s) => !s);
   }, [narrow]);
 
-  // The superagent is a conversation in the desktop app; a host that cannot
-  // start one (the web admin) is not offered a destination that only says so.
-  const canAskSuperagent = Boolean(host?.superagent?.start);
-  const offered = (v) => workbenchAllowed(v.key, data.access) && (v.key !== 'superagent' || canAskSuperagent);
-  const allowedViews = VIEWS.filter(offered);
+  const allowedViews = VIEWS.filter((v) => viewOffered(v, data.access, host));
   const visibleTabs = tabs.filter((key) => workbenchAllowed(key, data.access));
 
   // The keyboard map (contract §6). Every shortcut stands down while a text
@@ -721,8 +717,17 @@ function StatusBar({ onPalette, onKeys }) {
 
 /* ————— the palette: jump to anything, run any command ————— */
 
+/**
+ * Whether a destination is offered here: the access rules, and the superagent
+ * only where a conversation can start (the desktop app, not the web admin).
+ * The activity bar and the command palette both ask this one function.
+ */
+export function viewOffered(view, access, host) {
+  return workbenchAllowed(view.key, access) && (view.key !== 'superagent' || Boolean(host?.superagent?.start));
+}
+
 function Palette({ onClose, onKeys, toggleExplorer }) {
-  const { data, open, openTicket, setModal, reload, activeTab, closeTab, platform } = useAdminCtx();
+  const { data, host, open, openTicket, setModal, reload, activeTab, closeTab, platform } = useAdminCtx();
   const [q, setQ] = useState('');
   const [i, setI] = useState(0);
   const input = useRef(null);
@@ -740,7 +745,7 @@ function Palette({ onClose, onKeys, toggleExplorer }) {
       { label: 'Toggle explorer', hint: `${MOD}B`, run: toggleExplorer },
       ...(activeTab ? [{ label: 'Close tab', hint: closeKey(platform), run: () => closeTab(activeTab) }] : []),
       { label: 'Keyboard shortcuts', hint: '?', run: onKeys },
-      ...VIEWS.filter(offered).map((v) => ({ label: `Go to ${v.label}`, hint: viewKey(platform, VIEWS.indexOf(v) + 1), run: () => open(v.key) })),
+      ...VIEWS.filter((v) => viewOffered(v, data.access, host)).map((v) => ({ label: `Go to ${v.label}`, hint: viewKey(platform, VIEWS.indexOf(v) + 1), run: () => open(v.key) })),
       ...data.projects.map((p) => ({ label: p.name, hint: 'project', run: () => open(`p:${p.id}`) })),
       ...data.clients.map((c) => ({ label: c.name || c.email, hint: c.name ? `client · ${c.email}` : 'client', run: () => open(`c:${c.id}`) })),
       ...data.tickets.map((t) => ({ label: `#${t.id} ${t.title}`, hint: `${STATUS_LABEL[t.status]} · ${t.project_name ?? 'no project'}`, run: () => openTicket(t.id) })),
@@ -748,7 +753,7 @@ function Palette({ onClose, onKeys, toggleExplorer }) {
     const needle = q.trim().toLowerCase();
     const matched = needle ? cmds.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(needle)) : cmds;
     return { items: matched.slice(0, 40), total: matched.length };
-  }, [q, data, open, openTicket, setModal, reload, toggleExplorer, activeTab, closeTab, onKeys, platform]);
+  }, [q, data, host, open, openTicket, setModal, reload, toggleExplorer, activeTab, closeTab, onKeys, platform]);
   useEffect(() => {
     listRef.current?.querySelector('.is-active')?.scrollIntoView?.({ block: 'nearest' });
   }, [i]);

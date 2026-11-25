@@ -4508,7 +4508,7 @@ ${String(text)}` : String(text);
       danger: true,
       run: () => decline().catch(() => void 0)
     });
-    const offered2 = notEmpty(node?.executors) ?? notEmpty(read.info?.localConfig?.executors) ?? DEFAULT_LEND;
+    const offered = notEmpty(node?.executors) ?? notEmpty(read.info?.localConfig?.executors) ?? DEFAULT_LEND;
     const lending = consent?.lend ?? notEmpty(node?.executors) ?? [];
     const signedOut = Boolean(data.error && ["unauthorized", "signed_out", "forbidden"].includes(data.error.code));
     return {
@@ -4526,7 +4526,7 @@ ${String(text)}` : String(text);
       consent,
       consented,
       state: stateKey,
-      offered: offered2,
+      offered,
       lending,
       pause,
       resume,
