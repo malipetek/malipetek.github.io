@@ -467,18 +467,24 @@ function apply(ctx) {
         if (typeof workspace?.openSession !== 'function') throw new Error('This Harness cannot open a conversation from a plugin.');
         workspace.openSession(sessionId);
       },
-      start: ({ brief, title }) => startSuperagent({
-        sessions: ctx.sessions,
-        brief,
-        title,
-        preset: SUPERAGENT_PRESET,
-        open: (sessionId) => {
-          if (typeof workspace?.openSession === 'function') workspace.openSession(sessionId);
-        },
-        remember: (sessionId) => {
-          try { globalThis.localStorage?.setItem(SUPERAGENT_SESSION, String(sessionId)); } catch { /* ignore */ }
-        },
-      }),
+      start: async ({ brief, title }) => {
+        // The Host owns the folder (it creates it); a host without the command
+        // keeps its default cwd and the conversation still starts.
+        const cwd = await json('superagent-cwd').then((value) => value?.cwd ?? null).catch(() => null);
+        return startSuperagent({
+          sessions: ctx.sessions,
+          brief,
+          title,
+          preset: SUPERAGENT_PRESET,
+          cwd,
+          open: (sessionId) => {
+            if (typeof workspace?.openSession === 'function') workspace.openSession(sessionId);
+          },
+          remember: (sessionId) => {
+            try { globalThis.localStorage?.setItem(SUPERAGENT_SESSION, String(sessionId)); } catch { /* ignore */ }
+          },
+        });
+      },
     },
   };
   const api = (method, path, body) => json(`api ${method} ${path}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`);

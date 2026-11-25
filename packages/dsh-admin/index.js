@@ -35,6 +35,8 @@ const execFileP = promisify(execFile);
 
 /** Ticket attachments: where downloads land, and how long a transfer may take. */
 const DOWNLOADS = join(homedir(), 'Downloads');
+/** Where superagent conversations run: their own folder, so the sidebar groups them. */
+const SUPERAGENT_WORKSPACE = join(homedir(), '.dsh-admin', 'superagent');
 const FILE_TIMEOUT_MS = 120_000;
 
 /**
@@ -1531,6 +1533,13 @@ function makeCommandHandler(ctx) {
           }
         }
 
+        // The superagent's own folder. One workspace name in the sidebar beats
+        // every admin conversation landing in Unsorted.
+        case 'superagent-cwd': {
+          await mkdir(SUPERAGENT_WORKSPACE, { recursive: true, mode: 0o700 });
+          return { kind: 'success', text: JSON.stringify({ cwd: SUPERAGENT_WORKSPACE }) };
+        }
+
         case 'hello': {
           const [version] = rest;
           await writeText(
@@ -1977,7 +1986,7 @@ const toolbox = createToolbox();
 /** What the last pass did, for `/admin localinfo`. */
 export const runGrouping = { lastAt: null, attached: 0, error: null, folders: [] };
 
-export function groupFleetRuns(registry) {
+export function groupFleetRuns(registry, { superagentFolder = SUPERAGENT_WORKSPACE, runsFile = RUN_WORKSPACES } = {}) {
   let busy = false;
   const pass = async () => {
     if (busy || typeof registry?.create !== 'function') return;
@@ -1985,9 +1994,9 @@ export function groupFleetRuns(registry) {
     try {
       let map = {};
       try {
-        map = JSON.parse(await readFile(RUN_WORKSPACES, 'utf8'));
+        map = JSON.parse(await readFile(runsFile, 'utf8'));
       } catch {
-        return; // no node has run here yet
+        /* no node has run here yet */
       }
       const folders = [];
       for (const [path, title] of Object.entries(map)) {
@@ -1998,6 +2007,14 @@ export function groupFleetRuns(registry) {
         } catch {
           /* not created yet on this machine */
         }
+      }
+      // The superagent's conversations get a workspace of their own, so admin
+      // chat groups under one name instead of collecting in Unsorted.
+      try {
+        await mkdir(superagentFolder, { recursive: true, mode: 0o700 });
+        folders.push([superagentFolder, 'Superagent']);
+      } catch {
+        /* no home to write to */
       }
       runGrouping.folders = folders.map(([path]) => path);
       if (folders.length === 0) return;

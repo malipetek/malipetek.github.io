@@ -105,3 +105,15 @@ test('a failed rename still starts the conversation', async () => {
   const { sessions } = fakeSessions({ renameRejects: true });
   assert.equal(await startSuperagent({ sessions, brief: 'x', title: 'Superagent' }), 'session-1');
 });
+
+test('the conversation runs in the folder the Host names', async () => {
+  const { sessions, calls } = fakeSessions();
+  await startSuperagent({ sessions, brief: 'x', cwd: '/Users/you/.dsh-admin/superagent' });
+  assert.deepEqual(calls[0], ['create', { cwd: '/Users/you/.dsh-admin/superagent' }]);
+});
+
+test('without a folder the Host picks the default', async () => {
+  const { sessions, calls } = fakeSessions();
+  await startSuperagent({ sessions, brief: 'x' });
+  assert.deepEqual(calls[0], ['create', {}]);
+});

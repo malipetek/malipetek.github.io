@@ -15,12 +15,14 @@
  * @param {string} [options.preset] - Permission preset the conversation runs
  *   under. It has to ask before a write, or the admin gate's approval card is
  *   never shown and every write fails closed.
+ * @param {string} [options.cwd] - Folder the conversation runs in, so the
+ *   sidebar groups admin conversations instead of dropping them in Unsorted.
  * @param {(sessionId: string) => void} [options.remember] - Records the id for "continue".
  * @returns {Promise<string>} The conversation id.
  */
-export async function startSuperagent({ sessions, open, brief, title, preset, remember }) {
+export async function startSuperagent({ sessions, open, brief, title, preset, cwd, remember }) {
   if (typeof sessions?.create !== 'function') throw new Error('This host cannot start a conversation.');
-  const sessionId = await sessions.create({});
+  const sessionId = await sessions.create(cwd ? { cwd } : {});
   const reference = sessions.retain(sessionId, { source: 'workspaceOperation' });
   try {
     await reference.ready;

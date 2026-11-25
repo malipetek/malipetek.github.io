@@ -129,9 +129,9 @@ var __awPlugin = (() => {
   }
 
   // packages/dsh-admin/superagent-start.mjs
-  async function startSuperagent({ sessions, open, brief, title, preset, remember }) {
+  async function startSuperagent({ sessions, open, brief, title, preset, cwd, remember }) {
     if (typeof sessions?.create !== "function") throw new Error("This host cannot start a conversation.");
-    const sessionId = await sessions.create({});
+    const sessionId = await sessions.create(cwd ? { cwd } : {});
     const reference = sessions.retain(sessionId, { source: "workspaceOperation" });
     try {
       await reference.ready;
@@ -18051,21 +18051,25 @@ ${question.text ?? ""}`)) {
           if (typeof workspace?.openSession !== "function") throw new Error("This Harness cannot open a conversation from a plugin.");
           workspace.openSession(sessionId);
         },
-        start: ({ brief, title }) => startSuperagent({
-          sessions: ctx.sessions,
-          brief,
-          title,
-          preset: SUPERAGENT_PRESET,
-          open: (sessionId) => {
-            if (typeof workspace?.openSession === "function") workspace.openSession(sessionId);
-          },
-          remember: (sessionId) => {
-            try {
-              globalThis.localStorage?.setItem(SUPERAGENT_SESSION, String(sessionId));
-            } catch {
+        start: async ({ brief, title }) => {
+          const cwd = await json("superagent-cwd").then((value) => value?.cwd ?? null).catch(() => null);
+          return startSuperagent({
+            sessions: ctx.sessions,
+            brief,
+            title,
+            preset: SUPERAGENT_PRESET,
+            cwd,
+            open: (sessionId) => {
+              if (typeof workspace?.openSession === "function") workspace.openSession(sessionId);
+            },
+            remember: (sessionId) => {
+              try {
+                globalThis.localStorage?.setItem(SUPERAGENT_SESSION, String(sessionId));
+              } catch {
+              }
             }
-          }
-        })
+          });
+        }
       }
     };
     const api = (method, path, body) => json(`api ${method} ${path}${body === void 0 ? "" : ` ${JSON.stringify(body)}`}`);
