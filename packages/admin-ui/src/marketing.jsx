@@ -1,7 +1,7 @@
 /* The marketing desk: who we write to, what is queued, and the switch that sends it. */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin, usePoll } from './store.js';
-import { postLength, postMax } from './post-length.js';
+import { hasLink, postLength, postMax, withSiteLink } from './post-length.js';
 import { openSettings } from './settings-link.js';
 import { ago, errorText, when } from './format.js';
 import { nextRowIndex } from './row-navigation.mjs';
@@ -2784,6 +2784,25 @@ function PostInspector({ post: m, initialMode, api, holdHours = 0, onClose, onAp
   const releaseAt = m.status === 'draft' && holdHours > 0 ? Math.max((m.createdAt ?? 0) + holdHours * 3600, m.scheduledAt ?? 0) : null;
   const channelLabel = postChannelLabel[m.channel] ?? m.channel;
 
+  const current = editing ? body : m.body ?? '';
+  const missingLink = (m.channel === 'x' || m.channel === 'linkedin') && !hasLink(current);
+  const linked = missingLink ? withSiteLink(current, m.channel) : null;
+  /** Put the site link on the post: into the box while editing, saved straight away otherwise. */
+  const addSiteLink = async () => {
+    if (!linked) return;
+    if (editing) { setBody(linked); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      await api('PATCH', `/admin/marketing/messages/${m.id}`, { body: linked });
+      onSaved();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const savePost = async () => {
     setBusy(true);
     setError(null);
@@ -2808,9 +2827,25 @@ function PostInspector({ post: m, initialMode, api, holdHours = 0, onClose, onAp
       <div className="aw-mk-chips">
         <MessageStatus status={m.status} isPost />
         <MetaChip>{channelLabel}</MetaChip>
-        <MetaChip mono>{(editing ? body : m.body ?? '').length}/{max}</MetaChip>
+        <MetaChip mono>{postLength(current, m.channel)}/{max}</MetaChip>
         {m.kind === 'auto' ? <MetaChip>Content cycle</MetaChip> : null}
       </div>
+
+      {missingLink && (editing || open) ? (
+        <div className="ui-note aw-mk-nolink">
+          <span>No link: this post shows no picture card and gives readers no way to sign up.</span>
+          <Button
+            size="sm"
+            busy={busy && !editing}
+            disabled={!linked || busy}
+            disabledReason={linked ? undefined : 'The link does not fit; shorten the post first.'}
+            onClick={addSiteLink}
+          >
+            Add site link
+          </Button>
+        </div>
+      ) : null}
+      {!editing && error ? <ErrorNote error={error} /> : null}
 
       {editing ? (
         <div

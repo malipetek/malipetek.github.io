@@ -25,3 +25,23 @@ export function postLength(body, channel) {
   // A short link counts as itself; a long one is capped at X's 23.
   return text.replace(LINK, (url) => 'x'.repeat(Math.min(url.length, 23))).length;
 }
+
+/** Where a post sends a reader; X and LinkedIn turn it into a card with the site's picture. */
+export const SITE_LINK = 'https://ptechsolutions.net';
+
+/** True when the post carries any link, so the network can show a card. */
+export const hasLink = (body) => /https?:\/\/\S+/.test(String(body ?? ''));
+
+/**
+ * The post with the site link on its own last line, or null when it would not
+ * fit the network's limit. A post that already has a link is returned as is.
+ * @param {string} body - the post as written.
+ * @param {string} channel - `x`, `linkedin`, or anything else.
+ * @returns {string | null}
+ */
+export function withSiteLink(body, channel) {
+  const text = String(body ?? '').trimEnd();
+  if (hasLink(text)) return text;
+  const next = text ? `${text}\n\n${SITE_LINK}` : SITE_LINK;
+  return postLength(next, channel) <= postMax(channel) ? next : null;
+}

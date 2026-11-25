@@ -4914,6 +4914,16 @@ ${String(text)}` : String(text);
     if (channel !== "x") return text.length;
     return text.replace(LINK, (url) => "x".repeat(Math.min(url.length, 23))).length;
   }
+  var SITE_LINK = "https://ptechsolutions.net";
+  var hasLink = (body) => /https?:\/\/\S+/.test(String(body ?? ""));
+  function withSiteLink(body, channel) {
+    const text = String(body ?? "").trimEnd();
+    if (hasLink(text)) return text;
+    const next = text ? `${text}
+
+${SITE_LINK}` : SITE_LINK;
+    return postLength(next, channel) <= postMax(channel) ? next : null;
+  }
 
   // packages/admin-ui/src/settings-link.js
   var SETTINGS_SECTION_IDS = Object.freeze(["queue", "machine", "portal", "marketing", "seo", "account"]);
@@ -7357,6 +7367,26 @@ ${String(text)}` : String(text);
     const open = ["draft", "scheduled", "failed"].includes(m.status);
     const releaseAt = m.status === "draft" && holdHours > 0 ? Math.max((m.createdAt ?? 0) + holdHours * 3600, m.scheduledAt ?? 0) : null;
     const channelLabel = postChannelLabel[m.channel] ?? m.channel;
+    const current = editing ? body : m.body ?? "";
+    const missingLink = (m.channel === "x" || m.channel === "linkedin") && !hasLink(current);
+    const linked = missingLink ? withSiteLink(current, m.channel) : null;
+    const addSiteLink = async () => {
+      if (!linked) return;
+      if (editing) {
+        setBody(linked);
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        await api("PATCH", `/admin/marketing/messages/${m.id}`, { body: linked });
+        onSaved();
+      } catch (err) {
+        setError(errorText(err));
+      } finally {
+        setBusy(false);
+      }
+    };
     const savePost = async () => {
       setBusy(true);
       setError(null);
@@ -7382,12 +7412,27 @@ ${String(text)}` : String(text);
             /* @__PURE__ */ jsx(MessageStatus, { status: m.status, isPost: true }),
             /* @__PURE__ */ jsx(MetaChip, { children: channelLabel }),
             /* @__PURE__ */ jsxs(MetaChip, { mono: true, children: [
-              (editing ? body : m.body ?? "").length,
+              postLength(current, m.channel),
               "/",
               max
             ] }),
             m.kind === "auto" ? /* @__PURE__ */ jsx(MetaChip, { children: "Content cycle" }) : null
           ] }),
+          missingLink && (editing || open) ? /* @__PURE__ */ jsxs("div", { className: "ui-note aw-mk-nolink", children: [
+            /* @__PURE__ */ jsx("span", { children: "No link: this post shows no picture card and gives readers no way to sign up." }),
+            /* @__PURE__ */ jsx(
+              Button,
+              {
+                size: "sm",
+                busy: busy && !editing,
+                disabled: !linked || busy,
+                disabledReason: linked ? void 0 : "The link does not fit; shorten the post first.",
+                onClick: addSiteLink,
+                children: "Add site link"
+              }
+            )
+          ] }) : null,
+          !editing && error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null,
           editing ? /* @__PURE__ */ jsxs(
             "div",
             {
@@ -11895,6 +11940,7 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-run { padding: var(--aw-space-3) 0; }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
 /* Superagent \u2014 laid out like the app's chat: a centred column, the thread scrolls, the composer card stays at the foot. */
+.aw-mk-nolink { display: flex; align-items: center; justify-content: space-between; gap: var(--aw-space-3); flex-wrap: wrap; }
 .aw-sa { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .aw-sa__bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--aw-space-3); min-height: 48px; padding: 0 var(--aw-space-5); border-bottom: 1px solid var(--aw-hairline); }
 .aw-sa__bar-title { display: flex; align-items: center; gap: var(--aw-space-2); min-width: 0; color: var(--aw-ink); }

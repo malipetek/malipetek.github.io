@@ -387,6 +387,7 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-run { padding: var(--aw-space-3) 0; }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
 /* Superagent — laid out like the app's chat: a centred column, the thread scrolls, the composer card stays at the foot. */
+.aw-mk-nolink { display: flex; align-items: center; justify-content: space-between; gap: var(--aw-space-3); flex-wrap: wrap; }
 .aw-sa { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .aw-sa__bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--aw-space-3); min-height: 48px; padding: 0 var(--aw-space-5); border-bottom: 1px solid var(--aw-hairline); }
 .aw-sa__bar-title { display: flex; align-items: center; gap: var(--aw-space-2); min-width: 0; color: var(--aw-ink); }
