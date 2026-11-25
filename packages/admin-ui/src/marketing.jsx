@@ -1,6 +1,7 @@
 /* The marketing desk: who we write to, what is queued, and the switch that sends it. */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin, usePoll } from './store.js';
+import { POST_MAX, postLength } from './post-length.js';
 import { openSettings } from './settings-link.js';
 import { ago, errorText, when } from './format.js';
 import { nextRowIndex } from './row-navigation.mjs';
@@ -1782,7 +1783,6 @@ function EmailTab({
 
 /* —— posts: the audit, before and after they go out —— */
 
-const POST_MAX = { x: 280, linkedin: 3000 };
 const POST_ORDER = { draft: 0, failed: 1, sending: 2, scheduled: 3, sent: 4, cancelled: 5 };
 
 function PostsTab({
@@ -1880,7 +1880,7 @@ function PostsTab({
       key: 'length',
       header: 'Chars',
       numeric: true,
-      render: (m) => `${(m.body ?? '').length}/${POST_MAX[m.channel] ?? 3000}`,
+      render: (m) => `${postLength(m.body, m.channel)}/${POST_MAX[m.channel] ?? 3000}`,
     },
     {
       key: 'when',
@@ -2779,6 +2779,7 @@ function PostInspector({ post: m, initialMode, api, holdHours = 0, onClose, onAp
   }, [m.id, m.body, initialMode]);
 
   const max = POST_MAX[m.channel] ?? 3000;
+  const counted = postLength(body, m.channel);
   const open = ['draft', 'scheduled', 'failed'].includes(m.status);
   const releaseAt = m.status === 'draft' && holdHours > 0 ? Math.max((m.createdAt ?? 0) + holdHours * 3600, m.scheduledAt ?? 0) : null;
   const channelLabel = postChannelLabel[m.channel] ?? m.channel;
@@ -2826,12 +2827,12 @@ function PostInspector({ post: m, initialMode, api, holdHours = 0, onClose, onAp
           {m.scheduledAt ? (
             <p className="ui-note">Slot {when(m.scheduledAt)}. Editing keeps the slot and the approval state.</p>
           ) : null}
-          <Field label="Text" hint={`${body.length}/${max} characters. No em dashes, no stock AI phrasing: marketing/style/README.md.`}>
+          <Field label="Text" hint={`${counted}/${max} characters${m.channel === 'x' ? ' (a link counts as 23)' : ''}. No em dashes, no stock AI phrasing: marketing/style/README.md.`}>
             <textarea rows={m.channel === 'x' ? 6 : 14} value={body} onChange={(e) => setBody(e.target.value)} autoFocus />
           </Field>
           {error ? <ErrorNote error={error} /> : null}
           <div className="ui-actions">
-            <Button kind="primary" busy={busy} disabled={!body.trim() || body.length > max} onClick={savePost}>
+            <Button kind="primary" busy={busy} disabled={!body.trim() || counted > max} onClick={savePost}>
               Save post
             </Button>
             <Button disabled={busy} onClick={() => { setEditing(false); setBody(m.body ?? ''); }}>

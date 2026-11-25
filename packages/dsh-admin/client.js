@@ -4877,6 +4877,15 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
+  // packages/admin-ui/src/post-length.js
+  var POST_MAX = { x: 280, linkedin: 3e3 };
+  var LINK = /https?:\/\/\S+/g;
+  function postLength(body, channel) {
+    const text = String(body ?? "");
+    if (channel !== "x") return text.length;
+    return text.replace(LINK, (url) => "x".repeat(Math.min(url.length, 23))).length;
+  }
+
   // packages/admin-ui/src/settings-link.js
   var SETTINGS_SECTION_IDS = Object.freeze(["queue", "machine", "portal", "marketing", "seo", "account"]);
   var ALIASES = {
@@ -6476,7 +6485,6 @@ ${block(Object.entries(TOKENS))}
       ] })
     ] });
   }
-  var POST_MAX = { x: 280, linkedin: 3e3 };
   var POST_ORDER = { draft: 0, failed: 1, sending: 2, scheduled: 3, sent: 4, cancelled: 5 };
   function PostsTab({
     api,
@@ -6561,7 +6569,7 @@ ${block(Object.entries(TOKENS))}
         key: "length",
         header: "Chars",
         numeric: true,
-        render: (m) => `${(m.body ?? "").length}/${POST_MAX[m.channel] ?? 3e3}`
+        render: (m) => `${postLength(m.body, m.channel)}/${POST_MAX[m.channel] ?? 3e3}`
       },
       {
         key: "when",
@@ -7316,6 +7324,7 @@ ${block(Object.entries(TOKENS))}
       setError(null);
     }, [m.id, m.body, initialMode]);
     const max = POST_MAX[m.channel] ?? 3e3;
+    const counted2 = postLength(body, m.channel);
     const open = ["draft", "scheduled", "failed"].includes(m.status);
     const releaseAt = m.status === "draft" && holdHours > 0 ? Math.max((m.createdAt ?? 0) + holdHours * 3600, m.scheduledAt ?? 0) : null;
     const channelLabel = postChannelLabel[m.channel] ?? m.channel;
@@ -7368,10 +7377,10 @@ ${block(Object.entries(TOKENS))}
                   when(m.scheduledAt),
                   ". Editing keeps the slot and the approval state."
                 ] }) : null,
-                /* @__PURE__ */ jsx(Field, { label: "Text", hint: `${body.length}/${max} characters. No em dashes, no stock AI phrasing: marketing/style/README.md.`, children: /* @__PURE__ */ jsx("textarea", { rows: m.channel === "x" ? 6 : 14, value: body, onChange: (e) => setBody(e.target.value), autoFocus: true }) }),
+                /* @__PURE__ */ jsx(Field, { label: "Text", hint: `${counted2}/${max} characters${m.channel === "x" ? " (a link counts as 23)" : ""}. No em dashes, no stock AI phrasing: marketing/style/README.md.`, children: /* @__PURE__ */ jsx("textarea", { rows: m.channel === "x" ? 6 : 14, value: body, onChange: (e) => setBody(e.target.value), autoFocus: true }) }),
                 error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null,
                 /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
-                  /* @__PURE__ */ jsx(Button, { kind: "primary", busy, disabled: !body.trim() || body.length > max, onClick: savePost, children: "Save post" }),
+                  /* @__PURE__ */ jsx(Button, { kind: "primary", busy, disabled: !body.trim() || counted2 > max, onClick: savePost, children: "Save post" }),
                   /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: () => {
                     setEditing(false);
                     setBody(m.body ?? "");
