@@ -1,0 +1,52 @@
+{
+  "name": "@malipetek/dsh-recall",
+  "version": "0.1.0",
+  "description": "One thread across every project: search and read past conversations from any session, and catch up on a project without switching windows.",
+  "type": "module",
+  "main": "index.js",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./memory": "./memory.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "memory.mjs",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "meta": {
+      "title": "Recall",
+      "description": "Search every past conversation and catch up on a project from one thread."
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "memory",
+    "sessions",
+    "recall"
+  ],
+  "author": "Muhammet Ali Petek",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/malipetek/malipetek.github.io.git",
+    "directory": "packages/dsh-recall"
+  },
+  "homepage": "https://malipetek.dev/plugins/dsh-recall",
+  "bugs": {
+    "url": "https://github.com/malipetek/malipetek.github.io/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

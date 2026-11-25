@@ -38,7 +38,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { accessSync, appendFileSync, constants, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, appendFileSync, constants, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 
 /**
  * A Node executable for spawning the MCP shim.
@@ -69,7 +69,7 @@ function nodeBinary() {
   return 'node';
 }
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 
 import { fileURLToPath } from 'node:url';
 import { AcpModelAdapter, DEFAULT_PRIME_MAX_CHARS, pickOption } from './llm-adapter.js';
@@ -92,7 +92,7 @@ const CATALOGUE_KEY = 'catalogue';
  * every one of them failed silently — so the first question on the next report
  * has to be "which build is this?", and it has to be answerable without guessing.
  */
-export const PLUGIN_BUILD = '2026-11-19a-mcp-name';
+export const PLUGIN_BUILD = '2026-11-21a-superagent';
 
 /** Where the plugin records what it decided, for exactly this kind of question. */
 export const DIAGNOSTICS_FILE = '~/.dsh/external-agents/diagnostics.log';
@@ -191,6 +191,41 @@ function expandHome(path) {
 }
 
 /**
+ * The PATH an agent is resolved and launched with.
+ *
+ * A desktop app started from Finder inherits launchd's PATH (`/usr/bin:/bin:…`),
+ * so tools a developer installed into their own home — `claude-agent-acp` under
+ * `~/Library/pnpm`, anything in `~/.local/bin` — resolve in a terminal but not in
+ * the app. The agent then failed every turn with `command not found`, which
+ * reads like a broken install rather than a missing PATH entry.
+ *
+ * Extra directories are appended, never prepended, so an explicitly configured
+ * environment still wins. The list is only candidates: a path that does not
+ * exist is harmless, because every lookup still checks for an executable.
+ *
+ * @returns the PATH string for resolution and for the child's environment.
+ */
+export function toolPath() {
+  const dirs = (process.env.PATH ?? '').split(delimiter).filter((dir) => dir.length > 0);
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  const extra = [
+    home === '' ? '' : join(home, '.local', 'bin'),
+    home === '' ? '' : join(home, 'Library', 'pnpm'),
+    home === '' ? '' : join(home, '.bun', 'bin'),
+    home === '' ? '' : join(home, '.volta', 'bin'),
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    '/usr/local/bin',
+    '/usr/local/sbin',
+  ];
+  for (const dir of extra) {
+    if (dir.length === 0 || dirs.includes(dir)) continue;
+    dirs.push(dir);
+  }
+  return dirs.join(delimiter);
+}
+
+/**
  * Decide whether an executable exists, resolving bare names against PATH.
  * @param command - an absolute path or a bare executable name.
  * @returns the usable command, or null when nothing matched.
@@ -205,8 +240,7 @@ export function findCommand(command) {
       return null;
     }
   }
-  const pathValue = process.env.PATH ?? '';
-  for (const dir of pathValue.split(':')) {
+  for (const dir of toolPath().split(delimiter)) {
     if (dir.length === 0) continue;
     const candidate = join(dir, command);
     try {
@@ -262,6 +296,9 @@ export function buildEnv(mode, extra = {}, allowAnthropicRouting = false) {
   if (!allowAnthropicRouting) {
     for (const key of ROUTING_KEYS) delete base[key];
   }
+  // The same PATH the command was resolved against, so a bare `command:` finds
+  // its binary and that binary finds its own tools. `extra` may override it.
+  base.PATH = toolPath();
   return { ...base, ...extra };
 }
 
@@ -395,6 +432,20 @@ export class AcpConnection {
     this.mcpServersProvider = typeof options.mcpServersProvider === 'function'
       ? options.mcpServersProvider
       : () => [];
+    /**
+     * Standing instructions delivered as the agent's real system prompt, when the
+     * agent advertises `sessionCapabilities.systemPrompt` (Claude Code's ACP
+     * adapter does). Text prepended to the first user message ranks below the
+     * vendor's own system prompt and loses every conflict with it; appended to
+     * the system prompt it does not.
+     */
+    this.systemPrompt = typeof options.systemPrompt === 'string' ? options.systemPrompt.trim() : '';
+    /**
+     * `_meta` sent on `session/new`, `session/resume` and `session/load`, e.g.
+     * `{ claudeCode: { options: { disallowedTools: ['Agent'] } } }`. This is how a
+     * behaviour becomes a fact the agent cannot talk itself out of.
+     */
+    this.sessionMeta = options.sessionMeta !== null && typeof options.sessionMeta === 'object' ? options.sessionMeta : undefined;
     /** In-flight session creation, so concurrent callers share one ACP session. */
     this.creating = new Map();
     this.approval = options.approval ?? 'allow';
@@ -462,8 +513,14 @@ export class AcpConnection {
 
     const resolved = findCommand(this.command);
     if (resolved === null) {
+      // Say where it looked. The bare message cost a debugging round: the binary
+      // was installed, just not on the PATH a Finder-launched app inherits, and
+      // nothing in "command not found" points at that.
+      const searched = toolPath().split(delimiter).filter((dir) => dir.length > 0);
       this.state = 'failed';
-      this.detail = `command not found: ${this.command}`;
+      this.detail = `command not found: ${this.command}`
+        + ` — install it, or put its directory on PATH (searched ${searched.length}: `
+        + `${searched.slice(0, 6).join(', ')}${searched.length > 6 ? ', …' : ''})`;
       throw new Error(this.detail);
     }
 
@@ -537,6 +594,21 @@ export class AcpConnection {
    * @param timeoutMs - how long the agent may take to answer.
    * @returns the session record.
    */
+  /**
+   * Extra `session/new|resume|load` params: the system prompt (only when the agent
+   * says it takes one) and the configured `_meta`.
+   * @returns `{ params, systemPromptApplied }`.
+   */
+  sessionExtras() {
+    const capabilities = this.abilities?.agentCapabilities?.sessionCapabilities ?? {};
+    const params = {};
+    if (this.systemPrompt.length > 0 && capabilities.systemPrompt !== undefined && capabilities.systemPrompt !== null) {
+      params.systemPrompt = { mode: 'append', content: [{ type: 'text', text: this.systemPrompt }] };
+    }
+    if (this.sessionMeta !== undefined) params._meta = this.sessionMeta;
+    return { params, systemPromptApplied: params.systemPrompt !== undefined };
+  }
+
   async resumeSession(sessionId, cwd, key = DEFAULT_KEY, timeoutMs = this.timeoutMs) {
     await this.start();
     const wanted = resolve(cwd ?? this.cwd);
@@ -552,10 +624,12 @@ export class AcpConnection {
       throw new Error(`agent "${this.id}" supports neither session/resume nor session/load`);
     }
     const method = canResume ? 'session/resume' : 'session/load';
+    const extras = this.sessionExtras();
     const result = await this.#request(method, {
       sessionId,
       cwd: wanted,
       mcpServers: await this.mcpServersProvider(key),
+      ...extras.params,
     }, timeoutMs);
     const session = {
       // `session/load` may answer with the id it adopted; `session/resume`
@@ -572,6 +646,8 @@ export class AcpConnection {
       // to catch it up on.
       primed: true,
       late: [],
+      // The adapter skips prepending what the system prompt already carries.
+      ...(extras.systemPromptApplied ? { instructionsSent: this.systemPrompt } : {}),
     };
     this.sessions.set(key, session);
     this.byAcpId.set(sessionId, key);
@@ -664,7 +740,9 @@ export class AcpConnection {
       }
     }
 
-    const result = await this.#request('session/new', { cwd: wanted, mcpServers: await this.mcpServersProvider(key) }, timeoutMs);
+    const extras = this.sessionExtras();
+    const result = await this.#request('session/new', { cwd: wanted, mcpServers: await this.mcpServersProvider(key), ...extras.params }, timeoutMs);
+    if (extras.systemPromptApplied) note(`[${this.id}] standing instructions applied as system prompt (${this.systemPrompt.length} chars)`);
     const session = {
       sessionId: result?.sessionId ?? null,
       cwd: wanted,
@@ -686,6 +764,8 @@ export class AcpConnection {
        */
       primed: false,
       late: [],
+      // The adapter skips prepending what the system prompt already carries.
+      ...(extras.systemPromptApplied ? { instructionsSent: this.systemPrompt } : {}),
     };
     if (session.sessionId === null) throw new Error(`agent "${this.id}" returned no session id`);
     note(`[${this.id}] NEW key=${key} session=${session.sessionId} cwd=${wanted}`);
@@ -1486,6 +1566,11 @@ export function resolveAgents(config) {
           : undefined,
         modelInclude: Array.isArray(agent.modelInclude) ? agent.modelInclude : [],
         modelExclude: Array.isArray(agent.modelExclude) ? agent.modelExclude : [],
+        // `_meta` for session/new|resume|load, passed through verbatim.
+        sessionMeta: agent.sessionMeta !== null && typeof agent.sessionMeta === 'object' ? agent.sessionMeta : undefined,
+        // `false` keeps instructions in the first message even when the agent
+        // takes a system prompt.
+        systemPrompt: agent.systemPrompt !== false,
       }));
   }
   if (config.discover === false) return [];
@@ -1499,6 +1584,29 @@ export function resolveAgents(config) {
     }
   }
   return found;
+}
+
+/**
+ * Keep the shared project context fresh: rescan the projects folder in a
+ * detached child when the store is missing or older than a day. Never blocks
+ * plugin load and never fails it.
+ * @param config - plugin config; `contextScan: false` turns this off,
+ *   `contextRoots: [dir…]` overrides the folders scanned.
+ */
+function refreshProjectContext(config) {
+  if (config.contextScan === false) return;
+  try {
+    const readme = join(homedir(), '.dsh', 'context', 'README.md');
+    const fresh = existsSync(readme) && Date.now() - statSync(readme).mtimeMs < 86_400_000;
+    if (fresh) return;
+    const script = fileURLToPath(new URL('./tools/context-scan.mjs', import.meta.url));
+    const roots = Array.isArray(config.contextRoots) ? config.contextRoots.flatMap((root) => ['--root', String(root)]) : [];
+    const child = spawn(nodeBinary(), [script, ...roots], { detached: true, stdio: 'ignore' });
+    child.unref();
+    note('[context] project context rescan started');
+  } catch (error) {
+    note(`[context] rescan not started: ${String(error?.message ?? error)}`);
+  }
 }
 
 /**
@@ -1581,6 +1689,7 @@ export function sessionWorkspace(initiating, fallback) {
  */
 export function apply(ctx, config = {}) {
   const settings = normalizeSettings(config);
+  refreshProjectContext(config);
   const registry = new AgentRegistry(settings, ctx.logger);
   note(`plugin loaded (build ${PLUGIN_BUILD}) with ${settings.agents.length} agent(s): ${settings.agents.map((a) => a.id).join(', ') || '(none)'}`);
 
@@ -1916,6 +2025,13 @@ export function apply(ctx, config = {}) {
           delegateEndpoint = createDelegateEndpoint({
             getSubagents,
             provider: typeof delegate.provider === 'string' ? delegate.provider : 'spawn',
+            // Superagent: tiered routes with quota fallback, nesting cap, fan-out
+            // width and the shared context store.
+            ...(delegate.routes !== null && typeof delegate.routes === 'object' ? { routes: delegate.routes } : {}),
+            ...(typeof delegate.defaultTier === 'string' ? { defaultTier: delegate.defaultTier } : {}),
+            ...(Number.isInteger(delegate.maxDepth) ? { maxDepth: delegate.maxDepth } : {}),
+            ...(Number.isInteger(delegate.maxParallel) ? { maxParallel: delegate.maxParallel } : {}),
+            ...(typeof delegate.contextDir === 'string' ? { contextDir: delegate.contextDir } : {}),
             ...(Number.isFinite(delegate.timeoutMs) ? { timeoutMs: delegate.timeoutMs } : {}),
             ...(Number.isFinite(delegate.progressEveryMs) ? { progressEveryMs: delegate.progressEveryMs } : {}),
             agentOptions: delegate.model === undefined
@@ -1939,9 +2055,24 @@ export function apply(ctx, config = {}) {
             args: [shim, '--url', await ready, '--token', delegateEndpoint.tokenFor(key)],
             env: [],
           }];
-          delegateTurnStart = (key, agent) => delegateEndpoint.bind(key, agent);
+          delegateTurnStart = (key, agent, cwd) => delegateEndpoint.bind(key, agent, cwd);
         }
       }
+      /**
+       * `systemPrompt: false` means "inject nothing at all".
+       *
+       * Some vendors permit only a thin client: Antigravity's terms allow an ACP
+       * client that forwards your own prompts and lets the agent own its
+       * history, and name an injected system prompt as a violation on a
+       * consumer sign-in. The shared instructions are a system prompt by another
+       * name, so they go quiet with it rather than around it.
+       */
+      const shared = entry.systemPrompt === false ? '' : settings.sharedInstructions;
+      const standing = [entry.instructions, shared]
+        .filter((text) => typeof text === 'string' && text.trim().length > 0)
+        .join('\n\n');
+      if (entry.systemPrompt !== false) connection.systemPrompt = standing.trim();
+      if (entry.sessionMeta !== undefined) connection.sessionMeta = entry.sessionMeta;
       const adapter = new AcpModelAdapter({
           connection,
           provider: entry.llmProvider,
@@ -1962,9 +2093,7 @@ export function apply(ctx, config = {}) {
           // `ask` (the default) routes the decision to that seam; `allow`,
           // `deny` and `cancel` answer directly for unattended runs.
           approvalPolicy: entry.approval,
-          instructions: [entry.instructions, settings.sharedInstructions]
-            .filter((text) => typeof text === 'string' && text.trim().length > 0)
-            .join('\n\n') || undefined,
+          instructions: standing.length > 0 ? standing : undefined,
           // Per-agent budget wins; otherwise the profile-wide default.
           primeMaxChars: Number.isFinite(entry.primeMaxChars) ? entry.primeMaxChars : settings.primeMaxChars,
           note,

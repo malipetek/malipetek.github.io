@@ -9,7 +9,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { createDelegateEndpoint, resultText } from '../delegate.mjs';
+import { QuotaLedger, REPORT_CONTRACT, aliasesOf, findProject } from '../superagent.mjs';
+
+/** The task text a worker received, without the injected context and contract. */
+const taskOf = (spec) => spec.prompt[0].text.replace(`\n\n${REPORT_CONTRACT}`, '');
 
 /**
  * Start an endpoint on a loopback port.
@@ -24,10 +32,15 @@ async function start(options = {}) {
       return { childId: 'child-1', result: Promise.resolve({ text: 'worker says 42' }), dispose: () => {} };
     },
   };
+  const contextDir = options.contextDir ?? mkdtempSync(join(tmpdir(), 'dsh-ctx-'));
   const endpoint = createDelegateEndpoint({
     subagents,
     provider: options.provider ?? 'spawn',
     agentOptions: options.agentOptions,
+    contextDir,
+    ledger: new QuotaLedger(),
+    sleep: async () => {},
+    ...(options.extra ?? {}),
     log: () => {},
   });
   const url = await endpoint.listen();
@@ -42,7 +55,7 @@ async function start(options = {}) {
     });
     return { status: response.status, body: await response.json() };
   };
-  return { endpoint, url, token, calls, call };
+  return { endpoint, url, token, calls, call, contextDir };
 }
 
 test('a call without the session token is refused', async () => {
@@ -57,7 +70,7 @@ test('a call without the session token is refused', async () => {
   }
 });
 
-test('the endpoint offers exactly one tool, and delegates with the configured worker route', async () => {
+test('the endpoint offers delegate plus the context tools, and delegates with the configured worker route', async () => {
   const { endpoint, calls, call } = await start({
     agentOptions: { provider: 'opencode-go', model: 'deepseek-v4.1-flash' },
   });
@@ -66,7 +79,7 @@ test('the endpoint offers exactly one tool, and delegates with the configured wo
     assert.equal(init.body.result.protocolVersion, '2025-06-18');
 
     const list = await call({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
-    assert.deepEqual(list.body.result.tools.map((tool) => tool.name), ['delegate']);
+    assert.deepEqual(list.body.result.tools.map((tool) => tool.name), ['delegate', 'project_context', 'remember']);
 
     const called = await call({
       jsonrpc: '2.0',
@@ -81,7 +94,9 @@ test('the endpoint offers exactly one tool, and delegates with the configured wo
     assert.equal(spec.provider, 'spawn');
     assert.equal(spec.delivery, 'caller', 'the tool needs the result, not a parent notice');
     assert.equal(spec.label, 'math');
-    assert.deepEqual(spec.request.prompt, [{ type: 'text', text: 'compute 6*7' }]);
+    assert.equal(taskOf(spec.request), 'compute 6*7');
+    assert.match(spec.request.prompt[0].text, /STATUS: done/, 'the worker is told how to finish');
+    assert.equal(spec.request.maxDepth, 1, 'workers cannot delegate again by default');
     assert.equal(spec.request.parent.id, 'agent-1', 'the exact live parent agent is passed through');
     assert.deepEqual(spec.request.agentOptions, { provider: 'opencode-go', model: 'deepseek-v4.1-flash' });
   } finally {
@@ -124,7 +139,7 @@ test('a failing activation is reported to the agent, not thrown at the transport
       params: { name: 'delegate', arguments: { task: 'anything' } },
     });
     assert.equal(called.body.result.isError, true);
-    assert.match(called.body.result.content[0].text, /delegation failed: SubagentError/);
+    assert.match(called.body.result.content[0].text, /SubagentError: subagent creation requires/);
   } finally {
     endpoint.close();
   }
@@ -299,7 +314,7 @@ test('two delegations run at once, not one after the other', async () => {
   }
 });
 
-test('a caller can pin the worker route, directory and depth per delegation', async () => {
+test('a caller can pin the worker route and directory, but not deepen nesting', async () => {
   // The configured route is a default, not a cage: without this every worker was
   // whatever the profile chose, so "use a Codex worker" was impossible.
   const calls = [];
@@ -325,7 +340,7 @@ test('a caller can pin the worker route, directory and depth per delegation', as
     const spec = calls[0];
     assert.deepEqual(spec.request.agentOptions, { provider: 'openai-codex', model: 'gpt-6.1-sol' });
     assert.equal(spec.request.cwd, '/tmp/project');
-    assert.equal(spec.request.maxDepth, 2);
+    assert.equal(spec.request.maxDepth, 1, 'a caller-asked depth does not lift the cap');
 
     // Omitted fields still fall back to the configured route.
     await call({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'delegate', arguments: { task: 'again' } } });
@@ -367,13 +382,172 @@ test('the spec carries the 0.2.2 top level, where DSH reads the parent', async (
 
     const spec = calls[0];
     assert.equal(spec.parent.id, 'agent-1');
-    assert.deepEqual(spec.prompt, [{ type: 'text', text: 'do it' }]);
+    assert.equal(taskOf(spec), 'do it');
     assert.equal(spec.delivery, 'caller');
     assert.equal(spec.cwd, '/tmp/x');
-    assert.equal(spec.maxDepth, 3);
+    assert.equal(spec.maxDepth, 1);
     // 0.2.1 read the nested `request`, so one build sends both shapes.
     assert.equal(spec.request.parent.id, 'agent-1');
   } finally {
     endpoint.close();
   }
+});
+
+// ---------------------------------------------------------------------------
+// Superagent behaviour: the host does what the operator used to repeat in chat.
+// ---------------------------------------------------------------------------
+
+/** Call `delegate` with arguments. */
+const delegate = (call, args, id = 1) => call({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'delegate', arguments: args } });
+
+test('tasks[] fan out in parallel in one call, each with its own result and status', async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const { endpoint, calls, call } = await start({
+    subagents: {
+      async startActivation(spec) {
+        calls.push(spec);
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        const name = taskOf(spec).split(' ')[0];
+        const result = new Promise((done) => setTimeout(() => {
+          inFlight -= 1;
+          done({ text: name === 'b' ? `b needs a key\nSTATUS: blocked — need the API key` : `${name} finished\nSTATUS: done` });
+        }, 40));
+        return { childId: `c-${name}`, result, dispose: () => {} };
+      },
+    },
+  });
+  try {
+    const reply = await delegate(call, { tasks: [{ task: 'a audit', label: 'A' }, { task: 'b fix', label: 'B', tier: 'code' }, { task: 'c test', label: 'C' }] });
+    const text = reply.body.result.content[0].text;
+    assert.equal(peak, 3, 'all three ran at once');
+    assert.match(text, /3 worker\(s\) in parallel/);
+    assert.match(text, /2 done, 1 blocked/);
+    assert.match(text, /### 2\. B — BLOCKED \(opencode-go\/glm-5\.3/, 'tier code routes to the code chain');
+    assert.equal(reply.body.result.isError, undefined);
+  } finally {
+    endpoint.close();
+  }
+});
+
+test('a route out of quota is cooled and the next route in the tier takes the task', async () => {
+  const ledger = new QuotaLedger();
+  const routesSeen = [];
+  const { endpoint, call } = await start({
+    extra: { ledger },
+    subagents: {
+      async startActivation(spec) {
+        const route = `${spec.agentOptions.provider}/${spec.agentOptions.model}`;
+        routesSeen.push(route);
+        if (spec.agentOptions.provider === 'opencode-go') throw new Error('429 Too Many Requests: usage limit reached, retry after 120s');
+        return { childId: 'x', result: Promise.resolve({ text: 'done on devin\nSTATUS: done' }), dispose: () => {} };
+      },
+    },
+  });
+  try {
+    const first = await delegate(call, { task: 'grind' });
+    assert.deepEqual(routesSeen, ['opencode-go/deepseek-v4.1-flash', 'acp-devin/swe-2-flash-medium']);
+    assert.match(first.body.result.content[0].text, /done on devin/);
+    assert.match(first.body.result.content[0].text, /skipped opencode-go\/deepseek-v4\.1-flash \(quota\)/);
+    assert.equal(ledger.isCooled('opencode-go/deepseek-v4.1-flash'), true);
+
+    routesSeen.length = 0;
+    await delegate(call, { task: 'grind again' }, 2);
+    assert.equal(routesSeen[0], 'acp-devin/swe-2-flash-medium', 'a cooled route is not tried first next time');
+  } finally {
+    endpoint.close();
+  }
+});
+
+test('a transient failure is retried once on the same route', async () => {
+  let attempts = 0;
+  const { endpoint, call } = await start({
+    subagents: {
+      async startActivation() {
+        attempts += 1;
+        if (attempts === 1) throw new Error('fetch failed: ECONNRESET');
+        return { childId: 'x', result: Promise.resolve({ text: 'ok\nSTATUS: done' }), dispose: () => {} };
+      },
+    },
+  });
+  try {
+    const reply = await delegate(call, { task: 'flaky' });
+    assert.equal(attempts, 2);
+    assert.match(reply.body.result.content[0].text, /^ok/);
+  } finally {
+    endpoint.close();
+  }
+});
+
+test('the project card for the working directory reaches every worker, and FACT lines are remembered', async () => {
+  const contextDir = mkdtempSync(join(tmpdir(), 'dsh-ctx-'));
+  mkdirSync(join(contextDir, 'projects'));
+  writeFileSync(join(contextDir, 'projects', 'admin-ui.md'), '---\nname: admin-ui\npath: /work/admin-ui\ndeploy: wrangler pages deploy\n---\n# admin-ui\n\n## Facts\n');
+  const prompts = [];
+  const { endpoint, call } = await start({
+    contextDir,
+    subagents: {
+      async startActivation(spec) {
+        prompts.push(spec.prompt[0].text);
+        return { childId: 'x', result: Promise.resolve({ text: 'shipped\nFACT: staging URL is admin-staging.example.dev\nSTATUS: done' }), dispose: () => {} };
+      },
+    },
+  });
+  try {
+    await delegate(call, { task: 'deploy it', cwd: '/work/admin-ui/src' });
+    assert.match(prompts[0], /## Project context/);
+    assert.match(prompts[0], /deploy: wrangler pages deploy/);
+    const card = readFileSync(join(contextDir, 'projects', 'admin-ui.md'), 'utf8');
+    assert.match(card, /- staging URL is admin-staging\.example\.dev/);
+    const ledgerFile = readdirSync(join(contextDir, 'work'))[0];
+    const entries = readFileSync(join(contextDir, 'work', ledgerFile), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    // Work is recorded twice: a start the cockpit can show as "running now", and
+    // an end that proves it finished. Same id, so a start with no end is lost work.
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0].phase, 'start');
+    assert.equal(entries[0].status, 'running');
+    assert.equal(entries[0].project, 'admin-ui');
+    assert.equal(entries[1].phase, 'end');
+    assert.equal(entries[1].status, 'done');
+    assert.equal(entries[1].project, 'admin-ui');
+    assert.equal(typeof entries[0].id, 'string');
+    assert.equal(entries[0].id, entries[1].id);
+  } finally {
+    endpoint.close();
+  }
+});
+
+test('project_context and remember read and write the shared store', async () => {
+  const contextDir = mkdtempSync(join(tmpdir(), 'dsh-ctx-'));
+  mkdirSync(join(contextDir, 'projects'));
+  writeFileSync(join(contextDir, 'projects', 'shop.md'), '---\nname: shop\npath: /work/shop\n---\n# shop\n');
+  const { endpoint, call } = await start({ contextDir });
+  try {
+    const tool = (name, args, id) => call({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
+    const listed = await tool('project_context', { list: true }, 1);
+    assert.match(listed.body.result.content[0].text, /shop: \/work\/shop/);
+    const saved = await tool('remember', { project: 'shop', fact: 'deploys on push to main via Cloudflare Pages' }, 2);
+    assert.match(saved.body.result.content[0].text, /Recorded in shop/);
+    const read = await tool('project_context', { project: 'shop' }, 3);
+    assert.match(read.body.result.content[0].text, /## Facts\n- deploys on push to main via Cloudflare Pages/);
+    const unknown = await tool('remember', { project: 'nope', fact: 'x' }, 4);
+    assert.equal(unknown.body.result.isError, true);
+  } finally {
+    endpoint.close();
+  }
+});
+
+test('a project resolves by the name the person actually uses', () => {
+  const contextDir = mkdtempSync(join(tmpdir(), 'dsh-ctx-'));
+  mkdirSync(join(contextDir, 'projects'));
+  const site = join(contextDir, 'projects', 'ptechsolutions-site.md');
+  writeFileSync(site, '---\nname: ptechsolutions-site\npath: /work/site\naliases: ptech admin, admin app, workbench\n---\n# site\n');
+  writeFileSync(join(contextDir, 'projects', 'teabot.md'), '---\nname: teabot\npath: /work/teabot\n---\n# teabot\n');
+  const card = findProject({ query: 'ptech admin' }, contextDir);
+  assert.equal(card?.slug, 'ptechsolutions-site');
+  assert.deepEqual(aliasesOf(card), ['ptech admin', 'admin app', 'workbench']);
+  // Word order around an alias does not defeat it.
+  assert.equal(findProject({ query: 'the workbench app' }, contextDir)?.slug, 'ptechsolutions-site');
+  assert.equal(findProject({ query: 'teabot' }, contextDir)?.slug, 'teabot');
 });

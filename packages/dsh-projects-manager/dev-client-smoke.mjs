@@ -268,8 +268,22 @@ const banner = registered.find((entry) => entry.key === 'shell.overlay');
 if (page === undefined) throw new Error('the main page was not registered');
 if (banner === undefined) throw new Error('the overlay banner was not registered');
 
+/** The cockpit snapshot, shaped exactly as the Host half writes needs.json. */
+const needs = {
+  scannedAt: Date.now(),
+  autonomy: 'record',
+  counts: { answer: 1, review: 1, proposal: 1, overdue: 1, total: 3, running: 1 },
+  items: [
+    { id: 'w_answer', kind: 'answer', project: 'BoardRush', path: '/Projects/boardrush', label: 'deploy the admin app', note: 'where does this deploy?', status: 'blocked', route: 'acp-claude/opus', at: Date.now() - 30 * 3600e3, ageHours: 30, overdue: true, severity: 0, prompt: 'Continue the delegated task' },
+    { id: 'w_review', kind: 'review', project: 'BoardRush', path: '/Projects/boardrush', label: 'run the e2e suite', note: 'timeout after 20m', status: 'failed', route: 'opencode-go/glm-5.3', at: Date.now() - 2 * 3600e3, ageHours: 2, overdue: false, severity: 1, prompt: 'A delegated task ended failed' },
+    { id: 'p_1_resume', kind: 'proposal', project: 'ShipFit-docs', path: '/Projects/shipfit', label: 'Resume: land one small commit', note: 'commit or stash the drift', status: 'proposed', route: '', at: Date.now() - 3600e3, ageHours: 1, overdue: false, severity: 2, prompt: 'Resume work on ShipFit-docs' },
+  ],
+  running: [{ project: 'BoardRush', label: 'audit the admin pages', route: 'opencode-go/deepseek-v4.1-flash', ageHours: 1, stale: false }],
+};
+
 const api = {
   readIndex: async () => records,
+  readNeeds: async () => needs,
   runCommand: async () => ({ ok: true, value: { result: { kind: 'success', text: 'ok' } } }),
   adoptWorkspace: async () => ({ workspaceId: 'w1' }),
   revealWorkspace: async () => {},
@@ -280,7 +294,7 @@ const api = {
 const pageTree = await settle(page.component, { api });
 const pageText = texts(pageTree);
 console.log(`\npage rendered ${pageText.length} text nodes`);
-for (const needle of ['Project momentum', 'BoardRush', 'stalling', 'ShipFit-docs', 'cooling', 'cascadelite', 'never-started', 'quiet 13d', 'Snooze 14d', 'Edit intent', 'Set up weekday review']) {
+for (const needle of ['Project momentum', 'BoardRush', 'stalling', 'ShipFit-docs', 'cooling', 'cascadelite', 'never-started', 'quiet 13d', 'Snooze 14d', 'Edit intent', 'Set up weekday review', 'waiting on you', 'deploy the admin app', 'where does this deploy?', 'overdue', 'Copy prompt', 'Autonomy: record', 'Running now', 'audit the admin pages', 'Dismiss', 'Needs you 3']) {
   if (!pageText.some((value) => String(value).includes(needle))) throw new Error(`page is missing: ${needle}`);
 }
 console.log('page contains every expected label');
@@ -289,13 +303,18 @@ const bannerTree = await settle(banner.component, { api });
 const bannerText = texts(bannerTree).join(' ');
 console.log(`\nbanner: ${bannerText}`);
 if (!bannerText.includes('BoardRush')) throw new Error('banner did not name the worst project');
+if (!bannerText.includes('2 agent tasks waiting on you')) throw new Error(`banner did not count blocked agent work: ${bannerText}`);
 if (!bannerText.includes('3 projects losing momentum')) throw new Error('banner did not count the attention set');
 
-const emptyTree = await settle(banner.component, { api: { ...api, readIndex: async () => [] } });
+const emptyTree = await settle(banner.component, { api: { ...api, readIndex: async () => [], readNeeds: async () => ({ items: [], counts: {}, running: [] }) } });
 if (texts(emptyTree).length !== 0) throw new Error('banner rendered with no records');
 
 const quietTree = await settle(banner.component, {
-  api: { ...api, readIndex: async () => records.map((record) => ({ ...record, momentum: { ...record.momentum, state: 'active' } })) },
+  api: {
+    ...api,
+    readIndex: async () => records.map((record) => ({ ...record, momentum: { ...record.momentum, state: 'active' } })),
+    readNeeds: async () => ({ items: [], counts: {}, running: [] }),
+  },
 });
 if (texts(quietTree).length !== 0) throw new Error('banner rendered when nothing needs attention');
 

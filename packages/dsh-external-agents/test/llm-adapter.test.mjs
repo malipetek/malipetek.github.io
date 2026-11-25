@@ -881,3 +881,37 @@ test('curated models declare the context window the harness needs to compact', a
   });
   assert.equal((await override.resolveModel('acp-claude', 'opus')).context.contextWindow, 1_000_000);
 });
+
+test('primeMaxChars 0 replays no history into the agent', async () => {
+  // A vendor whose terms permit only a thin client must be able to say "do not
+  // feed my agent your transcript". `0` used to fall back to the default budget,
+  // which made that impossible to express — the agent still received the whole
+  // conversation under a "context from the harness" preamble.
+  const sent = [];
+  const connection = {
+    ensureSession: async () => ({ primed: false, sessionId: 's' }),
+    selectOption: async () => undefined,
+    markPrimed: () => undefined,
+    prompt: async (text) => {
+      sent.push(text);
+      return { stopReason: 'end_turn', text: 'ok', updates: [], permissions: [] };
+    },
+  };
+  const adapter = new AcpModelAdapter({
+    connection, provider: 'acp-thin', label: 'Thin', approvalPolicy: 'allow',
+    resolveSessionKey: () => 'thin', resolveCwd: () => scratch,
+    primeMaxChars: 0,
+  });
+  // A conversation that started somewhere else: exactly what priming exists for.
+  const messages = [
+    { role: 'user', content: [{ type: 'text', text: 'earlier question' }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'earlier answer' }] },
+    { role: 'user', content: [{ type: 'text', text: 'the actual ask' }] },
+  ];
+  // eslint-disable-next-line no-unused-vars
+  for await (const chunk of adapter.stream({ provider: 'acp-thin', messages })) { /* drain */ }
+
+  assert.equal(sent[0], 'the actual ask', 'the turn is the prompt, with nothing prepended');
+  assert.doesNotMatch(sent[0], /earlier question/, 'no prior turn was replayed');
+  assert.doesNotMatch(sent[0], /Context from the DeepSeek Harness/, 'no harness preamble');
+});

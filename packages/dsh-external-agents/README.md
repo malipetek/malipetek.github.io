@@ -155,6 +155,46 @@ Install the external-agents plugin in this harness and set up delegation.
    check that the command in the agent's --mcp-config is Node, not the harness.
 ```
 
+## Superagent: behaviour the host enforces
+
+Taken from [dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype):
+what the operator kept repeating in chat ("work in parallel", "use harness
+workers", "watch the quota", "don't stop", "it deploys with…") is now done by the
+host, not asked for in prompt text that the vendor's own system prompt outranks.
+
+| Behaviour | Mechanism | Where |
+| --- | --- | --- |
+| Rules reach the agent with system-prompt weight | `session/new` `systemPrompt` (append) when the agent advertises it; otherwise the old first-message prepend | `AcpConnection.sessionExtras` |
+| No built-in subagents | per-agent `sessionMeta` → `_meta.claudeCode.options.disallowedTools: [Agent, Task]` | profile |
+| No stopping on a menu of next steps; no "where should I deploy?" without reading the card | Claude Code Stop hook, per session via `_meta.claudeCode.options.settings.hooks` | `hooks/stop-hook.mjs` |
+| Parallel by construction | `delegate` takes `tasks: [...]`, runs up to `maxParallel` (4) at once | `delegate.mjs` |
+| No nesting | every worker gets `maxDepth` (1): it cannot delegate again | `delegate.mjs` |
+| Model choice and quota | `tier` (`fast`/`code`/`plan`/`review`) → ordered route chain; a 429/quota answer cools the route (15 min, or the server's retry-after) and the next route takes the task; transient errors retry once | `superagent.mjs`, `~/.dsh/context/quota.json` |
+| Project context | `~/.dsh/context/projects/<slug>.md` cards (deploy runbook, commands, facts), injected into every worker by working directory; `project_context` and `remember` MCP tools; `FACT:` lines in worker reports are saved | `superagent.mjs`, `tools/context-scan.mjs` |
+| Structured reports | workers end with `STATUS: done / blocked — … / failed — …`; parsed per task | `superagent.mjs` |
+| What needs you | two records per task in `~/.dsh/context/work/`: a `start` with an id, and an `end` carrying the status. A start with no end is visible as running; blocked and failed ends are ranked first in the Projects manager cockpit (`needs.json`, the panel's Need-you list, `/projects`, the scheduled review) | `delegate.mjs`, `dsh-projects-manager` |
+
+Delegate config (per agent, all optional):
+
+```yaml
+delegate:
+  llmProvider: opencode-go        # the configured route heads the default tier
+  model: deepseek-v4.1-flash
+  maxDepth: 1
+  maxParallel: 4
+  defaultTier: fast
+  routes:                         # override any tier's chain
+    code: [opencode-go/glm-5.3, openai-codex/gpt-6.2-sol, acp-devin/swe-2-high]
+  contextDir: ~/.dsh/context
+```
+
+The context store is rescanned on plugin load when older than a day
+(`contextScan: false` turns it off, `contextRoots: [...]` picks the folders), or by
+hand: `node tools/context-scan.mjs [--only <project>]`. Text outside a card's auto
+markers is never overwritten; `deploy!: <text>` in front matter pins the deploy line.
+
+Live check against a real Claude Code: `node test/superagent-probe.mjs --model=haiku`.
+
 ## Configuration
 
 One Host row, configured in the profile's `cordis.patch.yml`. Explicit `agents`

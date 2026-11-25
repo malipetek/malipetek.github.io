@@ -1,0 +1,3 @@
+- insert:
+    - id: recall
+      name: '@malipetek/dsh-recall'

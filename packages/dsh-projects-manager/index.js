@@ -28,6 +28,9 @@ import { watch } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
+import {
+  AUTONOMY, DISMISS_DAYS, buildNeeds, deriveProposals, dismissProposal, mergeProposals, renderNeeds, renderRunning,
+} from './cockpit.mjs';
 
 /* -------------------------------------------------------------------------- *
  * Configuration — mirrored in part by `client.js`; change both together.
@@ -57,6 +60,21 @@ const INDEX_PATH = join(STATE_DIR, 'index.jsonl');
 const BRIEF_PATH = join(STATE_DIR, 'manager-brief.md');
 const INTENT_PATH = join(STATE_DIR, 'intent.json');
 const CACHE_PATH = join(STATE_DIR, 'cache.json');
+/**
+ * The cockpit's three views of the same moment: what needs a person now
+ * (`needs.json`, read by the panel), what the manager would start next
+ * (`proposals.json`, so a suggestion survives a restart and can be dismissed),
+ * and how far the manager may go on its own (`autonomy.json`).
+ */
+const NEEDS_PATH = join(STATE_DIR, 'needs.json');
+/**
+ * The Product pipeline plugin's index, read-only. A blocked or failing stage is
+ * work waiting on a person just as much as a blocked agent is, and it should be
+ * in the same list rather than in a different panel.
+ */
+const PIPELINE_INDEX = process.env.DSH_PRODUCT_PIPELINE_INDEX || join(DSH_HOME, 'product-pipeline', 'index.jsonl');
+const PROPOSALS_PATH = join(STATE_DIR, 'proposals.json');
+const AUTONOMY_PATH = join(STATE_DIR, 'autonomy.json');
 /**
  * Wiring report: which optional capabilities this plugin actually reached in the
  * running Host. Written so a failed lazy import or a missing Schedule service is
@@ -109,11 +127,12 @@ const DEFAULT_CRON = '0 9 * * 1-5';
  */
 const REVIEW_PROMPT = [
   'Act as my projects manager.',
-  `Read ${BRIEF_PATH} and report only on the projects listed under "Needs attention".`,
-  'For each, give one line saying why it is stalling — days since real work versus that project\'s own pace, a falling commit rate, or uncommitted drift — and one concrete next action.',
-  'Then pick the single project most worth resuming today and state the first step.',
-  'Keep the whole reply under 200 words. If nothing needs attention, reply with one short line saying so.',
-  'Use the projects_manager tool if you need more detail, or to snooze or reschedule anything I mention.',
+  `Read ${BRIEF_PATH}. It opens with "Needs you": decisions, failures and suggestions already waiting on me, ranked.`,
+  'Lead with those, one line each, and where one needs a decision from me, ask it in a single sentence.',
+  'Then, for each project under "Needs attention", give one line saying why it is stalling — days since real work versus that project\'s own pace, a falling commit rate, or uncommitted drift — and one concrete next action.',
+  'If the briefing says "Autonomy: act", start on the open proposals now, in this turn: do them yourself, delegating anything longer than a few steps. Otherwise do not start work; report only.',
+  'Keep the whole reply under 250 words. If nothing needs attention, reply with one short line saying so.',
+  'Use the projects_manager tool (action "needs") if you need more detail, or to snooze or reschedule anything I mention.',
 ].join('\n');
 
 /* -------------------------------------------------------------------------- *
@@ -719,6 +738,55 @@ async function scan(reason) {
   const kept = records.filter((record) => record !== null);
   kept.sort((left, right) => left.name.localeCompare(right.name));
 
+  // Agent work (dsh-external-agents work ledger), per project: what is waiting
+  // on a person and what is still running.
+  const byLength = [...kept].sort((left, right) => right.path.length - left.path.length);
+  const ownerOf = (cwd) => (typeof cwd === 'string'
+    ? byLength.find((record) => cwd === record.path || cwd.startsWith(`${record.path}/`))
+    : undefined);
+  for (const item of await readWaitingWork()) {
+    const owner = ownerOf(item.cwd);
+    if (owner === undefined) continue;
+    owner.agentWork ??= { waiting: [] };
+    (owner.agentWork.waiting ??= []).push(item);
+  }
+  const pipelineProblems = await readPipelineProblems();
+  for (const record of kept) {
+    const problem = pipelineProblems.get(record.path);
+    if (problem !== undefined) record.pipeline = problem;
+  }
+
+  const runningWork = await readRunningWork();
+  for (const item of runningWork) {
+    const owner = ownerOf(item.cwd);
+    if (owner === undefined) continue;
+    owner.agentWork ??= { waiting: [] };
+    (owner.agentWork.running ??= []).push(item);
+  }
+
+  // Proposals: what the manager would start next. Recorded here, never started
+  // here — starting a project stays a human action until autonomy is turned up,
+  // and even then only the scheduled review acts, inside a live session.
+  const autonomy = await readAutonomy();
+  let proposals = await readProposals();
+  if (autonomy !== 'off') {
+    proposals = mergeProposals({ existing: proposals, fresh: deriveProposals({ records: kept, now: now() }), now: now() });
+    await writeProposals(proposals);
+  }
+  // Autonomy off means the manager does not even suggest: the old proposals stay
+  // on disk (so turning it back on restores them) but no record carries them.
+  if (autonomy !== 'off') {
+    for (const proposal of proposals) {
+      if (proposal.state !== 'open') continue;
+      const owner = ownerOf(proposal.path);
+      if (owner === undefined) continue;
+      (owner.proposals ??= []).push(proposal);
+    }
+  }
+
+  const needs = buildNeeds({ records: kept, now: now() });
+  await writeText(NEEDS_PATH, `${JSON.stringify({ scannedAt: now(), autonomy, ...needs }, null, 2)}\n`);
+
   const attention = kept.filter(needsAttention).sort((left, right) => right.momentum.score - left.momentum.score);
   const counts = {};
   for (const record of kept) counts[record.momentum.state] = (counts[record.momentum.state] ?? 0) + 1;
@@ -731,15 +799,166 @@ async function scan(reason) {
     total: kept.length,
     counts,
     attention: attention.slice(0, BRIEF_ATTENTION_LIMIT).map((record) => record.path),
+    waitingOnYou: kept.reduce((total, record) => total + (record.agentWork?.waiting.length ?? 0), 0),
+    needsYou: needs.items.length,
+    running: needs.running.length,
+    needs: needs.counts,
   };
 
   await writeText(INDEX_PATH, kept.map((record) => JSON.stringify(record)).join('\n') + (kept.length > 0 ? '\n' : ''));
-  await writeText(BRIEF_PATH, renderBrief(summary, attention, kept));
+  await writeText(BRIEF_PATH, renderBrief(summary, attention, kept, { needs, autonomy }));
   await writeText(CACHE_PATH, `${JSON.stringify(summary, null, 2)}\n`);
 
   console.log(`[projects-manager] ${kept.length} projects, ${attention.length} need attention (${finishedAt - startedAt}ms, ${reason})`);
-  return { records: kept, attention, summary };
+  return { records: kept, attention, summary, needs, autonomy };
 }
+/* -------------------------------------------------------------------------- *
+ * Agent work waiting on a person
+ * -------------------------------------------------------------------------- */
+
+/** Where delegated work is recorded (dsh-external-agents superagent ledger). */
+const WORK_DIR = join(process.env.DSH_CONTEXT_DIR || join(homedir(), '.dsh', 'context'), 'work');
+const WAITING_DAYS = 7;
+
+/**
+ * The latest record per (directory, label) from the last week whose status needs
+ * a person: blocked, failed, or ended without a report.
+ * @returns waiting items, newest first.
+ */
+async function readWaitingWork() {
+  let names = [];
+  try {
+    names = (await readdir(WORK_DIR)).filter((name) => name.endsWith('.jsonl')).sort().slice(-WAITING_DAYS - 1);
+  } catch {
+    return [];
+  }
+  const cutoff = now() - WAITING_DAYS * 86_400_000;
+  const latestByKey = new Map();
+  for (const name of names) {
+    let text = '';
+    try { text = await readFile(join(WORK_DIR, name), 'utf8'); } catch { continue; }
+    for (const line of text.split('\n')) {
+      if (line.trim().length === 0) continue;
+      let entry;
+      try { entry = JSON.parse(line); } catch { continue; }
+      if (Date.parse(entry.at) < cutoff) continue;
+      // A start record is work in flight, not work waiting; it is read separately.
+      if (entry.phase === 'start') continue;
+      const key = `${entry.cwd ?? ''}\u0000${entry.label ?? ''}`;
+      const previous = latestByKey.get(key);
+      if (previous === undefined || String(previous.at) < String(entry.at)) latestByKey.set(key, entry);
+    }
+  }
+  return [...latestByKey.values()]
+    .filter((entry) => entry.status === 'blocked' || entry.status === 'failed' || entry.status === 'unreported')
+    .map((entry) => ({ at: String(entry.at), status: entry.status, label: String(entry.label ?? '').slice(0, 120), note: String(entry.note ?? '').slice(0, 300), route: String(entry.route ?? ''), cwd: entry.cwd }))
+    .sort((left, right) => right.at.localeCompare(left.at));
+}
+
+/** A start record older than this with no end is presumed lost, not running. */
+const RUNNING_HORIZON_HOURS = 8;
+
+/**
+ * Delegations that started and have not finished: a start record whose id has no
+ * end record yet. This is the only honest answer to "what is running right now",
+ * and it costs one file read instead of asking every agent.
+ * @returns running items, newest first.
+ */
+async function readRunningWork() {
+  let names = [];
+  try {
+    names = (await readdir(WORK_DIR)).filter((name) => name.endsWith('.jsonl')).sort().slice(-3);
+  } catch {
+    return [];
+  }
+  const cutoff = now() - RUNNING_HORIZON_HOURS * 3_600_000;
+  const entries = [];
+  for (const name of names) {
+    let text = '';
+    try { text = await readFile(join(WORK_DIR, name), 'utf8'); } catch { continue; }
+    for (const line of text.split('\n')) {
+      if (line.trim().length === 0) continue;
+      try { entries.push(JSON.parse(line)); } catch { /* skip a torn line */ }
+    }
+  }
+  const ended = new Set(entries.filter((entry) => entry.phase === 'end' && typeof entry.id === 'string').map((entry) => entry.id));
+  return entries
+    .filter((entry) => entry.phase === 'start' && typeof entry.id === 'string' && !ended.has(entry.id))
+    .filter((entry) => (Date.parse(entry.at ?? '') || 0) >= cutoff)
+    .map((entry) => ({ id: String(entry.id), at: String(entry.at ?? ''), label: String(entry.label ?? '').slice(0, 120), route: String(entry.route ?? ''), tier: String(entry.tier ?? ''), cwd: entry.cwd, project: entry.project }))
+    .sort((left, right) => right.at.localeCompare(left.at));
+}
+
+/**
+ * Blocked or failing product-pipeline stages, keyed by project directory.
+ * Missing or unreadable index is normal (the pipeline plugin may be off), so it
+ * contributes nothing rather than failing a scan.
+ * @returns a Map of project path to its pipeline problems.
+ */
+async function readPipelineProblems() {
+  let text = '';
+  try {
+    text = await readFile(PIPELINE_INDEX, 'utf8');
+  } catch {
+    return new Map();
+  }
+  const byPath = new Map();
+  for (const line of text.split('\n')) {
+    if (line.trim().length === 0) continue;
+    let record;
+    try { record = JSON.parse(line); } catch { continue; }
+    if (typeof record?.path !== 'string' || record.path.length === 0) continue;
+    const stages = (Array.isArray(record.pipeline) ? record.pipeline : [])
+      .filter((stage) => stage?.status === 'blocked' || stage?.status === 'failed')
+      .map((stage) => ({ id: String(stage.id ?? ''), label: String(stage.label ?? stage.id ?? ''), tool: String(stage.tool ?? ''), status: String(stage.status), detail: String(stage.detail ?? '') }));
+    const requirementFailures = Number(record?.requirements?.fail ?? 0) || 0;
+    if (stages.length === 0 && requirementFailures === 0) continue;
+    byPath.set(record.path, { phase: String(record.phase ?? ''), stages, requirementFailures });
+  }
+  return byPath;
+}
+
+/* -------------------------------------------------------------------------- *
+ * Proposals and autonomy
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Stored proposals, open and recently closed.
+ * @returns the proposal list.
+ */
+async function readProposals() {
+  const store = await readJson(PROPOSALS_PATH, { items: [] });
+  return Array.isArray(store?.items) ? store.items : [];
+}
+
+/**
+ * Persist proposals.
+ * @param items - the merged list.
+ */
+async function writeProposals(items) {
+  await writeText(PROPOSALS_PATH, `${JSON.stringify({ updatedAt: now(), items }, null, 2)}\n`);
+}
+
+/**
+ * How far the manager may go on its own. `record` is the default: suggestions
+ * are written down and shown, never started. `act` lets the scheduled review act
+ * on them, but only inside a session the human opened.
+ * @returns `off`, `record` or `act`.
+ */
+async function readAutonomy() {
+  const store = await readJson(AUTONOMY_PATH, null);
+  const mode = typeof store?.mode === 'string' ? store.mode : '';
+  return AUTONOMY.includes(mode) ? mode : 'record';
+}
+
+/**
+ * Store a new autonomy level.
+ * @param mode - `off`, `record` or `act`.
+ */
+async function writeAutonomy(mode) {
+  await writeText(AUTONOMY_PATH, `${JSON.stringify({ mode, updatedAt: now() }, null, 2)}\n`);
+}
+
 /* -------------------------------------------------------------------------- *
  * Briefing
  * -------------------------------------------------------------------------- */
@@ -751,7 +970,7 @@ async function scan(reason) {
  * @param all - every scored project.
  * @returns markdown text.
  */
-function renderBrief(summary, attention, all) {
+function renderBrief(summary, attention, all, cockpit) {
   const when = new Date(summary.scannedAt).toISOString().replace('T', ' ').slice(0, 16);
   const lines = [];
   lines.push('# Projects manager briefing');
@@ -764,6 +983,13 @@ function renderBrief(summary, attention, all) {
     .map((state) => `${summary.counts[state]} ${state}`);
   lines.push(`Counts: ${parts.join(', ')}.`);
   lines.push('');
+
+  // The cockpit's list comes first: a decision already waiting on a person
+  // outranks a trend that a person might want to look at.
+  if (cockpit !== undefined && cockpit.needs !== undefined) {
+    lines.push(...renderNeeds(cockpit.needs, cockpit.autonomy));
+    lines.push(...renderRunning(cockpit.needs.running));
+  }
 
   if (attention.length === 0) {
     lines.push('## Needs attention');
@@ -847,6 +1073,42 @@ function describeState(record) {
   return `${record.name} — ${momentum.state}, quiet ${momentum.quietDays}d vs a ~${momentum.cadenceDays}d pace (risk ${momentum.score})`;
 }
 
+/**
+ * The cockpit as one screen of text: what waits on a person, ranked, then what
+ * is running, then the momentum tail. Used by `/projects` and `/projects needs`.
+ * @param state - the latest scan plus the current autonomy level.
+ * @returns plain text for the composer.
+ */
+function describeNeeds(state) {
+  const needs = state.needs ?? { items: [], counts: {}, running: [] };
+  const attention = state.attention ?? [];
+  const autonomy = state.autonomy ?? 'record';
+  const lines = [];
+
+  if (needs.items.length === 0) {
+    lines.push('Nothing is waiting on you.');
+  } else {
+    lines.push(`${needs.items.length} waiting on you (${needs.counts.answer ?? 0} answer, ${needs.counts.review ?? 0} review, ${needs.counts.proposal ?? 0} proposal):`);
+    for (const item of needs.items.slice(0, 10)) {
+      const tag = item.kind === 'answer' ? 'ANSWER' : item.kind === 'review' ? 'REVIEW' : item.kind === 'pipeline' ? 'PIPELINE' : 'PROPOSAL';
+      const id = String(item.id).startsWith('p_') ? ` (id ${item.id})` : '';
+      const note = item.note ? ` — ${item.note.slice(0, 120)}` : '';
+      lines.push(`- [${tag}] ${item.project}: ${item.label}${note}${id}`);
+    }
+    if (needs.items.length > 10) lines.push(`- …and ${needs.items.length - 10} more; see ${NEEDS_PATH}`);
+  }
+
+  if (needs.running.length > 0) {
+    lines.push(`Running now: ${needs.running.map((item) => `${item.project} — ${item.label} (${item.ageHours}h, ${item.route || 'route unknown'})`).join('; ')}`);
+  }
+
+  const attentionLine = attention.length === 0
+    ? `No project is losing momentum (${state.records?.length ?? 0} tracked).`
+    : `${attention.length} project(s) losing momentum: ${attention.slice(0, 6).map(describeState).join('; ')}`;
+  lines.push(`${attentionLine} Autonomy: ${autonomy}.`);
+  return lines.join('\n');
+}
+
 /** @returns the local IANA time zone. */
 function localTimeZone() {
   try {
@@ -870,7 +1132,7 @@ export const inject = ['tools', 'commands'];
  */
 export function apply(ctx) {
   /** Latest scan, refreshed on every rebuild; commands read it for fast lookups. */
-  let latest = { records: [], attention: [], summary: null };
+  let latest = { records: [], attention: [], summary: null, needs: { items: [], counts: {}, running: [] }, autonomy: 'record' };
   /** Serializes scans so a watch event cannot overlap an interval rebuild. */
   let running = null;
 
@@ -906,7 +1168,7 @@ export function apply(ctx) {
     if (running !== null) return running;
     running = scan(reason)
       .then((result) => {
-        latest = { records: result.records, attention: result.attention, summary: result.summary };
+        latest = { records: result.records, attention: result.attention, summary: result.summary, needs: result.needs, autonomy: result.autonomy };
         // Re-read the optional services: whether Schedule is mounted is only
         // knowable once the whole tree has settled, not during `apply`.
         publishDoctor();
@@ -1050,12 +1312,35 @@ export function apply(ctx) {
     const verb = sub.toLowerCase();
     const records = await recordsNow();
 
-    if (verb === 'status' || verb === 'brief') {
-      await rebuild('status');
-      const attention = latest.attention;
-      if (attention.length === 0) return { kind: 'success', text: `No project needs attention. ${latest.records.length} projects tracked.` };
-      const lines = attention.slice(0, 8).map(describeState);
-      return { kind: 'success', text: `${attention.length} need attention:\n${lines.join('\n')}\n\nBriefing: ${BRIEF_PATH}` };
+    if (verb === 'status' || verb === 'brief' || verb === 'needs' || verb === 'now') {
+      await rebuild(verb);
+      return { kind: 'success', text: describeNeeds(latest) };
+    }
+
+    if (verb === 'done' || verb === 'dismiss') {
+      const id = rest[0];
+      if (id === undefined) return { kind: 'error', text: 'Give a proposal id, for example: /projects done p_123456_resume' };
+      const stored = await readProposals();
+      const { proposals, found } = dismissProposal({ proposals: stored, id });
+      if (!found) return { kind: 'error', text: `No open proposal with id ${id}. Run /projects needs to see the ids.` };
+      await writeProposals(proposals);
+      await rebuild('dismiss');
+      return { kind: 'success', text: `Proposal ${id} dismissed for ${DISMISS_DAYS} days.` };
+    }
+
+    if (verb === 'autonomy') {
+      const mode = (rest[0] ?? '').toLowerCase();
+      if (!AUTONOMY.includes(mode)) {
+        return { kind: 'error', text: `Set autonomy to one of: ${AUTONOMY.join(', ')} (currently ${await readAutonomy()}).` };
+      }
+      await writeAutonomy(mode);
+      await rebuild('autonomy');
+      const meaning = mode === 'off'
+        ? 'No proposals are recorded.'
+        : mode === 'record'
+          ? 'Proposals are recorded and shown; nothing starts on its own.'
+          : 'The scheduled review may act on open proposals when it runs, and only inside a session you opened.';
+      return { kind: 'success', text: `Autonomy: ${mode}. ${meaning}` };
     }
 
     if (verb === 'scan' || verb === 'refresh') {
@@ -1131,7 +1416,10 @@ export function apply(ctx) {
       kind: 'error',
       text: [
         'Unknown subcommand. Available:',
-        '  /projects                     summary of what needs attention',
+        '  /projects                     what needs you, ranked (agent work first)',
+        '  /projects needs               alias: the same ranked list',
+        '  /projects done <id>           dismiss one proposal for a week',
+        '  /projects autonomy <mode>     off | record (default) | act',
         '  /projects scan                rescan the folder now',
         '  /projects list [state]        list projects, optionally by state',
         '  /projects snooze <name> [d]   hide for d days (default 14)',
@@ -1170,15 +1458,19 @@ export function apply(ctx) {
       disposeTool = ctx.tools.register({
         name: 'projects_manager',
         description: [
-          'Read and maintain the projects manager: per-project momentum, the current stall briefing, stated intent, and the review reminder.',
-          'Use action "brief" to see which projects are stalling and why.',
+          'Read and maintain the projects manager: one ranked list of what needs a person across every project, '
+          + 'per-project momentum, the stall briefing, stated intent, and the review reminder.',
+          'Use action "needs" before telling the user you are blocked: it lists blocked agent work, failed runs, '
+          + 'blocked product-pipeline stages and the manager\'s own proposals, each with the project and the continuation prompt.',
         ].join(' '),
         parameters: {
           type: 'object',
           additionalProperties: false,
           required: ['action'],
           properties: {
-            action: { type: 'string', enum: ['brief', 'list', 'intent', 'schedule', 'rescan'], description: 'What to do.' },
+            action: { type: 'string', enum: ['needs', 'brief', 'list', 'intent', 'schedule', 'rescan', 'dismiss', 'autonomy'], description: 'What to do.' },
+            id: { type: 'string', description: 'For "dismiss": the proposal id from "needs".' },
+            mode: { type: 'string', enum: [...AUTONOMY], description: 'For "autonomy": off, record or act.' },
             project: { type: 'string', description: 'Project name for "intent". A prefix is enough when unambiguous.' },
             state: { type: 'string', enum: TOOL_STATES, description: 'Filter for "list".' },
             nextAction: { type: 'string', description: 'For "intent": the recorded next action.' },
@@ -1194,11 +1486,45 @@ export function apply(ctx) {
         },
         async execute(args, exec) {
             const records = await recordsNow();
+            if (args.action === 'needs') {
+              await rebuild('tool-needs');
+              return JSON.stringify({
+                scannedAt: latest.summary?.scannedAt ?? 0,
+                autonomy: latest.autonomy,
+                counts: latest.needs?.counts ?? {},
+                items: (latest.needs?.items ?? []).slice(0, 20),
+                running: latest.needs?.running ?? [],
+              }, null, 2);
+            }
+
+            if (args.action === 'dismiss') {
+              if (typeof args.id !== 'string' || args.id.length === 0) return 'Pass the proposal id: action "dismiss", id "p_…".';
+              const stored = await readProposals();
+              const outcome = dismissProposal({ proposals: stored, id: args.id });
+              if (!outcome.found) return `No open proposal with id ${args.id}.`;
+              await writeProposals(outcome.proposals);
+              await rebuild('tool-dismiss');
+              return `Proposal ${args.id} dismissed for ${DISMISS_DAYS} days.`;
+            }
+
+            if (args.action === 'autonomy') {
+              const mode = args.mode;
+              if (!AUTONOMY.includes(mode)) return `Set mode to one of: ${AUTONOMY.join(', ')}.`;
+              await writeAutonomy(mode);
+              await rebuild('tool-autonomy');
+              return `Autonomy: ${mode}.`;
+            }
+
             if (args.action === 'brief') {
               await rebuild('tool');
               const payload = {
                 scannedAt: latest.summary?.scannedAt ?? 0,
                 counts: latest.summary?.counts ?? {},
+                autonomy: latest.autonomy,
+                needsYou: (latest.needs?.items ?? []).slice(0, 12).map((item) => ({
+                  kind: item.kind, project: item.project, label: item.label, note: item.note, ageHours: item.ageHours, id: item.id, prompt: item.prompt,
+                })),
+                running: latest.needs?.running ?? [],
                 needsAttention: latest.attention.slice(0, BRIEF_ATTENTION_LIMIT).map((record) => ({
                   name: record.name,
                   path: record.path,

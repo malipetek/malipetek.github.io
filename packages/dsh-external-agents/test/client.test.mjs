@@ -10,8 +10,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { delimiter, dirname, join } from 'node:path';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 import {
@@ -19,6 +19,8 @@ import {
   AgentRegistry,
   SessionStore,
   buildEnv,
+  findCommand,
+  toolPath,
   renderUpdate,
   resolveAgents,
   textOf,
@@ -53,7 +55,11 @@ test('a minimal environment cannot carry DSH provider configuration', () => {
     const minimal = buildEnv('minimal', {});
     assert.equal(minimal.ANTHROPIC_BASE_URL, undefined);
     assert.equal(minimal.ANTHROPIC_AUTH_TOKEN, undefined);
-    assert.equal(minimal.PATH, process.env.PATH, 'PATH still crosses over');
+    // PATH crosses over, plus the directories a GUI launch omits — otherwise a
+    // bare `command:` resolves in a terminal and fails in the app.
+    assert.ok(minimal.PATH.startsWith(process.env.PATH ?? ''), 'PATH still crosses over');
+    assert.ok(minimal.PATH.split(delimiter).includes(join(process.env.HOME, 'Library', 'pnpm')),
+      'the package manager directory is searchable');
 
     const inherit = buildEnv('inherit', {});
     assert.equal(inherit.ANTHROPIC_BASE_URL, undefined, 'inherited but routing is still withheld');
@@ -304,4 +310,35 @@ test('update rendering covers the shapes an agent actually sends', () => {
   assert.equal(renderUpdate({ sessionUpdate: 'tool_call', title: 'Read file', status: 'pending' }), '→ Read file (pending)');
   assert.equal(renderUpdate({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'x' } }), '');
   assert.equal(textOf([{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'a' } }, { sessionUpdate: 'plan' }]), 'a');
+});
+
+test('a tool installed off PATH resolves the way the app launches it', () => {
+  // The failure this exists for: the desktop app is started by launchd with
+  // `/usr/bin:/bin:/usr/sbin:/sbin`, while `claude-agent-acp` lives in
+  // `~/Library/pnpm`. Every turn then failed with "command not found:
+  // claude-agent-acp" — which reads as a broken install, not a PATH miss.
+  const beforePath = process.env.PATH;
+  const beforeHome = process.env.HOME;
+  const scratchHome = mkdtempSync(join(tmpdir(), 'dsh-home-'));
+  const bin = join(scratchHome, '.local', 'bin');
+  mkdirSync(bin, { recursive: true });
+  const executable = join(bin, 'dsh-path-probe');
+  writeFileSync(executable, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  try {
+    process.env.HOME = scratchHome;
+    process.env.PATH = '/usr/bin:/bin';
+
+    assert.equal(findCommand('dsh-path-probe'), executable,
+      'a binary outside PATH is found in the app-omitted directory');
+    assert.equal(findCommand('dsh-not-installed-anywhere'), null, 'nothing invents a command that is not there');
+
+    const path = toolPath().split(delimiter);
+    assert.equal(path[0], '/usr/bin', 'the process PATH keeps its order and its precedence');
+    assert.ok(path.indexOf('/usr/bin') < path.indexOf(join(scratchHome, 'Library', 'pnpm')),
+      'appended directories come after the inherited ones');
+    assert.equal(new Set(path).size, path.length, 'no directory is listed twice');
+  } finally {
+    process.env.PATH = beforePath;
+    process.env.HOME = beforeHome;
+  }
 });

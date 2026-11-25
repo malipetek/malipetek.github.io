@@ -55,6 +55,20 @@ window.__ModuleLoader__.load({
         ? '~/.dsh/projects-manager/index.jsonl'
         : `${home}/.dsh/projects-manager/index.jsonl`;
     }
+    /**
+     * The cockpit snapshot the Host half writes on every scan: the ranked
+     * "needs you" list, what is running, and how far the manager may act.
+     * @param ctx - the Client plugin context.
+     * @returns an absolute path on this machine.
+     */
+    function needsPathOf(ctx) {
+      const home = hostHomeOf(ctx);
+      return home === null
+        ? '~/.dsh/projects-manager/needs.json'
+        : `${home}/.dsh/projects-manager/needs.json`;
+    }
+    /** What an absent or unreadable needs.json reads as. */
+    const EMPTY_NEEDS = { items: [], counts: {}, running: [], autonomy: 'record' };
     /** Browser-local dismissals for the reminder banner. */
     const STORE_KEY = 'dsh.projects.manager.v1';
     /** The file Remote caps one text page at this many lines. */
@@ -191,6 +205,13 @@ window.__ModuleLoader__.load({
       return C.labelTertiary;
     }
 
+    /** Colour a need by what it asks of the person. */
+    function toneOfNeed(kind) {
+      if (kind === 'answer') return C.error;
+      if (kind === 'review') return C.warn;
+      return C.labelTertiary;
+    }
+
     const s = {
       root: {
         height: '100%',
@@ -274,6 +295,21 @@ window.__ModuleLoader__.load({
         borderRadius: '8px',
       },
       list: { display: 'flex', flexDirection: 'column', gap: '10px' },
+      needPanel: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+        margin: '0 0 14px',
+        padding: '10px 12px',
+        background: C.bgLayer1,
+        border: `1px solid ${C.borderL3}`,
+        borderRadius: '10px',
+      },
+      needHead: { fontSize: '12px', fontWeight: 600, color: C.labelPrimary },
+      needRow: { display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '5px 0', borderTop: `1px solid ${C.borderL2}` },
+      needKind: { fontSize: '9px', fontWeight: 700, letterSpacing: '0.04em', lineHeight: '16px', minWidth: '62px' },
+      needBody: { flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1px' },
+      needTitle: { fontSize: '12px', lineHeight: '17px', color: C.labelPrimary, overflow: 'hidden', textOverflow: 'ellipsis' },
       card: {
         display: 'flex',
         flexDirection: 'column',
@@ -383,8 +419,10 @@ window.__ModuleLoader__.load({
      * @returns the rendered panel.
      */
     function MomentumPage({ api }) {
-      const [state, setState] = useState({ phase: 'loading', records: [], error: null });
+      const [state, setState] = useState({ phase: 'loading', records: [], needs: EMPTY_NEEDS, error: null });
       const [query, setQuery] = useState('');
+      // The Needs-you panel is always visible above the list; the chips filter
+      // the list itself, and momentum stays the default filter it always was.
       const [view, setView] = useState('attention');
       const [notice, setNotice] = useState(null);
       const [busy, setBusy] = useState(null);
@@ -395,14 +433,17 @@ window.__ModuleLoader__.load({
       const load = useCallback(() => {
         const controller = new AbortController();
         setState((previous) => ({ ...previous, phase: 'loading', error: null }));
-        api.readIndex(controller.signal).then(
-          (records) => {
+        Promise.all([
+          api.readIndex(controller.signal),
+          api.readNeeds(controller.signal),
+        ]).then(
+          ([records, needs]) => {
             if (controller.signal.aborted) return;
-            setState({ phase: 'ready', records, error: null });
+            setState({ phase: 'ready', records, needs: needs ?? EMPTY_NEEDS, error: null });
           },
           (error) => {
             if (controller.signal.aborted) return;
-            setState({ phase: 'error', records: [], error: messageOf(error) });
+            setState({ phase: 'error', records: [], needs: EMPTY_NEEDS, error: messageOf(error) });
           },
         );
         return () => controller.abort();
@@ -449,10 +490,22 @@ window.__ModuleLoader__.load({
         return tally;
       }, [state.records]);
 
+      const needs = state.needs ?? EMPTY_NEEDS;
+
+      /** Projects named by the cockpit, so the Needs-you view is exactly that list. */
+      const needsOrder = useMemo(() => {
+        const order = new Map();
+        for (const item of needs.items ?? []) {
+          if (!order.has(item.path)) order.set(item.path, order.size);
+        }
+        return order;
+      }, [needs]);
+
       const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();
         const rows = state.records.filter((record) => {
           if (view === 'all') return true;
+          if (view === 'needs') return needsOrder.has(record.path);
           if (view === 'attention') return ATTENTION_STATES.includes(record.momentum.state) && record.intent?.ignored !== true;
           return record.momentum.state === view;
         });
@@ -462,13 +515,15 @@ window.__ModuleLoader__.load({
           || (typeof record.intent?.nextAction === 'string' && record.intent.nextAction.toLowerCase().includes(needle))
         ));
         const sorted = matched.slice();
-        if (view === 'attention') sorted.sort((a, b) => b.momentum.score - a.momentum.score || a.name.localeCompare(b.name));
+        if (view === 'needs') sorted.sort((a, b) => (needsOrder.get(a.path) ?? 1e9) - (needsOrder.get(b.path) ?? 1e9));
+        else if (view === 'attention') sorted.sort((a, b) => b.momentum.score - a.momentum.score || a.name.localeCompare(b.name));
         else sorted.sort((a, b) => b.momentum.lastTouchAt - a.momentum.lastTouchAt || a.name.localeCompare(b.name));
         return sorted;
-      }, [state.records, query, view]);
+      }, [state.records, query, view, needsOrder]);
 
       const chips = [
-        { id: 'attention', label: `Needs attention ${counts.attention ?? 0}` },
+        { id: 'needs', label: `Needs you ${needs.items?.length ?? 0}` },
+        { id: 'attention', label: `Momentum ${counts.attention ?? 0}` },
         { id: 'stalling', label: `Stalling ${counts.stalling ?? 0}` },
         { id: 'cooling', label: `Cooling ${counts.cooling ?? 0}` },
         { id: 'active', label: `Active ${counts.active ?? 0}` },
@@ -489,6 +544,37 @@ window.__ModuleLoader__.load({
           setBusy(null);
         }
       }, [api]);
+
+      /**
+       * Copy a cockpit item's continuation prompt, so the same work can be handed
+       * to whichever agent is free — Devin, Antigravity, or a fresh session —
+       * without explaining the project again.
+       */
+      const copyPrompt = useCallback(async (item) => {
+        try {
+          await navigator.clipboard.writeText(item.prompt ?? '');
+          setNotice({ kind: 'info', text: `Continuation prompt for ${item.project} copied. Paste it into whichever agent you want to use.` });
+        } catch {
+          setNotice({ kind: 'error', text: 'Could not reach the clipboard. Open the project and ask there instead.' });
+        }
+      }, []);
+
+      /** Open the project a cockpit item belongs to. */
+      const openNeed = useCallback((item) => {
+        const record = state.records.find((entry) => entry.path === item.path);
+        if (record === undefined) {
+          setNotice({ kind: 'error', text: `${item.project} is no longer in the index; rescan and try again.` });
+          return;
+        }
+        openProject(record);
+      }, [openProject, state.records]);
+
+      /** Cycle autonomy: off → record → act → off. */
+      const cycleAutonomy = useCallback(() => {
+        const current = needs.autonomy ?? 'record';
+        const next = current === 'off' ? 'record' : current === 'record' ? 'act' : 'off';
+        runCommand(`/projects autonomy ${next}`, { key: 'autonomy' });
+      }, [needs.autonomy, runCommand]);
 
       const startEditing = useCallback((record) => {
         setEditing(record.path);
@@ -615,7 +701,54 @@ window.__ModuleLoader__.load({
           state.phase === 'ready' && state.records.length === 0
             && h('div', { style: s.status }, 'The index is empty. The Host scans the projects folder shortly after start-up.'),
           state.phase === 'ready' && state.records.length > 0 && visible.length === 0
-            && h('div', { style: s.status }, view === 'attention' ? 'Nothing is stalling. Nice.' : 'Nothing matches this view.'),
+            && h('div', { style: s.status }, view === 'needs'
+              ? 'Nothing is waiting on you. Agents are either finished or still running.'
+              : view === 'attention' ? 'Nothing is stalling. Nice.' : 'Nothing matches this view.'),
+          (needs.items?.length ?? 0) > 0 && h(
+            'div',
+            { style: s.needPanel },
+            h(
+              'div',
+              { style: { ...s.needHead, display: 'flex', alignItems: 'center', gap: '8px' } },
+              h('span', null, `● ${needs.items.length} waiting on you`),
+              h('span', { style: { ...s.meta, flex: '1 1 auto' } }, (needs.counts?.answer ?? 0) > 0
+                ? `${needs.counts.answer} need a decision from you`
+                : 'nothing is blocked on a decision'),
+              h(
+                'button',
+                { type: 'button', style: s.smallButton, disabled: busy !== null, title: 'How far the manager may go on its own', onClick: cycleAutonomy },
+                `Autonomy: ${needs.autonomy ?? 'record'}`,
+              ),
+            ),
+            ...needs.items.slice(0, 8).map((item) => h(
+              'div',
+              { key: item.id, style: s.needRow },
+              h('span', { style: { ...s.needKind, color: toneOfNeed(item.kind) } }, item.kind === 'answer' ? 'ANSWER' : item.kind === 'review' ? 'REVIEW' : item.kind === 'pipeline' ? 'PIPELINE' : 'PROPOSAL'),
+              h(
+                'div',
+                { style: s.needBody },
+                h('div', { style: s.needTitle }, `${item.project} — ${item.label}`),
+                h('div', { style: s.meta }, [
+                  item.note,
+                  `${item.ageHours < 1 ? 'new' : item.ageHours >= 24 ? `${Math.round(item.ageHours / 24)}d` : `${Math.round(item.ageHours)}h`}${item.overdue ? ' · overdue' : ''}`,
+                  item.route,
+                ].filter((part) => typeof part === 'string' && part.length > 0).join(' · ')),
+              ),
+              h(
+                'div',
+                { style: s.actions },
+                h('button', { type: 'button', style: s.smallButton, disabled: busy !== null, onClick: () => openNeed(item) }, 'Open'),
+                h('button', { type: 'button', style: s.smallButton, onClick: () => copyPrompt(item) }, 'Copy prompt'),
+                item.kind === 'proposal' && h('button', { type: 'button', style: s.smallButton, disabled: busy !== null, onClick: () => runCommand(`/projects done ${item.id}`, { key: item.id }) }, 'Dismiss'),
+              ),
+            )),
+            needs.items.length > 8 && h('div', { style: s.meta }, `+${needs.items.length - 8} more — /projects needs lists the next ten`),
+            (needs.running?.length ?? 0) > 0 && h(
+              'div',
+              { style: s.meta },
+              `Running now: ${needs.running.map((entry) => `${entry.project} — ${entry.label} (${entry.ageHours}h${entry.stale ? ', not reporting' : ''})`).join(' · ')}`,
+            ),
+          ),
           h(
             'div',
             { style: s.list },
@@ -736,16 +869,26 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         const controller = new AbortController();
-        api.readIndex(controller.signal).then(
-          (records) => {
+        Promise.all([api.readIndex(controller.signal), api.readNeeds(controller.signal)]).then(
+          ([records, needs]) => {
             if (controller.signal.aborted) return;
             const attention = records
               .filter((record) => ATTENTION_STATES.includes(record.momentum.state) && record.intent?.ignored !== true)
               .sort((a, b) => b.momentum.score - a.momentum.score);
             const scannedAt = records.reduce((max, record) => Math.max(max, record.momentum.lastTouchAt), 0);
-            if (attention.length === 0) return;
-            if (readDismissed().dismissedAt >= scannedAt) return;
-            setSummary({ names: attention.slice(0, 3).map((record) => record.name), total: attention.length, scannedAt });
+            // Agent work waiting on a person outranks momentum: it is a decision,
+            // not a trend. It is also the only thing the banner interrupts for.
+            const waiting = (needs?.items ?? []).filter((item) => item.kind !== 'proposal');
+            const waitingAt = waiting.reduce((max, item) => Math.max(max, item.at || 0), 0);
+            if (attention.length === 0 && waiting.length === 0) return;
+            if (readDismissed().dismissedAt >= Math.max(scannedAt, waitingAt)) return;
+            setSummary({
+              names: attention.slice(0, 3).map((record) => record.name),
+              total: attention.length,
+              scannedAt: Math.max(scannedAt, waitingAt),
+              waiting: waiting.slice(0, 2).map((item) => `${item.project}: ${item.label} (${item.kind === 'answer' ? 'needs an answer' : 'needs a review'})`),
+              waitingTotal: waiting.length,
+            });
           },
           () => {
             // The banner is a convenience; a failed read stays silent.
@@ -770,8 +913,11 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         { style: s.banner, role: 'status' },
-        h('div', { style: s.bannerHead }, `⚠ ${summary.total} project${summary.total === 1 ? '' : 's'} losing momentum`),
-        h('div', {}, `${summary.names.join(', ')}${summary.total > summary.names.length ? ` and ${summary.total - summary.names.length} more` : ''}.`),
+        summary.waitingTotal > 0 && h('div', { style: s.bannerHead }, `● ${summary.waitingTotal} agent task${summary.waitingTotal === 1 ? '' : 's'} waiting on you`),
+        summary.waitingTotal > 0 && h('div', { style: s.meta }, 'Blocked or failed work from any agent, in one list under Needs you.'),
+        summary.waitingTotal > 0 && h('div', {}, summary.waiting.join(' · ')),
+        summary.total > 0 && h('div', { style: s.bannerHead }, `⚠ ${summary.total} project${summary.total === 1 ? '' : 's'} losing momentum`),
+        summary.total > 0 && h('div', {}, `${summary.names.join(', ')}${summary.total > summary.names.length ? ` and ${summary.total - summary.names.length} more` : ''}.`),
         h(
           'div',
           { style: s.bannerActions },
@@ -808,6 +954,21 @@ window.__ModuleLoader__.load({
       // One stable object so React effects that depend on it do not re-run every render.
       const api = {
         readIndex: async (signal) => parseIndex(await readIndexText(ctx.remote.workspaceFiles, indexPathOf(ctx), currentSessionId(), signal)),
+        /**
+         * The cockpit snapshot. An absent file is normal before the first scan,
+         * and a failed read must not take the whole panel down with it.
+         * @param signal - caller lifetime.
+         * @returns the needs payload, or an empty one.
+         */
+        readNeeds: async (signal) => {
+          try {
+            const text = await readIndexText(ctx.remote.workspaceFiles, needsPathOf(ctx), currentSessionId(), signal);
+            const parsed = JSON.parse(text);
+            return parsed !== null && typeof parsed === 'object' && Array.isArray(parsed.items) ? parsed : EMPTY_NEEDS;
+          } catch {
+            return EMPTY_NEEDS;
+          }
+        },
         /**
          * Execute one command against the first Session whose agent accepts it.
          * Commands are addressed to a Session, and the panel is root-scoped, so it

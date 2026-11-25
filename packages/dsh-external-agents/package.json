@@ -19,7 +19,9 @@
     "icon.svg",
     "README.md",
     "LICENSE",
-    "tools"
+    "tools",
+    "superagent.mjs",
+    "hooks"
   ],
   "dsh": {
     "bundle": {

@@ -149,14 +149,35 @@ if (!noop.startsWith('Nothing to change')) throw new Error(`unexpected intent no
 const ambiguous = await call({ action: 'intent', project: 'Ship', cadenceDays: 5 });
 if (!ambiguous.includes('ambiguous')) throw new Error(`expected an ambiguity refusal, got: ${ambiguous}`);
 
-const changed = await call({ action: 'intent', project: 'ShipFit-poc', cadenceDays: 5, nextAction: 'from the tool' });
+const changed = await call({ action: 'intent', project: 'shipfit-scan-runner', cadenceDays: 5, nextAction: 'from the tool' });
 console.log(`tool intent: ${changed}`);
 const all = JSON.parse(await call({ action: 'list' }));
-const poc = all.find((row) => row.name === 'ShipFit-poc');
+const poc = all.find((row) => row.name === 'shipfit-scan-runner');
 if (poc === undefined || poc.nextAction !== 'from the tool' || poc.cadenceDays !== 5) {
   throw new Error(`tool intent did not persist: ${JSON.stringify(poc)}`);
 }
 console.log(`tool intent persisted: ${JSON.stringify(poc)}`);
+
+// The cockpit: the ranked list the panel and the scheduled review both read.
+const needs = JSON.parse(await call({ action: 'needs' }));
+console.log(`tool needs: ${needs.counts.total} waiting, autonomy=${needs.autonomy}, running=${needs.running.length}`);
+if (!Array.isArray(needs.items)) throw new Error('needs did not return items');
+if (needs.items.length > 0 && needs.items[0].kind !== 'answer') {
+  throw new Error(`needs is not ranked decision-first: ${needs.items[0].kind}`);
+}
+
+const proposalItem = needs.items.find((item) => item.kind === 'proposal');
+if (proposalItem !== undefined) {
+  const dismissed = await call({ action: 'dismiss', id: proposalItem.id });
+  console.log(`tool dismiss: ${dismissed}`);
+  const after = JSON.parse(await call({ action: 'needs' }));
+  if (after.items.some((item) => item.id === proposalItem.id)) throw new Error('a dismissed proposal came back');
+}
+
+console.log(`tool autonomy: ${await call({ action: 'autonomy', mode: 'off' })}`);
+const quiet = JSON.parse(await call({ action: 'needs' }));
+if (quiet.autonomy !== 'off') throw new Error('autonomy off was not stored');
+console.log(`tool autonomy: ${await call({ action: 'autonomy', mode: 'record' })}`);
 
 await run('resume ShipFit');
 await run('cadence ShipFit 3');

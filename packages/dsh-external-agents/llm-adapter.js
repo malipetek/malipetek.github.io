@@ -321,6 +321,11 @@ function renderRange(messages, from, to, maxChars) {
   if (lines.length === 0) return '';
 
   const joined = lines.join('\n');
+  // `0` means "never replay history", not "use the default". A client that must
+  // leave its agent's conversation untouched (Antigravity's terms only permit a
+  // thin client that lets the agent own its history) has to be able to say so,
+  // and a silent fallback to the default is the opposite of saying so.
+  if (maxChars === 0) return '';
   const budget = Number.isFinite(maxChars) && maxChars > 0 ? maxChars : DEFAULT_PRIME_MAX_CHARS;
   if (joined.length <= budget) return joined;
 
@@ -875,7 +880,7 @@ export class AcpModelAdapter {
     const initiating = this.resolveInitiatingAgent?.() ?? null;
     // The delegation bridge needs the exact live parent agent for this session;
     // an MCP call arrives later, outside this turn's async context.
-    if (initiating !== null) this.onTurnStart?.(sessionKey, initiating);
+    if (initiating !== null) this.onTurnStart?.(sessionKey, initiating, this.resolveCwd?.());
 
     // Block indexes must be allocated in the order blocks first appear and reused
     // for every later delta of the same block. A fixed text=0 / reasoning=1 pair

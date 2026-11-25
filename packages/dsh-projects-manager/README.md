@@ -9,6 +9,9 @@ answers *"what projects do I have?"*. This one answers *"which of them am I
 losing?"*. The two are independent: nothing in the Projects panel changes, and
 this plugin keeps its own index.
 
+- **One "Needs you" list.** Blocked questions, failed runs and the manager's own
+  proposals, ranked across every project, above the momentum list. Each row opens
+  the project or copies a continuation prompt for whichever agent is free.
 - **Momentum page.** A ranked list of what is cooling or stalling, why, and the
   controls to change it.
 - **App-wide reminder.** A dismissible banner over the whole frame, so a stall is
@@ -90,6 +93,57 @@ piling up (15%). Only `never-started`, `stalling` and `cooling` raise a reminder
 and `unstarted` projects stay silent — otherwise 121 abandoned folders would bury
 the eight that matter.
 
+## The cockpit: what needs you
+
+Momentum answers *"which project is going quiet"*. That is only half of what a
+person juggling several agents has to hold. The other half is work an agent
+already did and could not finish: a blocked question, a failed run, a task that
+stopped without a report. Those are not trends, they are decisions, and they
+outrank every trend in the list.
+
+The Host half reads them from the delegation work ledger
+(`~/.dsh/context/work/*.jsonl`, written by `@malipetek/dsh-external-agents`),
+combines them with proposals of its own, and writes one ranked list to
+`needs.json`. The panel, the briefing, the scheduled review and the
+`projects_manager` tool all read that same list.
+
+| Need | Source | Meaning |
+| --- | --- | --- |
+| `answer` | Ledger `STATUS: blocked` | A worker asked a question only you can settle. |
+| `review` | Ledger `failed` / no report | A run ended badly and someone should look. |
+| `pipeline` | Product pipeline index | A product stage is blocked or a requirement fails — only the product pipeline plugin writes this index, so it is silent when that plugin is off. |
+| `proposal` | This plugin | What the manager would start next, if you let it. |
+| *running* | Ledger start with no end | Delegated work still in flight, for "where is everything right now". |
+
+Ranking is `answer` → `review` → `pipeline` → `proposal`, then oldest first. Blocked
+pipeline stages are grouped per project, so a product with six blocked stages is
+one row, not six. A row older than
+24 hours is marked overdue. Each row carries a **continuation prompt** naming the
+project card, so handing the work to Devin, Antigravity or a fresh session does
+not start with "where does this deploy?".
+
+### Proposals and autonomy
+
+Proposals are the manager's suggestions, recorded rather than started:
+
+- `first-slice` — a project you opened but never worked on.
+- `resume` — a stalled or cooling project, using your stated next action when
+  there is one.
+
+A proposal is one per (project, kind): it is not re-raised while open, reappears
+after a week if dismissed, and closes as `resolved` when its condition goes away.
+Autonomy decides how far the manager goes:
+
+| Mode | Behaviour |
+| --- | --- |
+| `record` (default) | Proposals are recorded and shown. Nothing starts. |
+| `act` | The scheduled review may act on open proposals, in a Session you opened. |
+| `off` | No proposals at all; existing ones stay on disk, hidden. |
+
+Nothing here starts an agent on its own. `act` only changes the instruction the
+scheduled review receives, and that review runs inside a live Session with your
+permission preset — the same place any other turn runs.
+
 ## The scheduled review
 
 The cron trigger is DSH's own Schedule subsystem rather than a timer in this
@@ -118,7 +172,10 @@ nothing enters the conversation. The panel calls the same commands through
 
 | Command | Effect |
 | --- | --- |
-| `/projects` | Summary of what needs attention |
+| `/projects` | What needs you, ranked, then the momentum summary |
+| `/projects needs` | The same ranked list |
+| `/projects done <id>` | Dismiss one proposal for a week |
+| `/projects autonomy <mode>` | `off`, `record` (default) or `act` |
 | `/projects scan` | Rescan the folder now |
 | `/projects list [state]` | List projects, optionally filtered by state |
 | `/projects snooze <name> [days]` | Hide until then (default 14) |
@@ -135,7 +192,13 @@ with the candidates rather than guessed at.
 ## Model-facing tool
 
 One tool, `projects_manager`, registered on the Host context and visible to root
-agents, with actions `brief`, `list`, `intent`, `schedule` and `rescan`.
+agents, with actions `needs`, `brief`, `list`, `intent`, `schedule`, `rescan`,
+`dismiss` and `autonomy`.
+
+`needs` is the one an agent should call before telling you it is blocked: it
+returns the ranked list with each item's continuation prompt, so the agent can
+pick up work that already awaits a person instead of asking you to repeat
+context.
 
 It is registered by handing the tool registry a definition directly — the
 registry accepts a JSON Schema for `parameters`, so this plugin imports no
@@ -151,6 +214,10 @@ Everything lands in `/Users/malipetek/.dsh/projects-manager/`:
 | `index.jsonl` | One record per project; read by the Client half |
 | `manager-brief.md` | The model-readable briefing the cron review reads |
 | `intent.json` | Your stated next actions, paces, snoozes and ignores |
+| `needs.json` | The ranked cockpit: needs, counts, running work, autonomy |
+| *(read)* `~/.dsh/product-pipeline/index.jsonl` | Blocked or failing product stages, never written here |
+| `proposals.json` | Open and recently closed suggestions |
+| `autonomy.json` | `off`, `record` or `act` |
 | `cache.json` | Last scan summary: duration, state counts, attention list |
 | `doctor.json` | Wiring report: whether the tool registered and Schedule is mounted |
 
@@ -164,7 +231,7 @@ Constants live at the top of each half and some are mirrored:
 | --- | --- | --- |
 | `PROJECTS_ROOT` | `index.js` | `/Users/malipetek/Documents/Documents/Projects` |
 | `STATE_DIR` | `index.js` | `/Users/malipetek/.dsh/projects-manager` |
-| `INDEX_PATH` | `client.js` | same absolute literal — change both together |
+| `NEEDS_PATH` | `client.js` | `needs.json` beside the index — change both together |
 | `RESCAN_INTERVAL_MS` | `index.js` | `300000` (5 min) |
 | `HISTORY_DAYS` | `index.js` | `180` |
 | `LEARNED_MIN_CADENCE_DAYS` | `index.js` | `3` |
@@ -200,13 +267,16 @@ Two local suites run without the app and are excluded from the published
 `files` list:
 
 ```sh
-node dev-smoke.mjs          # collectors, scoring, briefing, commands, tool
-node dev-client-smoke.mjs   # renders the page and the banner against a mock React
+node --test test/cockpit.test.mjs   # ranking, proposals, dismissal, autonomy
+node dev-smoke.mjs                  # collectors, scoring, briefing, commands, tool
+node dev-client-smoke.mjs           # renders the page and the banner against a mock React
 ```
 
-`dev-smoke.mjs` writes its output to `.smoke-state/` by default via
-`DSH_PROJECTS_MANAGER_DIR`, so it never touches real state. Pass `--reset` to
-clear the test intent store.
+`dev-smoke.mjs` writes to the **live** state directory unless
+`DSH_PROJECTS_MANAGER_DIR` is set, and it edits intent for the project it probes.
+Point both `DSH_PROJECTS_MANAGER_DIR` and `DSH_CONTEXT_DIR` at temporary folders
+to run it against fixtures, as the cockpit tests do. Pass `--reset` to clear the
+test intent store.
 
 ## Limitations
 
@@ -222,6 +292,8 @@ clear the test intent store.
   so a project's date refreshes on the 5-minute interval at the latest.
 - Panel and banner copy is plain English rather than routed through the Client
   locale service, so it does not switch language.
+- A start record with no end is shown as running for up to 8 hours; a process
+  killed mid-delegation leaves one behind until then.
 - `/projects remind` needs `@deepseek-ai/dsh-llm` to build the follow-up message;
   if that import ever fails the command reports the briefing path instead of
   starting a turn.

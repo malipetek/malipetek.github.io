@@ -13,6 +13,7 @@
   },
   "files": [
     "index.js",
+    "cockpit.mjs",
     "client.js",
     "cordis.patch.yml",
     "icon.svg",
