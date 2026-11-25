@@ -1,7 +1,7 @@
 /* The marketing desk: who we write to, what is queued, and the switch that sends it. */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin, usePoll } from './store.js';
-import { POST_MAX, postLength } from './post-length.js';
+import { postLength, postMax } from './post-length.js';
 import { openSettings } from './settings-link.js';
 import { ago, errorText, when } from './format.js';
 import { nextRowIndex } from './row-navigation.mjs';
@@ -1880,7 +1880,7 @@ function PostsTab({
       key: 'length',
       header: 'Chars',
       numeric: true,
-      render: (m) => `${postLength(m.body, m.channel)}/${POST_MAX[m.channel] ?? 3000}`,
+      render: (m) => `${postLength(m.body, m.channel)}/${postMax(m.channel)}`,
     },
     {
       key: 'when',
@@ -2778,7 +2778,7 @@ function PostInspector({ post: m, initialMode, api, holdHours = 0, onClose, onAp
     setError(null);
   }, [m.id, m.body, initialMode]);
 
-  const max = POST_MAX[m.channel] ?? 3000;
+  const max = postMax(m.channel);
   const counted = postLength(body, m.channel);
   const open = ['draft', 'scheduled', 'failed'].includes(m.status);
   const releaseAt = m.status === 'draft' && holdHours > 0 ? Math.max((m.createdAt ?? 0) + holdHours * 3600, m.scheduledAt ?? 0) : null;

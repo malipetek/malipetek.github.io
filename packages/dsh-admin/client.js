@@ -4894,6 +4894,7 @@ ${block(Object.entries(TOKENS))}
   // packages/admin-ui/src/post-length.js
   var POST_MAX = { x: 280, linkedin: 3e3 };
   var LINK = /https?:\/\/\S+/g;
+  var postMax = (channel) => POST_MAX[channel] ?? 3e3;
   function postLength(body, channel) {
     const text = String(body ?? "");
     if (channel !== "x") return text.length;
@@ -6583,7 +6584,7 @@ ${block(Object.entries(TOKENS))}
         key: "length",
         header: "Chars",
         numeric: true,
-        render: (m) => `${postLength(m.body, m.channel)}/${POST_MAX[m.channel] ?? 3e3}`
+        render: (m) => `${postLength(m.body, m.channel)}/${postMax(m.channel)}`
       },
       {
         key: "when",
@@ -7337,7 +7338,7 @@ ${block(Object.entries(TOKENS))}
       setEditing(initialMode === "edit");
       setError(null);
     }, [m.id, m.body, initialMode]);
-    const max = POST_MAX[m.channel] ?? 3e3;
+    const max = postMax(m.channel);
     const counted2 = postLength(body, m.channel);
     const open = ["draft", "scheduled", "failed"].includes(m.status);
     const releaseAt = m.status === "draft" && holdHours > 0 ? Math.max((m.createdAt ?? 0) + holdHours * 3600, m.scheduledAt ?? 0) : null;

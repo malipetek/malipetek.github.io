@@ -11,6 +11,9 @@ export const POST_MAX = { x: 280, linkedin: 3000 };
 
 const LINK = /https?:\/\/\S+/g;
 
+/** The limit for one channel, with LinkedIn's own as the fallback. */
+export const postMax = (channel) => POST_MAX[channel] ?? 3000;
+
 /**
  * @param {string} body - the post as written.
  * @param {string} channel - `x`, `linkedin`, or anything else.
