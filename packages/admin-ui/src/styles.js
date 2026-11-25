@@ -1591,7 +1591,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   .aw-view, .aw-ticket__main { padding: var(--aw-space-3) var(--aw-space-3) var(--aw-space-5); }
   .aw-pagehead__secondary { display: none; }
   .aw-pagehead__meta { display: none; }
-  .aw-pagehead__side { flex: 0 0 auto; margin-left: auto; justify-content: flex-end; }
+  .aw-pagehead__side { flex: 0 0 auto; justify-content: flex-start; }
   .aw-scrim { padding: 0; place-items: end stretch; }
   .aw-scrim--top { padding: 8px; place-items: start stretch; }
   .aw-modal { width: 100%; max-height: 92%; border-radius: 12px 12px 0 0; animation-name: aw-sheet; }
