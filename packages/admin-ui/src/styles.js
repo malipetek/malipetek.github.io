@@ -395,6 +395,12 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-brief__link { padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
 .aw-brief__link:hover { text-decoration: underline; }
 .aw-superagent__composer-hint { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); margin-top: -6px; font-size: var(--aw-type-sm); color: var(--ui-text-secondary, var(--aw-ink-muted)); }
+.aw-superagent__recent { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); }
+.aw-superagent__recent-list { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 10px; overflow: hidden; }
+.aw-superagent__recent-list li + li { border-top: 1px solid var(--ui-border, var(--aw-hairline)); }
+.aw-superagent__recent-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--aw-space-3, 12px); width: 100%; padding: 10px var(--aw-space-3, 12px); border: 0; background: none; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
+.aw-superagent__recent-row:hover { background: var(--ui-hover, var(--aw-hover)); }
+.aw-superagent__recent-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aw-superagent__prompts { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px); }
 .aw-superagent__prompt { padding: 8px 12px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 999px; background: transparent; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
 .aw-superagent__prompt:hover:not(:disabled) { background: var(--ui-hover, var(--aw-hover)); }
