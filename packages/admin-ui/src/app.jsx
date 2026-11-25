@@ -967,8 +967,11 @@ export function ProjectModal({ onClose, initialClients = [] }) {
   );
   const created = submission.current.project;
   const existing = kind === 'existing';
-  const steps = existing ? ['Source', 'Details', 'Clients', 'Review'] : ['Details'];
+  const steps = existing ? ['Source', 'Details', 'Clients', 'Review'] : ['Details', 'Clients', 'Review'];
   const last = steps.length - 1;
+  const detailsStep = existing ? 1 : 0;
+  const clientsStep = existing ? 2 : 1;
+  const reviewStep = existing ? 3 : 2;
   const slugTaken = Boolean(slug) && data.projects.some((p) => p.slug === slug.toLowerCase());
   const repoKey = (value) => String(value ?? '').trim().replace(/\.git$/, '').replace(/\/+$/, '').toLowerCase();
   const repoTaken = Boolean(repo.trim()) && data.projects.some((p) => repoKey(p.repo) === repoKey(repo));
@@ -976,7 +979,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
   const readyBrief = data.access?.superAdmin || (what.trim() && goal.trim());
   const readySource = !existing || (code === 'folder' ? localPath.trim() : code === 'repo' ? Boolean(repo.trim()) && !repoTaken : true);
   const ready = readyName && readyBrief && readySource && !(code === 'repo' && repoTaken);
-  const stepReady = !existing || (step === 0 ? readySource : step === 1 ? readyName && readyBrief : true);
+  const stepReady = step === 0 && existing ? readySource : step === detailsStep ? readyName && readyBrief : true;
   const go = (project) => { onClose(); open(`p:${project.id}`); };
   const detect = (value, fromRepo) => {
     const base = String(value).trim().replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).pop() ?? '';
@@ -1022,7 +1025,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
     >
       {receipt?.repoError ? <p role="status" className="aw-callout">Project created; repository setup needs attention: {String(receipt.repoError)}</p> : null}
       {setupError ? <p role="alert" className="aw-callout">{created ? 'Project created. Local setup failed; retry does not create another project. ' : ''}{setupError}</p> : null}
-      {existing ? (
+      {steps.length > 1 ? (
         <ol className="aw-wizard-steps" aria-label="Setup steps">
           {steps.map((label, index) => (
             <li key={label} data-current={index === step || undefined} data-done={index < step || undefined}>{label}</li>
@@ -1061,7 +1064,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
           </>
         ) : null}
 
-        {!existing || step === 1 ? (
+        {step === detailsStep ? (
           <>
             <Field label="What it is">
               <Segmented value={kind} options={[{ value: 'existing', label: 'Existing code or system' }, { value: 'new', label: 'New website' }]} onChange={(value) => { setKind(value); setCode(value === 'new' ? 'create' : canFolder ? 'folder' : 'repo'); setStep(0); }} />
@@ -1102,7 +1105,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
           </>
         ) : null}
 
-        {existing && step === 2 ? (
+        {step === clientsStep ? (
           <>
             <Field label="Find a client">
               <input value={clientQuery} placeholder="Search by name or email…" onChange={(e) => setClientQuery(e.target.value)} />
@@ -1124,11 +1127,11 @@ export function ProjectModal({ onClose, initialClients = [] }) {
           </>
         ) : null}
 
-        {existing && step === 3 ? (
+        {step === reviewStep ? (
           <dl className="ui-props">
             <dt>Name</dt><dd>{name}</dd>
             <dt>Slug</dt><dd className="aw-mono">{slug || '—'}</dd>
-            <dt>Source</dt><dd className="aw-mono">{code === 'folder' ? localPath : repo}</dd>
+            {existing ? <><dt>Source</dt><dd className="aw-mono">{code === 'folder' ? localPath : repo}</dd></> : <><dt>Code</dt><dd>{code === 'create' ? 'New repo from the site template' : code === 'repo' ? repo : 'Folder on a node'}</dd></>}
             <dt>Clients</dt><dd>{clientIds.length ? clientIds.map((id) => clients.find((c) => c.id === id)?.name || clients.find((c) => c.id === id)?.email).join(', ') : 'None yet'}</dd>
             {!data.access?.superAdmin ? <><dt>Brief</dt><dd>{what}</dd></> : null}
           </dl>

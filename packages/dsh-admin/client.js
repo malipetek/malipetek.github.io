@@ -16751,8 +16751,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
     const created = submission.current.project;
     const existing = kind === "existing";
-    const steps = existing ? ["Source", "Details", "Clients", "Review"] : ["Details"];
+    const steps = existing ? ["Source", "Details", "Clients", "Review"] : ["Details", "Clients", "Review"];
     const last = steps.length - 1;
+    const detailsStep = existing ? 1 : 0;
+    const clientsStep = existing ? 2 : 1;
+    const reviewStep = existing ? 3 : 2;
     const slugTaken = Boolean(slug) && data.projects.some((p) => p.slug === slug.toLowerCase());
     const repoKey = (value) => String(value ?? "").trim().replace(/\.git$/, "").replace(/\/+$/, "").toLowerCase();
     const repoTaken = Boolean(repo.trim()) && data.projects.some((p) => repoKey(p.repo) === repoKey(repo));
@@ -16760,7 +16763,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const readyBrief = data.access?.superAdmin || what.trim() && goal.trim();
     const readySource = !existing || (code === "folder" ? localPath.trim() : code === "repo" ? Boolean(repo.trim()) && !repoTaken : true);
     const ready = readyName && readyBrief && readySource && !(code === "repo" && repoTaken);
-    const stepReady = !existing || (step === 0 ? readySource : step === 1 ? readyName && readyBrief : true);
+    const stepReady = step === 0 && existing ? readySource : step === detailsStep ? readyName && readyBrief : true;
     const go = (project) => {
       onClose();
       open(`p:${project.id}`);
@@ -16818,7 +16821,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             created ? "Project created. Local setup failed; retry does not create another project. " : "",
             setupError
           ] }) : null,
-          existing ? /* @__PURE__ */ jsx("ol", { className: "aw-wizard-steps", "aria-label": "Setup steps", children: steps.map((label, index) => /* @__PURE__ */ jsx("li", { "data-current": index === step || void 0, "data-done": index < step || void 0, children: label }, label)) }) : null,
+          steps.length > 1 ? /* @__PURE__ */ jsx("ol", { className: "aw-wizard-steps", "aria-label": "Setup steps", children: steps.map((label, index) => /* @__PURE__ */ jsx("li", { "data-current": index === step || void 0, "data-done": index < step || void 0, children: label }, label)) }) : null,
           /* @__PURE__ */ jsxs("fieldset", { disabled: busy || Boolean(created), className: "aw-formset", children: [
             existing && step === 0 ? /* @__PURE__ */ jsxs(Fragment2, { children: [
               canFolder ? /* @__PURE__ */ jsx(Field, { label: "Where is it?", children: /* @__PURE__ */ jsx(Segmented, { value: code, options: [{ value: "folder", label: "Folder on this computer" }, { value: "repo", label: "Git repository" }], onChange: (value) => {
@@ -16852,7 +16855,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                 setStep(0);
               }, children: "This is a new website instead \u2192" })
             ] }) : null,
-            !existing || step === 1 ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            step === detailsStep ? /* @__PURE__ */ jsxs(Fragment2, { children: [
               /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(Segmented, { value: kind, options: [{ value: "existing", label: "Existing code or system" }, { value: "new", label: "New website" }], onChange: (value) => {
                 setKind(value);
                 setCode(value === "new" ? "create" : canFolder ? "folder" : "repo");
@@ -16889,7 +16892,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                 /* @__PURE__ */ jsx("span", { className: "aw-mono", children: code === "folder" ? localPath || "\u2014" : repo || "\u2014" })
               ] })
             ] }) : null,
-            existing && step === 2 ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            step === clientsStep ? /* @__PURE__ */ jsxs(Fragment2, { children: [
               /* @__PURE__ */ jsx(Field, { label: "Find a client", children: /* @__PURE__ */ jsx("input", { value: clientQuery, placeholder: "Search by name or email\u2026", onChange: (e) => setClientQuery(e.target.value) }) }),
               /* @__PURE__ */ jsx("div", { className: "aw-assign__list", role: "group", "aria-label": "Clients", children: shownClients.length === 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: clients.length ? `No client matches \u201C${clientQuery}\u201D.` : "No clients yet. You can assign them from the client page later." }) : shownClients.map((c) => {
                 const checked = clientIds.includes(c.id);
@@ -16907,13 +16910,18 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                 " clients selected. You can change this later on either side."
               ] })
             ] }) : null,
-            existing && step === 3 ? /* @__PURE__ */ jsxs("dl", { className: "ui-props", children: [
+            step === reviewStep ? /* @__PURE__ */ jsxs("dl", { className: "ui-props", children: [
               /* @__PURE__ */ jsx("dt", { children: "Name" }),
               /* @__PURE__ */ jsx("dd", { children: name }),
               /* @__PURE__ */ jsx("dt", { children: "Slug" }),
               /* @__PURE__ */ jsx("dd", { className: "aw-mono", children: slug || "\u2014" }),
-              /* @__PURE__ */ jsx("dt", { children: "Source" }),
-              /* @__PURE__ */ jsx("dd", { className: "aw-mono", children: code === "folder" ? localPath : repo }),
+              existing ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                /* @__PURE__ */ jsx("dt", { children: "Source" }),
+                /* @__PURE__ */ jsx("dd", { className: "aw-mono", children: code === "folder" ? localPath : repo })
+              ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+                /* @__PURE__ */ jsx("dt", { children: "Code" }),
+                /* @__PURE__ */ jsx("dd", { children: code === "create" ? "New repo from the site template" : code === "repo" ? repo : "Folder on a node" })
+              ] }),
               /* @__PURE__ */ jsx("dt", { children: "Clients" }),
               /* @__PURE__ */ jsx("dd", { children: clientIds.length ? clientIds.map((id) => clients.find((c) => c.id === id)?.name || clients.find((c) => c.id === id)?.email).join(", ") : "None yet" }),
               !data.access?.superAdmin ? /* @__PURE__ */ jsxs(Fragment2, { children: [
