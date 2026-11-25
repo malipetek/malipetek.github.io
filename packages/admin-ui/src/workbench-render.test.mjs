@@ -12,10 +12,11 @@ const entry=`
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {AdminContext} from './store.js';
-import {TaskModal,ProjectPage} from './app.jsx';
+import {TaskModal,ProjectPage,viewOffered} from './app.jsx';
 import {ProjectView} from './project.jsx';
 import {ProjectWorld} from './project-world.jsx';
 import {RecordedEvidence} from './review.jsx';
+import {SuperagentView} from './superagent.jsx';
 export {ProjectPage};
 export function renderTask(){return renderToStaticMarkup(React.createElement(AdminContext.Provider,{value:{api:async()=>({}),data:{projects:[{id:'p',name:'Project'}],nodes:[],settings:null,catalog:null},act:fn=>fn(),openTicket:()=>{}}},React.createElement(TaskModal,{preset:{},onClose:()=>{}})));}
 const sampleNow=Date.now();
@@ -62,6 +63,10 @@ export function renderProjectWorldWithDeploys(){
   return renderToStaticMarkup(React.createElement(ProjectWorld,{project:sampleProject,sites:sampleProject.sites,tickets:sampleTickets.filter(t=>t.project_id==='p-world'),deploys,now:sampleNow}));
 }
 const evidenceRuns=[{id:73,status:'ok',executor:'dsh-go',verify_ok:null,summary:'**What I did** - Fetched \\\`https://example.test\\\` and fixed [the bug](https://example.test/b).\\n\\n- added the guard\\n- kept the path <script>alert(1)</script>'},{id:72,status:'failed',executor:'dsh-go'}];
+export {viewOffered};
+export function renderSuperagent(data,host=null){
+  return renderToStaticMarkup(React.createElement(AdminContext.Provider,{value:{api:async()=>({}),data,host,open:()=>{}}},React.createElement(SuperagentView)));
+}
 export function renderEvidence(open){return renderToStaticMarkup(React.createElement(RecordedEvidence,{runs:evidenceRuns,review:{runId:73,verdict:'attention',headline:'Tighten the retry loop'},initialOpen:open}));}
 `;
 await build({stdin:{contents:entry,resolveDir:path.resolve('packages/admin-ui/src'),loader:'jsx'},outfile:path.join(dir,'render.mjs'),bundle:true,platform:'node',format:'esm',jsx:'automatic',external:['react','react-dom/server'],write:true});
@@ -74,7 +79,7 @@ test('real task modal renders draft as default with empty submission disabled',(
   const html=rendered.renderTask();
   assert.match(html,/>Save draft<\/button>/);
   assert.match(html,/<button[^>]*disabled=""[^>]*>Save draft<\/button>/);
-  assert.match(html,/aria-pressed="true"[^>]*>Save draft<\/button>/);
+  assert.match(html,/aria-pressed="true"[^>]*>Draft only<\/button>/);
   assert.match(html,/aria-pressed="false"[^>]*>Queue agent<\/button>/);
 });
 test('standalone project destination is exported as a component',()=>assert.equal(typeof rendered.ProjectPage,'function'));
@@ -166,4 +171,84 @@ test('the map names changes on the preview that are not live yet, and stays quie
   assert.match(html,/1 change on preview · unshipped 4h \(since #11\)/);
   assert.doesNotMatch(html,/\bNaN\b|\bundefined\b/);
   assert.doesNotMatch(rendered.renderProjectWorldStandalone('hosting'),/aw-world__drift/);
+});
+
+const briefNow = Math.floor(Date.now()/1000);
+const briefTickets = [
+  {id:1,status:'in_progress',title:'Stalled one',updated_at:briefNow-3600},
+  {id:2,status:'new',title:'Needs approval',updated_at:briefNow-60},
+  {id:3,status:'review',title:'In review',updated_at:briefNow-60},
+];
+test('the superagent panel says what the system is telling you',()=>{
+  const html=rendered.renderSuperagent({loaded:true,tickets:briefTickets,projects:[],clients:[],queue:[],nodes:[{id:'n1',online:false}],running:[{id:9}],recent:[],settings:null,catalog:null});
+  for (const line of ['1 ticket stalled','1 request to approve or decline','1 ticket in review','1 node offline','1 run going']) {
+    assert.ok(html.includes(line), line);
+  }
+  assert.match(html,/>Ask about this<\/button>/);
+});
+test('the superagent panel is quiet when nothing needs you',()=>{
+  const html=rendered.renderSuperagent({loaded:true,tickets:[],projects:[],clients:[],queue:[],nodes:[],running:[],recent:[],settings:null,catalog:null});
+  assert.match(html,/Nothing needs you\./);
+  assert.ok(!html.includes('Ask about this'));
+});
+
+test('the composer is one card: scope, write mode and a send button that names its action',()=>{
+  const host={superagent:{start:async()=>'s1',open:()=>{},recent:()=>[]}};
+  const html=rendered.renderSuperagent({loaded:true,tickets:[],projects:[{id:'p1',name:'Sugar Wolf Bakery'}],clients:[],queue:[],nodes:[],running:[],recent:[],settings:null,catalog:null},host);
+  const card=html.slice(html.indexOf('aw-sa__card'));
+  assert.match(card,/aria-label="Ask the superagent"/);
+  assert.match(card,/aria-label="Superagent scope"/);
+  assert.match(card,/Sugar Wolf Bakery/);
+  assert.match(card,/Asks before writes/);
+  assert.match(card,/aria-label="Start conversation"[^>]*disabled/,'send waits for a question');
+});
+
+test('the panel lists the conversations it started, newest first',()=>{
+  const host={superagent:{
+    start:async()=>'s1',
+    open:()=>{},
+    recent:()=>[
+      {id:'s2',title:'Superagent · whole system — What is stuck, and why?',updatedAt:Date.now()-240000,running:false},
+      {id:'s1',title:'Superagent · Sugar Wolf Bakery — Which previews are waiting?',updatedAt:Date.now()-90000000,running:true},
+    ],
+  }};
+  const html=rendered.renderSuperagent({loaded:true,tickets:[],projects:[],clients:[],queue:[],nodes:[],running:[],recent:[],settings:null,catalog:null},host);
+  assert.match(html,/Earlier conversations/);
+  const first=html.indexOf('whole system — What is stuck');
+  const second=html.indexOf('Sugar Wolf Bakery — Which previews');
+  assert.ok(first>0&&second>first,'newest first');
+  assert.doesNotMatch(html,/Superagent · whole system/,'the panel drops the prefix it already says');
+  assert.match(html,/working now/);
+  assert.match(html,/4m ago/);
+});
+
+test('the list says when it is showing only the newest',()=>{
+  const host={superagent:{
+    start:async()=>'s1',
+    open:()=>{},
+    recent:()=>[{id:'s2',title:'Superagent · whole system — What is stuck?',updatedAt:Date.now()-240000,running:false}],
+    recentTotal:()=>9,
+  }};
+  const html=rendered.renderSuperagent({loaded:true,tickets:[],projects:[],clients:[],queue:[],nodes:[],running:[],recent:[],settings:null,catalog:null},host);
+  assert.match(html,/Newest 1 of 9/);
+});
+
+test('no hint when every conversation is listed',()=>{
+  const host={superagent:{
+    start:async()=>'s1',
+    open:()=>{},
+    recent:()=>[{id:'s2',title:'Superagent · whole system — What is stuck?',updatedAt:Date.now()-240000,running:false}],
+    recentTotal:()=>1,
+  }};
+  const html=rendered.renderSuperagent({loaded:true,tickets:[],projects:[],clients:[],queue:[],nodes:[],running:[],recent:[],settings:null,catalog:null},host);
+  assert.doesNotMatch(html,/Newest 1 of 1/);
+});
+
+test('the activity bar and the palette share one rule: superagent only where a conversation can start',()=>{
+  const admin={superAdmin:true};
+  const desktop={superagent:{start:async()=>'s1'}};
+  assert.equal(rendered.viewOffered({key:'superagent'},admin,desktop),true);
+  assert.equal(rendered.viewOffered({key:'superagent'},admin,null),false,'the web admin has no host');
+  assert.equal(rendered.viewOffered({key:'inbox'},admin,null),true);
+  assert.equal(rendered.viewOffered({key:'marketing'},{superAdmin:false},desktop),false,'access rules still apply');
 });

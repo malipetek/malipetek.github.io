@@ -249,176 +249,60 @@ interface SequenceStep {
  * is the one true observation; without it a cold email is spam, so a contact
  * that lacks one is held rather than sent.
  */
+const COLD_OPT_OUT = 'Not useful? Reply “stop” and I will not write again.';
+
+function coldFollowUps(subject: string): SequenceStep[] {
+  return [
+    { kind: 'followup_1', day: 4, subject, body: `{{greeting}}
+
+Should I take that fix? A one-line reply is enough. If it is not a fit, tell me and I will stop.
+
+${COLD_OPT_OUT}` },
+    { kind: 'followup_2', day: 10, subject, body: `{{greeting}}
+
+Last note from me. If it comes up later, the door is open: ptechsolutions.net/portal. No call, no quote.
+
+Muhammet
+
+${COLD_OPT_OUT}` },
+  ];
+}
+
 export const SEQUENCES: Record<SequenceKind, SequenceStep[]> = {
   cold_a: [
-    {
-      kind: 'first',
-      day: 0,
-      subject: 'vibe coding or an agency?',
-      body: `{{greeting}}
+    { kind: 'first', day: 0, subject: 'saw this on {{site}}', body: `{{greeting}}
 
-Are you rebuilding your website with Claude Code or ChatGPT?
-Did you leave your agency because one ticket took a week?
-Do you want something in between?
+{{gap}}
 
-That is our portal:
-1. You write what you want in the portal, or send it from Claude or ChatGPT.
-2. A developer approves it. An AI agent does the work.
-3. You check a preview. It goes live when you say yes.
+I fix exactly that kind of last-mile thing. The agent does the typing in a sealed copy; I check it and sign off before anything goes live.
 
-Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
+The first five pilot jobs came to $2.18–$8.25, no minimum, and you see the price before I start. If it is a five-minute fix, I do it for free.
 
-Try it: ptechsolutions.net/portal
+Want me to fix this one? Reply “yes” and I will tell you what it takes.
 
 Muhammet
-PTech Solutions`,
-      plain: `{{greeting}}
+ptechsolutions.net
 
-Are you rebuilding your website with Claude Code or ChatGPT?
-Did you leave your agency because one ticket took a week?
-Do you want something in between?
-
-That is our portal:
-1. You write what you want in the portal, or send it from Claude or ChatGPT.
-2. A developer approves it. An AI agent does the work.
-3. You check a preview. It goes live when you say yes.
-
-Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
-
-Try it: ptechsolutions.net/portal
-
-Muhammet
-PTech Solutions`,
-    },
-    {
-      kind: 'followup_1',
-      day: 4,
-      subject: 'vibe coding or an agency?',
-      body: `{{greeting}}
-
-Is there one change you want on {{site}}?
-
-Write it in one sentence: ptechsolutions.net/portal
-You set a budget. Work stops at the budget.
-You see a preview before anything goes live.
-
-Muhammet
-PTech Solutions`,
-      plain: `{{greeting}}
-
-Is there one change you want on {{site}}?
-
-Write it in one sentence: ptechsolutions.net/portal
-You set a budget. Work stops at the budget.
-You see a preview before anything goes live.
-
-Muhammet
-PTech Solutions`,
-    },
-    {
-      kind: 'followup_2',
-      day: 10,
-      subject: 'vibe coding or an agency?',
-      body: `{{greeting}}
-
-This is my last email.
-
-If you need a website change later: ptechsolutions.net/portal
-
-Muhammet
-PTech Solutions`,
-      plain: `{{greeting}}
-
-This is my last email.
-
-If you need a website change later: ptechsolutions.net/portal
-
-Muhammet
-PTech Solutions`,
-    },
+${COLD_OPT_OUT}` },
+    ...coldFollowUps('saw this on {{site}}'),
   ],
   cold_b: [
-    {
-      kind: 'first',
-      day: 0,
-      subject: 'a change on {{site}}?',
-      body: `{{greeting}}
+    { kind: 'first', day: 0, subject: '{{business}} — quick one', body: `{{greeting}}
 
-Do you want to change something on {{site}}?
-Do you want to do it with AI, without waiting a week for an agency?
+I saw you are updating {{trigger}}.
 
-Use our portal:
-1. You write the change in one sentence.
-2. A developer approves it. An AI agent does the work.
-3. You check a preview. It goes live when you say yes.
+{{gap}}
 
-Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
+I do small last-mile fixes: the agent types, I check and sign off, and you see the price before I start. The first five pilot jobs were $2.18–$8.25, no minimum.
 
-Try it: ptechsolutions.net/portal
+Want me to take this one? Reply with the page and I will tell you what it costs.
 
 Muhammet
-PTech Solutions`,
-      plain: `{{greeting}}
+ptechsolutions.net
 
-Do you want to change something on {{site}}?
-Do you want to do it with AI, without waiting a week for an agency?
-
-Use our portal:
-1. You write the change in one sentence.
-2. A developer approves it. An AI agent does the work.
-3. You check a preview. It goes live when you say yes.
-
-Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
-
-Try it: ptechsolutions.net/portal
-
-Muhammet
-PTech Solutions`,
-    },
-    {
-      kind: 'followup_1',
-      day: 4,
-      subject: 'a change on {{site}}?',
-      body: `{{greeting}}
-
-Is there one change you want on {{site}}?
-
-Write it in one sentence: ptechsolutions.net/portal
-You set a budget. Work stops at the budget.
-You see a preview before anything goes live.
-
-Muhammet
-PTech Solutions`,
-    },
-    {
-      kind: 'followup_2',
-      day: 10,
-      subject: 'a change on {{site}}?',
-      body: `{{greeting}}
-
-This is my last email.
-
-If you need a website change later: ptechsolutions.net/portal
-
-Muhammet
-PTech Solutions`,
-      plain: `{{greeting}}
-
-This is my last email.
-
-If you need a website change later: ptechsolutions.net/portal
-
-Muhammet
-PTech Solutions`,
-    },
+${COLD_OPT_OUT}` },
+    ...coldFollowUps('{{business}} — quick one'),
   ],
-  /*
-   * The challenger arm: same offer as cold_a, but it opens on the observation
-   * the desk wrote about the prospect's own site. cold_a stays untouched as
-   * the control — this is the test, not a replacement. The subject is the
-   * bare domain ({{site}} renders it), and follow-ups are not threaded, so
-   * they keep the same subject rather than a "Re:" prefix.
-   */
   cold_obs: [
     {
       kind: 'first',
@@ -437,23 +321,9 @@ Do you want it fixed?
 Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 
 Muhammet
-PTech Solutions
-ptechsolutions.net`,
-      plain: `{{greeting}}
+ptechsolutions.net
 
-{{gap}}
-
-Do you want it fixed?
-
-1. Reply "yes".
-2. An AI agent makes the fix. A developer checks it.
-3. You check a preview. It goes live when you say yes.
-
-Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
-
-Muhammet
-PTech Solutions
-ptechsolutions.net`,
+${COLD_OPT_OUT}`,
     },
     {
       kind: 'followup_1',
@@ -465,7 +335,8 @@ Do you want the fix on {{site}}?
 Reply "yes" or "no".
 
 Muhammet
-PTech Solutions`,
+
+${COLD_OPT_OUT}`,
     },
     {
       kind: 'followup_2',
@@ -475,10 +346,9 @@ PTech Solutions`,
 
 This is my last email.
 
-If you need a website change later: ptechsolutions.net/portal
-
 Muhammet
-PTech Solutions`,
+
+${COLD_OPT_OUT}`,
     },
   ],
   // For a business a mapper recorded with an email and no website
@@ -502,8 +372,9 @@ Do you want a website?
 After that: $100 an hour, billed by the second. No minimum.
 
 Muhammet
-PTech Solutions
-ptechsolutions.net`,
+ptechsolutions.net
+
+${COLD_OPT_OUT}`,
     },
     {
       kind: 'followup_1',
@@ -515,7 +386,8 @@ Do you want a website for {{business}}?
 Reply "yes" or "no".
 
 Muhammet
-PTech Solutions`,
+
+${COLD_OPT_OUT}`,
     },
     {
       kind: 'followup_2',
@@ -525,10 +397,9 @@ PTech Solutions`,
 
 This is my last email.
 
-If you need a website change later: ptechsolutions.net/portal
-
 Muhammet
-PTech Solutions`,
+
+${COLD_OPT_OUT}`,
     },
   ],
   warm: [
@@ -592,7 +463,7 @@ export const SEQUENCE_LABELS: Record<SequenceKind, string> = {
 export const SEQUENCE_NEEDS_GAP: Record<SequenceKind, boolean> = { cold_a: true, cold_b: true, cold_obs: true, nosite: false, warm: false };
 
 export function isSequenceKind(value: unknown): value is SequenceKind {
-  return typeof value === 'string' && value in SEQUENCES;
+  return typeof value === 'string' && Object.hasOwn(SEQUENCES, value);
 }
 
 export interface ContactFields {
@@ -600,6 +471,7 @@ export interface ContactFields {
   business: string | null;
   site: string | null;
   gap: string | null;
+  trigger?: string | null;
 }
 
 /** Fill the copy in. An empty site or gap reads as a neutral phrase, never a dangling em dash. */
@@ -620,7 +492,8 @@ export function fillTemplate(text: string, contact: ContactFields): string {
     .replaceAll('{{greeting}}', first ? `Hi ${first},` : 'Hi,')
     .replaceAll('{{business}}', business)
     .replaceAll('{{site}}', site || 'your site')
-    .replaceAll('{{gap}}', contact.gap?.trim() || '');
+    .replaceAll('{{gap}}', () => contact.gap?.trim() || '')
+    .replaceAll('{{trigger}}', () => contact.trigger?.trim() || '');
 }
 
 /* ——————————————————————— contacts ——————————————————————— */
@@ -659,6 +532,37 @@ const text = (value: unknown, max: number): string | null => {
   return out ? out.slice(0, max) : null;
 };
 
+const ROLE_NAMES = new Set('info information hello contact sales support admin administrator office team enquiries inquiries enquiry inquiry mail help helpdesk billing marketing noreply donotreply webmaster postmaster abuse reception service customerservice general accounts careers jobs press media privacy legal'.split(' '));
+
+export function isRoleAccount(email: string): boolean {
+  return ROLE_NAMES.has(email.split('@')[0].toLowerCase().split('+')[0].replace(/[._-]/g, ''));
+}
+
+export function cleanVerifiedAt(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 && value < 253402300800 ? value : null;
+  if (typeof value !== 'string') return null;
+  const date = value.trim();
+  if (/^\d+$/.test(date)) return cleanVerifiedAt(Number(date));
+  if (!/^\d{4}-\d{2}-\d{2}(?:T.*Z)?$/.test(date)) return null;
+  const ms = Date.parse(date);
+  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === date.slice(0, 10) ? cleanVerifiedAt(Math.floor(ms / 1000)) : null;
+}
+
+const overrideReason = (body: { force?: unknown; reason?: unknown; forceReason?: unknown } | null) =>
+  body?.force === true ? text(body.reason ?? body.forceReason, 500) : null;
+
+function queueReasons(contact: Pick<Contact, 'email' | 'status' | 'opted_out_at' | 'gap' | 'trigger' | 'quality_hold'>, sequence: SequenceKind, reason: string | null): string[] {
+  const reasons: string[] = [];
+  if (contact.status === 'bounced') reasons.push('bounced');
+  if (contact.opted_out_at || contact.status === 'opted_out') reasons.push('suppressed');
+  if (contact.status === 'replied') reasons.push('contact_closed');
+  if (!reason && isRoleAccount(contact.email)) reasons.push('role_account');
+  if (contact.quality_hold && !(contact.quality_hold === 'role_account' && isRoleAccount(contact.email))) reasons.push('quality_hold');
+  if (SEQUENCE_NEEDS_GAP[sequence] && !contact.gap?.trim()) reasons.push('gap_required');
+  if (SEQUENCE_NEEDS_GAP[sequence] && !contact.trigger?.trim()) reasons.push('trigger_required');
+  return reasons;
+}
+
 export interface Contact {
   id: number;
   email: string;
@@ -667,6 +571,10 @@ export interface Contact {
   site: string | null;
   source: string;
   source_url: string | null;
+  trigger: string | null;
+  trigger_url: string | null;
+  verified_at: number | null;
+  quality_hold: string | null;
   gap: string | null;
   consent_basis: string;
   status: string;
@@ -718,6 +626,10 @@ export function contactView(c: Contact & { sent_count?: number; next_at?: number
     site: c.site,
     source: c.source,
     sourceUrl: c.source_url,
+    trigger: c.trigger,
+    triggerUrl: c.trigger_url,
+    verifiedAt: c.verified_at,
+    qualityHold: c.quality_hold,
     gap: c.gap,
     consentBasis: c.consent_basis,
     status: c.status,
@@ -770,6 +682,8 @@ export function stepBody(step: SequenceStep, specificGap: boolean): string {
 export function sequenceOfSubject(subject: string | null): SequenceKind | null {
   const s = subject ?? '';
   // Old subjects stay listed: mail queued under them must still re-render.
+  if (s.startsWith('saw this on ')) return 'cold_a';
+  if (s.endsWith(' — quick one')) return 'cold_b';
   if (/^(Re: )?(The last mile of |Vibe contracting$)/.test(s)) return 'cold_a';
   if (/^(Re: )?(The smallest thing on |A small fix on |Vibe contracting for )/.test(s)) return 'cold_b';
   if (/^(Re: )?A small experiment/.test(s)) return 'warm';
@@ -796,35 +710,35 @@ export async function rerenderScheduled(
 ): Promise<{ updated: number; skipped: number; moved: number }> {
   const scoped = move.contactId !== undefined;
   const { results } = await env.DB.prepare(
-    `SELECT m.id, m.step, m.subject, c.email, c.name, c.business, c.site, c.gap
+    `SELECT m.id, m.step, m.subject, m.sequence_kind, c.email, c.name, c.business, c.site, c.gap, c.trigger
        FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
       WHERE m.channel = 'email' AND m.status = 'scheduled'
         -- A hand-edited email is Ali's wording; a template change must not overwrite it.
         AND m.edited_at IS NULL${scoped ? ' AND m.contact_id = ?' : ''}`,
   )
     .bind(...(scoped ? [move.contactId as number] : []))
-    .all<{ id: number; step: number; subject: string | null; email: string; name: string | null; business: string | null; site: string | null; gap: string | null }>();
+    .all<{ id: number; step: number; subject: string | null; sequence_kind: SequenceKind | null; email: string; name: string | null; business: string | null; site: string | null; gap: string | null; trigger: string | null }>();
   const t = now();
   const updates: D1PreparedStatement[] = [];
   let skipped = 0;
   let moved = 0;
   for (const row of results ?? []) {
-    const current = sequenceOfSubject(row.subject);
+    const current = row.sequence_kind ?? sequenceOfSubject(row.subject);
     // Moving a sequence keeps each message's step and slot: the sequences share
     // their step days, so only the words change.
     const kind = current && move.from && move.to && current === move.from ? move.to : current;
-    if (kind !== current) moved += 1;
     const step = kind ? SEQUENCES[kind][row.step] : undefined;
-    if (!step) {
+    if (!step || (kind && SEQUENCE_NEEDS_GAP[kind] && (!row.gap?.trim() || !row.trigger?.trim()))) {
       skipped += 1;
       continue;
     }
-    const specific = Boolean(row.gap?.trim());
-    const fields = { ...row, gap: row.gap?.trim() || GENERIC_GAP } as unknown as ContactFields;
+    if (kind !== current) moved += 1;
+    const fields = row;
     updates.push(
-      env.DB.prepare('UPDATE marketing_messages SET subject = ?, body = ?, updated_at = ? WHERE id = ? AND status = ?').bind(
+      env.DB.prepare('UPDATE marketing_messages SET subject = ?, body = ?, sequence_kind = ?, updated_at = ? WHERE id = ? AND status = ? AND edited_at IS NULL').bind(
         fillTemplate(step.subject, fields),
-        fillTemplate(stepBody(step, specific), fields),
+        fillTemplate(step.body, fields),
+        kind,
         t,
         row.id,
         'scheduled',
@@ -834,9 +748,6 @@ export async function rerenderScheduled(
   for (const batch of chunk(updates, 50)) await env.DB.batch(batch);
   return { updated: updates.length, skipped, moved };
 }
-
-/** A true, if generic, opener for contacts whose specific observation is not written yet. */
-export const GENERIC_GAP = 'there are a couple of small things I would fix first';
 
 const PAGE = 200;
 
@@ -853,16 +764,15 @@ function sequenceStatements(
   kind: SequenceKind,
   campaign: string,
   startAt: number,
-  genericGap = false,
+  roleReason: string | null,
 ): D1PreparedStatement[] {
-  const specific = Boolean(contact.gap?.trim());
-  const fields = { ...contact, gap: contact.gap?.trim() || (genericGap ? GENERIC_GAP : null) };
+  const fields = contact;
   const t = now();
   return SEQUENCES[kind].map((step, index) =>
     env.DB.prepare(
       `INSERT INTO marketing_messages
-         (channel, kind, contact_id, campaign, step, to_email, subject, body, status, scheduled_at, created_at, updated_at)
-       VALUES ('email', ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
+         (channel, kind, contact_id, campaign, step, to_email, subject, body, status, scheduled_at, created_at, updated_at, role_override_reason, sequence_kind)
+       VALUES ('email', ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?)`,
     ).bind(
       step.kind,
       contact.id,
@@ -870,10 +780,12 @@ function sequenceStatements(
       index,
       contact.email,
       fillTemplate(step.subject, fields),
-      fillTemplate(stepBody(step, specific), fields),
+      fillTemplate(step.body, fields),
       startAt + step.day * 86400,
       t,
       t,
+      isRoleAccount(contact.email) ? roleReason : null,
+       kind,
     ),
   );
 }
@@ -889,7 +801,7 @@ async function queueContacts(
   kind: SequenceKind,
   campaign: string,
   startAt: number,
-  genericGap = false,
+  roleReason: string | null = null,
 ): Promise<{ contacts: number; messages: number }> {
   let contactsQueued = 0;
   let messages = 0;
@@ -897,13 +809,16 @@ async function queueContacts(
   for (const part of chunk(contacts, 20)) {
     const statements: D1PreparedStatement[] = [];
     for (const contact of part) {
-      statements.push(...sequenceStatements(env, contact, kind, campaign, startAt + offset * 120, genericGap));
+      statements.push(...sequenceStatements(env, contact, kind, campaign, startAt + offset * 120, roleReason));
       statements.push(
         env.DB.prepare(
           `UPDATE marketing_contacts SET status = 'queued', updated_at = ?
             WHERE id = ? AND status IN ('new', 'paused')`,
         ).bind(now(), contact.id),
       );
+      if (roleReason && isRoleAccount(contact.email)) statements.push(env.DB.prepare(
+        `INSERT INTO marketing_events (contact_id, kind, detail, created_at) VALUES (?, 'role_override', ?, ?)`
+      ).bind(contact.id, roleReason, now()));
       offset += 1;
     }
     if (statements.length) await env.DB.batch(statements);
@@ -920,9 +835,9 @@ async function queueSequence(
   kind: SequenceKind,
   campaign: string,
   startAt: number,
-  genericGap = false,
+  roleReason: string | null,
 ): Promise<number> {
-  const out = await queueContacts(env, [contact], kind, campaign, startAt, genericGap);
+  const out = await queueContacts(env, [contact], kind, campaign, startAt, roleReason);
   return out.messages;
 }
 
@@ -1241,16 +1156,17 @@ async function claimEmail(env: Env, id: number, t: number): Promise<ClaimedEmail
   const message = await env.DB.prepare(
     `UPDATE marketing_messages SET status = 'sending', updated_at = ?
       WHERE id = ? AND status = 'scheduled'
-      RETURNING id, contact_id, step, to_email, subject, body`,
+      RETURNING id, contact_id, step, to_email, subject, body, role_override_reason, sequence_kind`,
   )
     .bind(t, id)
-    .first<ClaimedEmail>();
+    .first<ClaimedEmail & { role_override_reason: string | null; sequence_kind: SequenceKind | null }>();
   if (!message) return null;
 
-  const contact = await env.DB.prepare('SELECT id, status, country FROM marketing_contacts WHERE id = ?')
-    .bind(message.contact_id)
-    .first<{ id: number; status: string; country: string | null }>();
-  const blocked = contact?.country && CONSENT_COUNTRIES.has(contact.country) ? 'country_requires_consent' : null;
+  const [contact] = await loadQueueCandidates(env, [message.contact_id]);
+  // Legacy messages predate explicit sequence identity. An unrecognizable
+  // subject cannot establish that the message is exempt from cold checks.
+  const sequence = message.sequence_kind ?? sequenceOfSubject(message.subject) ?? 'cold_a';
+  const blocked = contact ? [...queueReasons(contact, sequence, message.role_override_reason), ...verificationReasons(contact, t, false)][0] ?? null : null;
   if (!contact || !['new', 'queued', 'contacted'].includes(contact.status) || blocked) {
     await env.DB.prepare(
       `UPDATE marketing_messages SET status = 'cancelled', error = ?, updated_at = ?
@@ -1258,7 +1174,7 @@ async function claimEmail(env: Env, id: number, t: number): Promise<ClaimedEmail
     )
       .bind(blocked, t, message.id)
       .run();
-    if (blocked) await logEvent(env, { messageId: message.id, contactId: message.contact_id, kind: 'blocked', detail: `${blocked}: ${contact?.country}` });
+    if (blocked) await logEvent(env, { messageId: message.id, contactId: message.contact_id, kind: 'blocked', detail: blocked });
     return null;
   }
   return message;
@@ -1431,7 +1347,7 @@ function dayLabel(t: number): string {
 export async function sweepDomains(env: Env, t = now()): Promise<number> {
   const { results } = await env.DB.prepare(
     `SELECT c.id, c.email FROM marketing_contacts c
-      WHERE c.status IN ('new', 'queued')
+      WHERE c.status IN ('new', 'queued', 'paused')
         AND NOT EXISTS (
           SELECT 1 FROM marketing_domains d
            WHERE d.domain = substr(c.email, instr(c.email, '@') + 1)
@@ -1938,8 +1854,8 @@ export async function importContacts(
   csv: string,
   sequence: SequenceKind | null,
   campaign: string,
-  options: { genericGap?: boolean; sourceKind?: string | null } = {},
-): Promise<{ added: number; paused: number; queued: number; emails: number; skipped: { email: string; reason: string }[] }> {
+  options: { roleReason?: string | null; sourceKind?: string | null } = {},
+): Promise<{ added: number; paused: number; queued: number; emails: number; skipped: { email: string; reason: string }[]; held: { email: string; reasons: string[] }[] }> {
   const parsed = parseContactsCsv(csv);
   const skipped = parsed.skipped;
   const t = now();
@@ -1951,6 +1867,10 @@ export async function importContacts(
     site: string | null;
     gap: string | null;
     source_url: string | null;
+    trigger: string | null;
+    trigger_url: string | null;
+    verified_at: number | null;
+    quality_hold: string | null;
     notes: string | null;
     consent: string;
     source_kind: string | null;
@@ -1970,6 +1890,10 @@ export async function importContacts(
       site: text(row.site, 200),
       gap: text(row.gap, 300),
       source_url: text(row.sourceUrl, 500),
+      trigger: text(row.trigger, 300),
+      trigger_url: text(row.triggerUrl, 500),
+      verified_at: cleanVerifiedAt(row.verifiedAt),
+      quality_hold: text(row.qualityHold, 500) ?? (isRoleAccount(email) && !options.roleReason ? 'role_account' : null),
       notes: text(row.notes, 1000),
       consent: ['consent', 'existing_relationship', 'legitimate_interest'].includes(String(row.consentBasis))
         ? String(row.consentBasis)
@@ -1989,8 +1913,8 @@ export async function importContacts(
       part.map((seed) =>
         env.DB.prepare(
           `INSERT INTO marketing_contacts
-             (email, name, business, site, source, source_url, gap, consent_basis, status, notes, source_kind, country, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'csv', ?, ?, ?, 'new', ?, ?, ?, ?, ?)
+             (email, name, business, site, source, source_url, gap, consent_basis, status, notes, source_kind, country, created_at, updated_at, trigger, trigger_url, verified_at, quality_hold)
+           VALUES (?, ?, ?, ?, 'csv', ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(email) DO NOTHING`,
         ).bind(
           seed.email,
@@ -2005,6 +1929,10 @@ export async function importContacts(
           seed.country,
           t,
           t,
+          seed.trigger,
+          seed.trigger_url,
+          seed.verified_at,
+          seed.quality_hold,
         ),
       ),
     );
@@ -2027,38 +1955,43 @@ export async function importContacts(
     }
   }
 
-  if (!sequence) {
-    return { added: inserted.length, paused: 0, queued: 0, emails: 0, skipped };
+  const roleReason = options.roleReason ?? null;
+  const candidates = new Map<number, QueueCandidate>();
+  if (sequence) {
+    for (const part of chunk(inserted, 100)) {
+      for (const contact of await loadQueueCandidates(env, part.map(({ id }) => id))) candidates.set(contact.id, contact);
+    }
   }
-
-  const needsGap = SEQUENCE_NEEDS_GAP[sequence];
-  const hold: Contact[] = [];
-  const queueable: Contact[] = [];
-  for (const contact of inserted) {
-    if (needsGap && !contact.gap && !options.genericGap) hold.push(contact);
-    else queueable.push(contact);
+  const hold = inserted.flatMap((contact) => {
+    const candidate = candidates.get(contact.id);
+    const reasons = sequence ? [...queueReasons(contact, sequence, roleReason), ...(candidate ? verificationReasons(candidate, t) : ['unverified'])]
+      : contact.quality_hold ? [contact.quality_hold === 'role_account' ? 'role_account' : 'quality_hold'] : [];
+    return reasons.length ? [{ contact, reasons }] : [];
+  });
+  for (const part of chunk(hold, 50)) {
+    await env.DB.batch(part.flatMap(({ contact, reasons }) => [
+      env.DB.prepare(`UPDATE marketing_contacts SET status = 'paused', updated_at = ? WHERE id = ?`).bind(t, contact.id),
+      env.DB.prepare(`INSERT INTO marketing_events (contact_id, kind, detail, created_at) VALUES (?, 'paused', ?, ?)`)
+        .bind(contact.id, reasons.join(', '), t),
+    ]));
   }
-
-  for (const part of chunk(hold, 100)) {
-    await env.DB.batch([
-      ...part.map((contact) =>
-        env.DB.prepare(`UPDATE marketing_contacts SET status = 'paused', updated_at = ? WHERE id = ?`).bind(t, contact.id),
-      ),
-      ...part.map((contact) =>
-        env.DB.prepare(
-          `INSERT INTO marketing_events (message_id, contact_id, kind, detail, created_at) VALUES (NULL, ?, 'paused', ?, ?)`,
-        ).bind(contact.id, 'missing gap', t),
-      ),
-    ]);
+  if (!sequence && roleReason) {
+    for (const part of chunk(inserted.filter((contact) => isRoleAccount(contact.email)), 50)) {
+      await env.DB.batch(part.map((contact) => env.DB.prepare(
+        `INSERT INTO marketing_events (contact_id, kind, detail, created_at) VALUES (?, 'role_import_override', ?, ?)`
+      ).bind(contact.id, roleReason, t)));
+    }
   }
-
-  const queued = await queueContacts(env, queueable, sequence, campaign, t, options.genericGap === true);
+  const heldIds = new Set(hold.map(({ contact }) => contact.id));
+  const queued = sequence ? await queueContacts(env, inserted.filter((contact) => !heldIds.has(contact.id)), sequence, campaign, t, roleReason)
+    : { contacts: 0, messages: 0 };
   return {
     added: inserted.length,
     paused: hold.length,
     queued: queued.contacts,
     emails: queued.messages,
     skipped,
+    held: hold.map(({ contact, reasons }) => ({ email: contact.email, reasons })),
   };
 }
 
@@ -2102,6 +2035,10 @@ export interface ImportRow {
   site: string;
   gap: string;
   sourceUrl: string;
+  trigger: string;
+  triggerUrl: string;
+  verifiedAt: string;
+  qualityHold: string;
   notes: string;
   consentBasis: string;
   sourceKind: string;
@@ -2123,6 +2060,15 @@ const COLUMN_ALIASES: Record<string, string> = {
   'source url': 'sourceUrl',
   source_url: 'sourceUrl',
   sourceurl: 'sourceUrl',
+  email_source_url: 'sourceUrl',
+  trigger: 'trigger',
+  trigger_url: 'triggerUrl',
+  triggerurl: 'triggerUrl',
+  verified_at: 'verifiedAt',
+  verified_on: 'verifiedAt',
+  verifiedat: 'verifiedAt',
+  quality_hold: 'qualityHold',
+  qualityhold: 'qualityHold',
   notes: 'notes',
   note: 'notes',
   'consent basis': 'consentBasis',
@@ -2157,6 +2103,10 @@ export function parseContactsCsv(csv: string): { rows: ImportRow[]; skipped: { e
       site: '',
       gap: '',
       sourceUrl: '',
+      trigger: '',
+      triggerUrl: '',
+      verifiedAt: '',
+      qualityHold: '',
       notes: '',
       consentBasis: '',
       sourceKind: '',
@@ -2184,8 +2134,8 @@ interface SequenceStats {
 }
 
 /**
- * Per-sequence outcomes for the desk: a message's sequence comes from its
- * subject (the table keeps the step, not the sequence), and a contact's
+ * Per-sequence outcomes for the desk: infer the sequence from the subject
+ * only for legacy mail; a contact's
  * reply, opt-out or bounce lands on the sequence their latest send belonged to.
  */
 async function sequenceStats(env: Env): Promise<Record<SequenceKind, SequenceStats>> {
@@ -2193,9 +2143,10 @@ async function sequenceStats(env: Env): Promise<Record<SequenceKind, SequenceSta
     (Object.keys(SEQUENCE_LABELS) as SequenceKind[]).map((kind) => [kind, { sent: 0, replies: 0, optedOut: 0, bounced: 0 }]),
   ) as Record<SequenceKind, SequenceStats>;
   const [sent, contacts] = await Promise.all([
-    env.DB.prepare(`SELECT contact_id, subject FROM marketing_messages WHERE channel = 'email' AND status = 'sent' ORDER BY sent_at, id`).all<{
+    env.DB.prepare(`SELECT contact_id, subject, sequence_kind FROM marketing_messages WHERE channel = 'email' AND status = 'sent' ORDER BY sent_at, id`).all<{
       contact_id: number;
       subject: string | null;
+      sequence_kind: SequenceKind | null;
     }>(),
     env.DB.prepare(`SELECT id, status FROM marketing_contacts WHERE status IN ('replied', 'opted_out', 'bounced')`).all<{
       id: number;
@@ -2204,7 +2155,7 @@ async function sequenceStats(env: Env): Promise<Record<SequenceKind, SequenceSta
   ]);
   const latest = new Map<number, SequenceKind>();
   for (const row of sent.results ?? []) {
-    const kind = sequenceOfSubject(row.subject);
+    const kind = row.sequence_kind ?? sequenceOfSubject(row.subject);
     if (!kind) continue;
     out[kind].sent += 1;
     latest.set(row.contact_id, kind);
@@ -2291,29 +2242,40 @@ marketing.get('/admin/marketing', async (c) => {
 
   const dueCounts = Object.fromEntries(['email', 'x', 'linkedin'].map((channel) => [channel, due.results?.find((r) => r.channel === channel)?.n ?? 0]));
 
+  const unavailable: string[] = [];
+  async function optional<T>(section: string, promise: Promise<T>): Promise<T | null> {
+    try {
+      return await promise;
+    } catch (err) {
+      console.error(`Marketing overview: ${section} unavailable`, err);
+      unavailable.push(section);
+      return null;
+    }
+  }
   const [autoPausedAt, resumedAt, observe, observeKinds, domains, seqStats, pulse] = await Promise.all([
     readStamp(env, 'marketing_auto_paused_at'),
     readStamp(env, 'marketing_resumed_at'),
-    env.DB.prepare(
+    optional('observe', env.DB.prepare(
       `SELECT SUM(gap IS NOT NULL AND gap != '') AS with_gap,
               SUM(observed_at IS NOT NULL) AS observed,
               SUM(status IN ('new', 'queued') AND site IS NOT NULL AND site != '' AND (gap IS NULL OR gap = '') AND observed_at IS NULL) AS pending
          FROM marketing_contacts`,
-    ).first<{ with_gap: number | null; observed: number | null; pending: number | null }>(),
-    env.DB.prepare(
+    ).first<{ with_gap: number | null; observed: number | null; pending: number | null }>()),
+    optional('observeKinds', env.DB.prepare(
       `SELECT COALESCE(gap_kind, '(none)') AS kind, COUNT(*) AS n FROM marketing_contacts
         WHERE observed_at IS NOT NULL GROUP BY COALESCE(gap_kind, '(none)')`,
-    ).all<{ kind: string; n: number }>(),
-    env.DB.prepare('SELECT COUNT(*) AS checked, SUM(mx = 0) AS undeliverable FROM marketing_domains').first<{
+    ).all<{ kind: string; n: number }>()),
+    optional('domains', env.DB.prepare('SELECT COUNT(*) AS checked, SUM(mx = 0) AS undeliverable FROM marketing_domains').first<{
       checked: number | null;
       undeliverable: number | null;
-    }>(),
-    sequenceStats(env),
+    }>()),
+    optional('sequenceStats', sequenceStats(env)),
     pulseStats(env, t),
   ]);
 
   return out(c, {
     settings,
+    unavailable: unavailable.sort(),
     sender: marketingFrom(env),
     inbox: marketingInbox(env),
     bound: senderState(env, settings).ready,
@@ -2335,7 +2297,7 @@ marketing.get('/admin/marketing', async (c) => {
       pending: observe?.pending ?? 0,
       observed: observe?.observed ?? 0,
       withGap: observe?.with_gap ?? 0,
-      byKind: Object.fromEntries((observeKinds.results ?? []).map((row) => [row.kind, row.n])),
+      byKind: Object.fromEntries((observeKinds?.results ?? []).map((row) => [row.kind, row.n])),
     },
     domains: { checked: domains?.checked ?? 0, undeliverable: domains?.undeliverable ?? 0 },
     counts: {
@@ -2355,7 +2317,7 @@ marketing.get('/admin/marketing', async (c) => {
       key,
       label,
       needsGap: SEQUENCE_NEEDS_GAP[key as SequenceKind],
-      stats: seqStats[key as SequenceKind] ?? { sent: 0, replies: 0, optedOut: 0, bounced: 0 },
+      stats: seqStats?.[key as SequenceKind] ?? { sent: 0, replies: 0, optedOut: 0, bounced: 0 },
     })),
   });
 });
@@ -2459,13 +2421,20 @@ marketing.post('/admin/marketing/contacts', async (c) => {
 
   const sequence = isSequenceKind(body?.sequence) ? body.sequence : null;
   const gap = text(body?.gap, 300);
-  if (sequence && SEQUENCE_NEEDS_GAP[sequence] && !gap) return out(c, { error: 'gap_required' }, 400);
+  const trigger = text(body?.trigger, 300);
+  const roleReason = overrideReason(body);
+  if (body?.force === true && !roleReason) return out(c, { error: 'force_reason_required' }, 400);
+  const qualityHold = text(body?.qualityHold, 500) ?? (isRoleAccount(email) && !roleReason ? 'role_account' : null);
+  if (sequence) {
+    const [error] = queueReasons({ email, gap, trigger, quality_hold: qualityHold, status: 'new', opted_out_at: null }, sequence, roleReason);
+    if (error) return out(c, { error }, 400);
+  }
 
   const t = now();
   const contact = await env.DB.prepare(
     `INSERT INTO marketing_contacts
-       (email, name, business, site, source, source_url, gap, consent_basis, status, notes, source_kind, country, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)
+       (email, name, business, site, source, source_url, gap, consent_basis, status, notes, source_kind, country, created_at, updated_at, trigger, trigger_url, verified_at, quality_hold)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(email) DO NOTHING
      RETURNING *`,
   )
@@ -2480,23 +2449,29 @@ marketing.post('/admin/marketing/contacts', async (c) => {
       ['consent', 'existing_relationship', 'legitimate_interest'].includes(String(body?.consentBasis))
         ? String(body?.consentBasis)
         : 'legitimate_interest',
+      qualityHold ? 'paused' : 'new',
       text(body?.notes, 1000),
       cleanSourceKind(body?.sourceKind) ?? 'manual',
       cleanCountry(body?.country),
       t,
       t,
+      trigger,
+      text(body?.triggerUrl, 500),
+      cleanVerifiedAt(body?.verifiedAt),
+      qualityHold,
     )
     .first<Contact>();
   if (!contact) return out(c, { error: 'already_in_list' }, 409);
 
+  let reasons: string[] = [];
   if (sequence) {
-    if (SEQUENCE_NEEDS_GAP[sequence] && !contact.gap && body?.genericGap !== true) {
-      return out(c, { error: 'gap_required' }, 400);
-    }
-    await queueSequence(env, contact, sequence, text(body?.campaign, 40) ?? 'launch', t, body?.genericGap === true);
+    const [candidate] = await loadQueueCandidates(env, [contact.id]);
+    reasons = candidate ? verificationReasons(candidate, t) : ['unverified'];
+    if (!reasons.length) await queueSequence(env, contact, sequence, text(body?.campaign, 40) ?? 'launch', t, roleReason);
+    else await logEvent(env, { contactId: contact.id, kind: 'blocked', detail: reasons.join(', ') });
   }
   const fresh = (await getContact(env, contact.id)) ?? contact;
-  return out(c, { contact: contactView(fresh) }, 201);
+  return out(c, { contact: contactView(fresh), reasons }, 201);
 });
 
 marketing.post('/admin/marketing/contacts/import', async (c) => {
@@ -2506,44 +2481,83 @@ marketing.post('/admin/marketing/contacts/import', async (c) => {
   if (!csv.trim()) return out(c, { error: 'empty' }, 400);
   if (csv.length > 2_000_000) return out(c, { error: 'too_large' }, 413);
 
-  const sequence = body?.sequence === 'none' ? null : isSequenceKind(body?.sequence) ? body.sequence : 'cold_a';
+  const sequence = isSequenceKind(body?.sequence) ? body.sequence : null;
+  if (sequence && parseContactsCsv(csv).rows.length > MAX_QUEUE_BATCH) return out(c, { error: 'import_only_required', max: MAX_QUEUE_BATCH }, 400);
   const campaign = text(body?.campaign, 40) ?? 'launch';
-  const genericGap = body?.genericGap === true;
-  const result = await importContacts(env, csv, sequence, campaign, { genericGap, sourceKind: text(body?.sourceKind, 80) });
-  return out(c, { ...result, sequence: sequence ?? 'none', genericGap });
+  const roleReason = overrideReason(body);
+  if (body?.force === true && !roleReason) return out(c, { error: 'force_reason_required' }, 400);
+  const result = await importContacts(env, csv, sequence, campaign, { roleReason, sourceKind: text(body?.sourceKind, 80) });
+  return out(c, { ...result, sequence: sequence ?? 'none' });
 });
 
-/**
- * Queue a sequence for every contact that can take it, in a few batches. This
- * is the desk's bulk action: one request instead of one per contact.
- */
+const MAX_QUEUE_BATCH = 100;
+
+type QueueCandidate = Contact & { mx: number | null; checked_at: number | null; active: number; prior_bounce: number; prior_opt_out: number };
+
+async function loadQueueCandidates(env: Env, ids: number[]): Promise<QueueCandidate[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT c.*, d.mx, d.checked_at,
+            EXISTS(SELECT 1 FROM marketing_messages m WHERE m.contact_id = c.id AND m.status IN ('scheduled', 'sending')) AS active,
+            EXISTS(SELECT 1 FROM marketing_events e WHERE e.contact_id = c.id AND e.kind IN ('bounce', 'complaint')) AS prior_bounce,
+            EXISTS(SELECT 1 FROM marketing_events e WHERE e.contact_id = c.id AND e.kind = 'opt_out') AS prior_opt_out
+       FROM marketing_contacts c LEFT JOIN marketing_domains d ON d.domain = substr(c.email, instr(c.email, '@') + 1)
+      WHERE c.id IN (${ids.map(() => '?').join(',')})
+      ORDER BY c.id`,
+  ).bind(...ids).all<QueueCandidate>();
+  return results ?? [];
+}
+
+function verificationReasons(contact: QueueCandidate, t: number, checkMx = true): string[] {
+  const reasons = [];
+  if (contact.prior_bounce) reasons.push('bounced');
+  if (contact.prior_opt_out) reasons.push('suppressed');
+  if (checkMx) {
+    if (contact.mx === 0) reasons.push('no_mx');
+    else if (contact.mx !== 1 || !contact.checked_at || contact.checked_at <= t - MX_CACHE_DAYS * 86400 || !contact.verified_at || contact.verified_at > t) reasons.push('unverified');
+  }
+  if (contact.country && CONSENT_COUNTRIES.has(contact.country)) reasons.push('country_requires_consent');
+  return reasons;
+}
+
+/** Queue a named batch. Only use cached MX results: this admin request does no DNS. */
 marketing.post('/admin/marketing/contacts/queue', async (c) => {
   const env = c.env;
   const body = await jsonBody(c);
   const sequence = isSequenceKind(body?.sequence) ? body.sequence : 'cold_a';
-  const campaign = text(body?.campaign, 40) ?? 'launch';
-  const genericGap = body?.genericGap === true;
-  const ids = Array.isArray(body?.ids) ? body.ids.map(Number).filter((n) => Number.isInteger(n)) : null;
-  const { results } = await env.DB.prepare(
-    `SELECT c.* FROM marketing_contacts c
-      WHERE c.status IN ('new', 'paused')
-        AND NOT EXISTS (SELECT 1 FROM marketing_messages m WHERE m.contact_id = c.id AND m.status = 'scheduled')
-        ${ids?.length ? `AND c.id IN (${ids.map(() => '?').join(',')})` : ''}
-      ORDER BY c.id`,
-  )
-    .bind(...(ids ?? []))
-    .all<Contact>();
-  const contacts = results ?? [];
-  const queueable = contacts.filter((contact) => !SEQUENCE_NEEDS_GAP[sequence] || contact.gap || genericGap);
-  const queued = await queueContacts(env, queueable, sequence, campaign, now(), genericGap);
+  const batch = text(body?.batch ?? body?.campaign, 40);
+  if (!batch) return out(c, { error: 'batch_name_required' }, 400);
+  const roleReason = overrideReason(body);
+  if (body?.force === true && !roleReason) return out(c, { error: 'force_reason_required' }, 400);
+  const rawIds = body?.ids;
+  if (!Array.isArray(rawIds) || rawIds.length < 1 || rawIds.length > MAX_QUEUE_BATCH ||
+    rawIds.some((id) => typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0)) {
+    return out(c, { error: 'invalid_batch_ids', max: MAX_QUEUE_BATCH }, 400);
+  }
+  const ids = [...new Set<number>(rawIds)];
+  const t = now();
+  const contacts = await loadQueueCandidates(env, ids);
+  const queueable: Contact[] = [];
+  const excluded: { id: number; email: string | null; reasons: string[] }[] = [];
+  for (const contact of contacts) {
+    const reasons = new Set([...queueReasons(contact, sequence, roleReason), ...verificationReasons(contact, t)]);
+    if (contact.active) reasons.add('already_queued');
+    else if (!['new', 'paused'].includes(contact.status) && !reasons.size) reasons.add('contact_closed');
+    if (reasons.size) excluded.push({ id: contact.id, email: contact.email, reasons: [...reasons] });
+    else queueable.push(contact);
+  }
+  const found = new Set(contacts.map(({ id }) => id));
+  for (const id of ids) if (!found.has(id)) excluded.push({ id, email: null, reasons: ['not_found'] });
+  const queued = await queueContacts(env, queueable, sequence, batch, t, roleReason);
   return out(c, {
     ok: true,
+    batch,
     queued: queued.contacts,
     emails: queued.messages,
-    skippedNoGap: contacts.length - queueable.length,
+    included: queueable.map(({ id, email }) => ({ id, email })),
+    excluded,
+    skippedNoGap: excluded.filter(({ reasons }) => reasons.includes('gap_required')).length,
     total: contacts.length,
     sequence,
-    genericGap,
   });
 });
 
@@ -2564,6 +2578,11 @@ marketing.patch('/admin/marketing/contacts/:id', async (c) => {
   if (body.business !== undefined) set('business', text(body.business, 120));
   if (body.site !== undefined) set('site', text(body.site, 200));
   if (body.gap !== undefined) set('gap', text(body.gap, 300));
+  if (body.sourceUrl !== undefined) set('source_url', text(body.sourceUrl, 500));
+  if (body.trigger !== undefined) set('trigger', text(body.trigger, 300));
+  if (body.triggerUrl !== undefined) set('trigger_url', text(body.triggerUrl, 500));
+  if (body.verifiedAt !== undefined) set('verified_at', cleanVerifiedAt(body.verifiedAt));
+  if (body.qualityHold !== undefined) set('quality_hold', text(body.qualityHold, 500));
   if (body.notes !== undefined) set('notes', text(body.notes, 1000));
   if (body.country !== undefined) set('country', cleanCountry(body.country));
   if (body.sourceKind !== undefined) set('source_kind', cleanSourceKind(body.sourceKind));
@@ -2596,28 +2615,25 @@ marketing.post('/admin/marketing/contacts/:id/queue', async (c) => {
   const id = Number(c.req.param('id'));
   const body = await jsonBody(c);
   if (!Number.isInteger(id)) return out(c, { error: 'bad_id' }, 400);
-  const contact = await getContact(env, id);
+  const [contact] = await loadQueueCandidates(env, [id]);
   if (!contact) return out(c, { error: 'not_found' }, 404);
-  if (['opted_out', 'bounced', 'replied'].includes(contact.status)) return out(c, { error: 'contact_closed' }, 409);
-
   const sequence = isSequenceKind(body?.sequence) ? body.sequence : 'cold_a';
-  const genericGap = body?.genericGap === true;
-  if (SEQUENCE_NEEDS_GAP[sequence] && !contact.gap && !genericGap) return out(c, { error: 'gap_required' }, 400);
+  const roleReason = overrideReason(body);
+  if (body?.force === true && !roleReason) return out(c, { error: 'force_reason_required' }, 400);
+  const reasons = [...new Set([...queueReasons(contact, sequence, roleReason), ...verificationReasons(contact, now())])];
+  if (reasons.length) return out(c, { error: reasons[0], reasons }, 400);
 
-  const existing = await env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM marketing_messages WHERE contact_id = ? AND status = 'scheduled'`,
-  )
-    .bind(id)
-    .first<{ n: number }>();
-  if (existing?.n) return out(c, { error: 'already_queued' }, 409);
+  if (contact.active) return out(c, { error: 'already_queued' }, 409);
+  if (!['new', 'paused'].includes(contact.status)) return out(c, { error: 'contact_closed' }, 400);
 
-  const queued = await queueSequence(env, contact, sequence, text(body?.campaign, 40) ?? 'launch', now(), genericGap);
+  const queued = await queueSequence(env, contact, sequence, text(body?.campaign, 40) ?? 'launch', now(), roleReason);
   return out(c, { ok: true, queued });
 });
 
 /* —— messages —— */
 
 interface Message {
+  role_override_reason?: string | null;
   id: number;
   channel: 'email' | 'x' | 'linkedin';
   kind: string;
@@ -2659,6 +2675,7 @@ export function messageView(m: Message & { contact_email?: string | null }) {
     editedAt: m.edited_at ?? null,
     reviewedAt: m.reviewed_at ?? null,
     provider: m.provider ?? null,
+    roleOverrideReason: m.role_override_reason ?? null,
   };
 }
 
@@ -3082,7 +3099,7 @@ marketing.get('/admin/marketing/sequences/preview', async (c) => {
   const sample: ContactFields = contact ?? { name: 'Jordan Lee', business: 'Lee Plumbing', site: 'leeplumbing.com', gap: null };
   const settings = await readMarketingSettings(env);
   const specific = Boolean(sample.gap?.trim());
-  const fields = { ...sample, gap: sample.gap?.trim() || GENERIC_GAP };
+  const fields = sample;
   return out(c, {
     sequence: kind,
     label: SEQUENCE_LABELS[kind],

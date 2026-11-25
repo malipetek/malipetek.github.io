@@ -49,6 +49,22 @@ const REASONS = {
   complaint_rate: 'Paused itself: the complaint rate passed 0.2%.',
 };
 
+/** Why the desk left one contact out of a queue, in the words the desk uses. */
+const QUEUE_REASON = {
+  gap_required: 'no observation of their site',
+  trigger_required: 'no trigger — nothing says why now',
+  unverified: 'the address or its domain is not verified',
+  no_mx: 'the domain takes no mail',
+  bounced: 'the address bounced before',
+  suppressed: 'they opted out',
+  contact_closed: 'they replied, so the sequence is closed',
+  role_account: 'a role inbox needs a written reason',
+  quality_hold: 'held for a quality check',
+  country_requires_consent: 'their country needs written consent first',
+  already_queued: 'mail is already queued',
+  not_found: 'no longer in the list',
+};
+
 const WINDOW_REASON = {
   outside_hours: 'outside the send window',
   weekend: 'weekend',
@@ -83,6 +99,32 @@ const CONTACT_STATE = {
   opted_out: { state: 'opted_out', label: 'Opted out' },
   bounced: { state: 'bounced', label: 'Bounced' },
 };
+
+/**
+ * The Worker refuses a role inbox (info@, sales@) unless the queue carries a
+ * written reason, so the desk has to ask for one up front. Same name list the
+ * Worker uses, so the two never disagree about which address is a role one.
+ */
+const ROLE_INBOXES = new Set(
+  'info information hello contact sales support admin administrator office team enquiries inquiries enquiry inquiry mail help helpdesk billing marketing noreply donotreply webmaster postmaster abuse reception service customerservice general accounts careers jobs press media privacy legal'.split(' '),
+);
+function isRoleInbox(email) {
+  if (typeof email !== 'string' || !email.includes('@')) return false;
+  return ROLE_INBOXES.has(email.split('@')[0].toLowerCase().split('+')[0].replace(/[._-]/g, ''));
+}
+
+/**
+ * What stops this contact being queued, at a glance in the list. The same
+ * three things the Worker checks, in the same words the inspector uses.
+ */
+function qualitiesOf(c) {
+  return [
+    c.gap ? null : 'no observation',
+    c.trigger ? null : 'no trigger',
+    c.verifiedAt ? null : 'unverified',
+    c.qualityHold ? String(c.qualityHold).replaceAll('_', ' ') : null,
+  ].filter(Boolean);
+}
 
 function ContactStatus({ status }) {
   const s = CONTACT_STATE[status] ?? { state: status };
@@ -420,7 +462,7 @@ export function MarketingView() {
     );
     headerOverflow = [
       { label: 'Import CSV', run: () => setModal({ kind: 'import' }) },
-      { label: 'Queue everyone', run: () => setModal({ kind: 'bulkqueue' }) },
+      { label: `Queue selected (${selectedBulk.size})`, run: () => setModal({ kind: 'bulkqueue' }) },
       { separator: true },
       ...deskOverflowItems,
     ];
@@ -582,7 +624,9 @@ export function MarketingView() {
 
       {modal?.kind === 'import' ? <ImportModal sequences={overview.sequences} onClose={() => setModal(null)} onDone={done} api={api} /> : null}
 
-      {modal?.kind === 'bulkqueue' ? <BulkQueueModal sequences={overview.sequences} onClose={() => setModal(null)} onDone={done} api={api} /> : null}
+      {modal?.kind === 'bulkqueue' ? (
+        <BulkQueueModal api={api} sequences={overview.sequences} ids={[...selectedBulk]} onClose={() => setModal(null)} onDone={(message) => { setSelectedBulk(new Set()); done(message); }} />
+      ) : null}
 
       {modal?.kind === 'contact' ? (
         <ContactModal sequences={overview.sequences} api={api} onClose={() => setModal(null)} onSaved={done} />
@@ -1353,6 +1397,11 @@ function ContactsTab({
             {c.name ? <span className="aw-muted"> {c.name}</span> : null}
           </span>
           {c.gap ? <span className="aw-mk-cell-sub">{snippet(c.gap, 110)}</span> : null}
+          {qualitiesOf(c).length ? (
+            <span className="aw-mk-cell-sub aw-muted" title="The desk refuses a cold queue until these are recorded.">
+              Needs {qualitiesOf(c).join(' · ')}
+            </span>
+          ) : null}
         </>
       ),
     },
@@ -1513,6 +1562,9 @@ function ContactsTab({
         {selectedBulk.size ? (
           <>
             <span>{plural(selectedBulk.size, 'contact selected', 'contacts selected')}</span>
+            <Button size="sm" kind="primary" disabled={selectedBulk.size > 100} onClick={() => setModal({ kind: 'bulkqueue' })}>
+              Queue selected
+            </Button>
             <Button size="sm" onClick={() => bulk('pause')}>Pause</Button>
             <Button size="sm" onClick={() => bulk('opt_out')}>Opt out</Button>
             <Button size="sm" kind="ghost" onClick={() => setSelectedBulk(new Set())}>Clear</Button>
@@ -2137,6 +2189,7 @@ function ContactInspector({ id, initialMode, back, api, sequences, onClose, onBa
   // Queue form state
   const [queueSeq, setQueueSeq] = useState(sequences[0]?.key ?? 'cold_a');
   const [genericGap, setGenericGap] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
 
   useEffect(() => {
     setMode(initialMode ?? 'view');
@@ -2152,6 +2205,9 @@ function ContactInspector({ id, initialMode, back, api, sequences, onClose, onBa
         site: c.site ?? '',
         gap: c.gap ?? '',
         notes: c.notes ?? '',
+        trigger: c.trigger ?? '',
+        triggerUrl: c.triggerUrl ?? '',
+        verifiedAt: c.verifiedAt ? new Date(c.verifiedAt * 1000).toISOString().slice(0, 10) : '',
       });
     }
   }, [mode, c, editForm]);
@@ -2164,6 +2220,9 @@ function ContactInspector({ id, initialMode, back, api, sequences, onClose, onBa
       site: c.site ?? '',
       gap: c.gap ?? '',
       notes: c.notes ?? '',
+      trigger: c.trigger ?? '',
+      triggerUrl: c.triggerUrl ?? '',
+      verifiedAt: c.verifiedAt ? new Date(c.verifiedAt * 1000).toISOString().slice(0, 10) : '',
     });
     setError(null);
     setMode('edit');
@@ -2212,7 +2271,11 @@ function ContactInspector({ id, initialMode, back, api, sequences, onClose, onBa
     setBusy(true);
     setError(null);
     try {
-      const out = await api('POST', `/admin/marketing/contacts/${c.id}/queue`, { sequence: queueSeq, genericGap });
+      const out = await api('POST', `/admin/marketing/contacts/${c.id}/queue`, {
+        sequence: queueSeq,
+        genericGap,
+        ...(needsOverride && overrideReason.trim() ? { force: true, reason: overrideReason.trim() } : {}),
+      });
       setMode('view');
       resource.reload();
       onSaved(`${out.queued} emails queued for ${c.email}.`);
@@ -2234,6 +2297,21 @@ function ContactInspector({ id, initialMode, back, api, sequences, onClose, onBa
 
   const canQueue = Boolean(c && ['new', 'paused', 'contacted'].includes(c.status) && !c.nextAt);
   const chosenSeq = sequences.find((s) => s.key === queueSeq);
+  // The Worker's own gate, in plain words, so a refused queue is never a
+  // surprise: the same reasons it would return are shown before the click.
+  const needsTrigger = Boolean(chosenSeq?.needsGap);
+  const needsOverride = Boolean(c?.qualityHold === 'role_account' && !isRoleInbox(c?.email));
+  const blockers = !c
+    ? []
+    : [
+        needsTrigger && !c.gap ? 'no observation of the site' : null,
+        needsTrigger && !c.trigger ? 'no trigger — what changed on their side' : null,
+        !c.verifiedAt ? 'the address is not verified' : null,
+        c.status === 'bounced' ? 'the address bounced' : null,
+        c.status === 'opted_out' ? 'they opted out' : null,
+        c.status === 'replied' ? 'they replied, so the sequence is closed' : null,
+        c.qualityHold && !needsOverride ? `quality hold: ${String(c.qualityHold).replaceAll('_', ' ')}` : null,
+      ].filter(Boolean);
   const visibleEvents = (data?.events ?? []).filter((e) => showDmarc || e.kind !== 'dmarc_report');
 
   return (
@@ -2264,6 +2342,15 @@ function ContactInspector({ id, initialMode, back, api, sequences, onClose, onBa
           <Field label="The gap" hint="One specific, true observation. If it is not true, the whole email is spam.">
             <textarea rows={3} value={editForm.gap} onChange={(e) => setEditForm((f) => ({ ...f, gap: e.target.value }))} />
           </Field>
+          <Field label="The trigger" hint="What changed on their side, in their words. A cold email is refused without one.">
+            <input value={editForm.trigger} onChange={(e) => setEditForm((f) => ({ ...f, trigger: e.target.value }))} />
+          </Field>
+          <Field label="Trigger source">
+            <input value={editForm.triggerUrl} placeholder="https://" onChange={(e) => setEditForm((f) => ({ ...f, triggerUrl: e.target.value }))} />
+          </Field>
+          <Field label="Verified on" hint="The day you checked the trigger and the address yourself.">
+            <input type="date" value={editForm.verifiedAt} onChange={(e) => setEditForm((f) => ({ ...f, verifiedAt: e.target.value }))} />
+          </Field>
           <Field label="Notes">
             <textarea rows={2} value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} />
           </Field>
@@ -2284,6 +2371,17 @@ function ContactInspector({ id, initialMode, back, api, sequences, onClose, onBa
               ))}
             </select>
           </Field>
+          {blockers.length ? (
+            <div className="aw-banner aw-banner--warn">
+              The desk refuses this queue until these are fixed:
+              <ul className="aw-mk-reasons">
+                {blockers.map((line) => (<li key={line}>{line}</li>))}
+              </ul>
+              <Button size="sm" onClick={() => { setMode('view'); startEdit(); }}>Fix on the contact</Button>
+            </div>
+          ) : (
+            <p className="ui-note">Observation, trigger and verification are all recorded, so this one queues.</p>
+          )}
           {chosenSeq?.needsGap && !c.gap ? (
             <Field label="No observation on this contact" hint="A cold email without one is usually spam.">
               <label className="aw-inline">
@@ -2292,8 +2390,13 @@ function ContactInspector({ id, initialMode, back, api, sequences, onClose, onBa
               </label>
             </Field>
           ) : null}
+          {needsOverride ? (
+            <Field label="Why this address is the right one" hint="A role inbox (info@, sales@) needs a written reason before the desk will mail it.">
+              <textarea rows={2} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} />
+            </Field>
+          ) : null}
           <div className="ui-actions">
-            <Button kind="primary" busy={busy} onClick={submitQueue}>Queue</Button>
+            <Button kind="primary" busy={busy} disabled={Boolean(blockers.length) || (needsOverride && !overrideReason.trim())} onClick={submitQueue}>Queue</Button>
             <Button disabled={busy} onClick={() => setMode('view')}>Cancel</Button>
           </div>
         </div>
@@ -2339,6 +2442,26 @@ function ContactInspector({ id, initialMode, back, api, sequences, onClose, onBa
             ) : null}
             <dt>Observation</dt>
             <dd>{c.gap || <span className="aw-muted">None — plain version used.</span>}</dd>
+            <dt>Trigger</dt>
+            <dd>
+              {c.trigger ? (
+                <>
+                  {c.trigger}
+                  {c.triggerUrl ? <> · <a href={c.triggerUrl} target="_blank" rel="noreferrer">source</a></> : null}
+                </>
+              ) : (
+                <span className="aw-muted">None — a cold sequence is refused without one.</span>
+              )}
+            </dd>
+            <dt>Verified</dt>
+            <dd>
+              {c.verifiedAt ? (
+                new Date(c.verifiedAt * 1000).toISOString().slice(0, 10)
+              ) : (
+                <span className="aw-muted">Not recorded — the address has not been checked by hand.</span>
+              )}
+            </dd>
+            {c.qualityHold ? (<><dt>Quality hold</dt><dd>{String(c.qualityHold).replaceAll('_', ' ')}</dd></>) : null}
             {c.notes ? (<><dt>Notes</dt><dd>{c.notes}</dd></>) : null}
             <dt>Sent</dt>
             <dd className="aw-mono">{c.sentCount ?? 0}</dd>
@@ -3423,12 +3546,16 @@ function ImportModal({ api, sequences, onClose, onDone }) {
 }
 
 function ContactModal({ api, sequences, onClose, onSaved }) {
-  const [form, setForm] = useState({ email: '', name: '', business: '', site: '', gap: '', notes: '' });
+  const [form, setForm] = useState({ email: '', name: '', business: '', site: '', gap: '', notes: '', trigger: '', triggerUrl: '', verifiedAt: '' });
   const [queue, setQueue] = useState(true);
   const [sequence, setSequence] = useState(sequences[0]?.key ?? 'cold_a');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+  const chosen = sequences.find((s) => s.key === sequence);
+  const missing = chosen?.needsGap
+    ? [form.gap.trim() ? null : 'the gap', form.trigger.trim() ? null : 'the trigger', form.verifiedAt ? null : 'the verified date'].filter(Boolean)
+    : [];
 
   const submit = async () => {
     setBusy(true);
@@ -3475,6 +3602,20 @@ function ContactModal({ api, sequences, onClose, onSaved }) {
       <Field label="The gap" hint="One specific, true observation. If it is not true, the whole email is spam.">
         <textarea rows={3} value={form.gap} onChange={(e) => set('gap', e.target.value)} />
       </Field>
+      <div className="aw-grid2">
+        <Field label="The trigger" hint="What changed on their side, in their words. A cold sequence is refused without one.">
+          <input value={form.trigger} onChange={(e) => set('trigger', e.target.value)} />
+        </Field>
+        <Field label="Trigger source">
+          <input value={form.triggerUrl} placeholder="https://" onChange={(e) => set('triggerUrl', e.target.value)} />
+        </Field>
+        <Field label="Verified on" hint="The day you checked the address and the trigger yourself.">
+          <input type="date" value={form.verifiedAt} onChange={(e) => set('verifiedAt', e.target.value)} />
+        </Field>
+        <Field label="Found on">
+          <input value={form.sourceUrl} placeholder="https://" onChange={(e) => set('sourceUrl', e.target.value)} />
+        </Field>
+      </div>
       <Field label="Notes">
         <textarea rows={2} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
       </Field>
@@ -3500,68 +3641,105 @@ function ContactModal({ api, sequences, onClose, onSaved }) {
           </select>
         </Field>
       ) : null}
+      {queue && missing.length ? (
+        <p className="aw-warn">
+          This sequence is refused until these are filled in: {missing.join(', ')}. You can add the contact now and fill them in on it.
+        </p>
+      ) : null}
       {error ? <ErrorNote error={error} /> : null}
     </Modal>
   );
 }
 
-function BulkQueueModal({ api, sequences, onClose, onDone }) {
+function BulkQueueModal({ api, sequences, ids = [], onClose, onDone }) {
   const [sequence, setSequence] = useState(sequences[0]?.key ?? 'cold_a');
-  const [campaign, setCampaign] = useState('launch');
+  const [batch, setBatch] = useState('launch');
   const [genericGap, setGenericGap] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [report, setReport] = useState(null);
   const chosen = sequences.find((s) => s.key === sequence);
+  const count = new Set(ids).size;
+
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
-      const result = await api('POST', '/admin/marketing/contacts/queue', { sequence, campaign, genericGap });
-      onDone(
-        `${result.queued} contacts queued (${result.emails} emails)` +
-          `${result.skippedNoGap ? `, ${result.skippedNoGap} skipped without an observation` : ''}.`,
-      );
+      setReport(await api('POST', '/admin/marketing/contacts/queue', { sequence, batch, ids, genericGap }));
     } catch (err) {
       setError(errorText(err));
+    } finally {
       setBusy(false);
     }
   };
+  const reasonText = (reasons) => reasons.map((reason) => QUEUE_REASON[reason] ?? reason.replaceAll('_', ' ')).join(', ');
+
   return (
     <Modal
       kind="create"
-      title="Queue everyone"
-      subtitle="Every new or paused contact without mail already queued. Contacts with an observation are queued; the rest are skipped unless you choose the general opener."
-      onClose={onClose}
+      title={`Queue ${count} contact${count === 1 ? '' : 's'}`}
+      subtitle="The desk checks every one first: a bounced, opted-out or unverified address stays out, and so does a cold email with no observation or trigger."
+      onClose={report ? () => onDone(`${report.batch}: ${report.queued} queued, ${report.excluded.length} left out.`) : onClose}
+      wide
       actions={
-        <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button kind="primary" disabled={busy} onClick={submit}>
-            {busy ? 'Queueing…' : 'Queue everyone'}
-          </Button>
-        </>
+        report ? (
+          <Button kind="primary" onClick={() => onDone(`${report.batch}: ${report.queued} queued, ${report.excluded.length} left out.`)}>Done</Button>
+        ) : (
+          <>
+            <Button onClick={onClose}>Cancel</Button>
+            <Button kind="primary" disabled={busy || !count || !batch.trim()} onClick={submit}>
+              {busy ? 'Queueing…' : `Queue ${count}`}
+            </Button>
+          </>
+        )
       }
     >
-      <Field label="Sequence">
-        <select value={sequence} onChange={(e) => setSequence(e.target.value)}>
-          {sequences.map((s) => (
-            <option key={s.key} value={s.key}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Campaign">
-        <input value={campaign} maxLength={40} onChange={(e) => setCampaign(e.target.value)} />
-      </Field>
-      {chosen?.needsGap ? (
-        <Field label="Contacts without an observation" hint="Leave this off to skip them; turn it on to use a general, true opener.">
-          <label className="aw-inline">
-            <input type="checkbox" checked={genericGap} onChange={(e) => setGenericGap(e.target.checked)} />
-            Queue them anyway with a general opener
-          </label>
-        </Field>
-      ) : null}
-      {error ? <ErrorNote error={error} /> : null}
+      {report ? (
+        <div className="aw-mk-field-stack">
+          <p className="ui-note">
+            {report.queued} queued ({report.emails} email{report.emails === 1 ? '' : 's'}) out of {report.total} checked.
+          </p>
+          {report.included.length ? (
+            <div>
+              <h3 className="ui-section__title">Queued ({report.included.length})</h3>
+              <ul className="aw-mk-reasons">{report.included.map(({ id, email }) => (<li key={id}>{email}</li>))}</ul>
+            </div>
+          ) : null}
+          {report.excluded.length ? (
+            <div>
+              <h3 className="ui-section__title">Left out ({report.excluded.length})</h3>
+              <ul className="aw-mk-reasons">
+                {report.excluded.map(({ id, email, reasons }) => (<li key={id}>{email ?? `Contact ${id}`}: {reasonText(reasons)}</li>))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <Field label="Sequence">
+            <select value={sequence} onChange={(e) => setSequence(e.target.value)}>
+              {sequences.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Batch name" hint="Shown beside every queued email, so you can see which list it came from.">
+            <input value={batch} maxLength={40} onChange={(e) => setBatch(e.target.value)} />
+          </Field>
+          {chosen?.needsGap ? (
+            <Field label="Contacts without an observation" hint="Leave this off to skip them; turn it on to use a general, true opener. A missing trigger still keeps them out.">
+              <label className="aw-inline">
+                <input type="checkbox" checked={genericGap} onChange={(e) => setGenericGap(e.target.checked)} />
+                Queue them anyway with a general opener
+              </label>
+            </Field>
+          ) : null}
+          {!count ? <p className="aw-warn">Select the contacts first, then open this.</p> : null}
+          {error ? <ErrorNote error={error} /> : null}
+        </>
+      )}
     </Modal>
   );
 }

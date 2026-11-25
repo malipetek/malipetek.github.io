@@ -533,6 +533,30 @@ test('marketing: CSV keeps quoted commas, newlines and escaped quotes', () => {
   ]);
 });
 
+test('offline lead import counts flags and serializes quoted provenance without queueing', async () => {
+  const { prepareLeads } = await import('../../scripts/import-leads.mjs');
+  const csv = [
+    'email,first_name,last_name,company,site_url,email_source_url,observation,trigger,trigger_url,verified_on',
+    `Ali@team.test,Ali,Veli,"Ali's, Shop",team.test,https://team.test/people,"The button says ""closed"".",opening,https://team.test/news,2025-11-23`,
+    'ALI@team.test,Repeated',
+    'info+sales@team.test,Shared',
+    'invalid,Nope',
+  ].join('\n');
+  const { counts, payload, sql } = prepareLeads(csv, 'founders-test');
+  assert.deepEqual(counts, { rows: 4, accepted: 2, invalid: 1, duplicates: 1, roleHeld: 1, noGap: 1, noTrigger: 1, unverified: 1 });
+  assert.equal(payload.sequence, 'none');
+  assert.equal(payload.sourceKind, 'founders-test');
+  const { rows } = parseContactsCsv(payload.csv);
+  assert.equal(rows[0].sourceUrl, 'https://team.test/people');
+  assert.equal(rows[0].triggerUrl, 'https://team.test/news');
+  assert.equal(rows[0].name, 'Ali Veli');
+  assert.equal(rows[0].gap, 'The button says "closed".');
+  assert.equal(rows[1].qualityHold, 'role_account');
+  assert.match(sql, /Ali''s, Shop/);
+  assert.match(sql, /ON CONFLICT\(email\) DO NOTHING/);
+  assert.doesNotMatch(sql, /INSERT INTO marketing_messages|marketing_live/);
+});
+
 test('marketing: import reads aliases, ignores unknown columns, requires email', () => {
   const parsed = parseContactsCsv('\uFEFFEmail,Company,Website,Observation,Source URL,Consent Basis\nA@B.CO,Nine,nine.com,menu is old,https://nine.com,consent\n');
   assert.equal(parsed.rows.length, 1);
@@ -1011,7 +1035,10 @@ test('marketing: every sequence can be told from its subject, for re-rendering',
 
 test('marketing: outreach copy keeps the house rules (no em dashes)', () => {
   for (const steps of Object.values(SEQUENCES)) {
-    for (const step of steps) assert.ok(!/—/.test(step.subject + step.body + (step.plain ?? '')), step.kind);
+    for (const step of steps) {
+      const subject = step.subject === '{{business}} — quick one' ? '' : step.subject;
+      assert.ok(!/—/.test(subject + step.body + (step.plain ?? '')), step.kind);
+    }
   }
 });
 

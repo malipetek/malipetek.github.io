@@ -85,97 +85,44 @@ breaks.
 
 ### First email
 
-**Subject:** vibe coding or an agency?
+**Subject:** saw this on {site}
 
 > Hi {name},
 >
-> Are you rebuilding your website with Claude Code or ChatGPT?
-> Did you leave your agency because one ticket took a week?
-> Do you want something in between?
+> {gap}
 >
-> That is our portal:
-> 1. You write what you want in the portal, or send it from Claude or ChatGPT.
-> 2. A developer approves it. An AI agent does the work.
-> 3. You check a preview. It goes live when you say yes.
+> I fix exactly that kind of last-mile thing. The agent does the typing in a sealed copy; I check it and sign off before anything goes live.
 >
-> Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
+> The first five pilot jobs came to $2.18–$8.25, no minimum, and you see the price before I start. If it is a five-minute fix, I do it for free.
 >
-> Try it: ptechsolutions.net/portal
+> Want me to fix this one? Reply “yes” and I will tell you what it takes.
 >
 > Muhammet
-> PTech Solutions
-
-Without a written observation, the queue sends this instead (it makes no claim about the site):
-
-> Hi {name},
+> ptechsolutions.net
 >
-> Are you rebuilding your website with Claude Code or ChatGPT?
-> Did you leave your agency because one ticket took a week?
-> Do you want something in between?
->
-> That is our portal:
-> 1. You write what you want in the portal, or send it from Claude or ChatGPT.
-> 2. A developer approves it. An AI agent does the work.
-> 3. You check a preview. It goes live when you say yes.
->
-> Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
->
-> Try it: ptechsolutions.net/portal
->
-> Muhammet
-> PTech Solutions
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 4
 
-**Subject:** vibe coding or an agency?
+**Subject:** saw this on {site}
 
 > Hi {name},
 >
-> Is there one change you want on {site}?
+> Should I take that fix? A one-line reply is enough. If it is not a fit, tell me and I will stop.
 >
-> Write it in one sentence: ptechsolutions.net/portal
-> You set a budget. Work stops at the budget.
-> You see a preview before anything goes live.
->
-> Muhammet
-> PTech Solutions
-
-Without a written observation, the queue sends this instead (it makes no claim about the site):
-
-> Hi {name},
->
-> Is there one change you want on {site}?
->
-> Write it in one sentence: ptechsolutions.net/portal
-> You set a budget. Work stops at the budget.
-> You see a preview before anything goes live.
->
-> Muhammet
-> PTech Solutions
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 10
 
-**Subject:** vibe coding or an agency?
+**Subject:** saw this on {site}
 
 > Hi {name},
 >
-> This is my last email.
->
-> If you need a website change later: ptechsolutions.net/portal
+> Last note from me. If it comes up later, the door is open: ptechsolutions.net/portal. No call, no quote.
 >
 > Muhammet
-> PTech Solutions
-
-Without a written observation, the queue sends this instead (it makes no claim about the site):
-
-> Hi {name},
 >
-> This is my last email.
->
-> If you need a website change later: ptechsolutions.net/portal
->
-> Muhammet
-> PTech Solutions
+> Not useful? Reply “stop” and I will not write again.
 
 ---
 
@@ -186,82 +133,44 @@ site that is mostly fine and a list of small things that never get done.
 
 ### First email
 
-**Subject:** a change on {site}?
+**Subject:** {business} — quick one
 
 > Hi {name},
 >
-> Do you want to change something on {site}?
-> Do you want to do it with AI, without waiting a week for an agency?
+> I saw you are updating {trigger}.
 >
-> Use our portal:
-> 1. You write the change in one sentence.
-> 2. A developer approves it. An AI agent does the work.
-> 3. You check a preview. It goes live when you say yes.
+> {gap}
 >
-> Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
+> I do small last-mile fixes: the agent types, I check and sign off, and you see the price before I start. The first five pilot jobs were $2.18–$8.25, no minimum.
 >
-> Try it: ptechsolutions.net/portal
+> Want me to take this one? Reply with the page and I will tell you what it costs.
 >
 > Muhammet
-> PTech Solutions
-
-Without a written observation, the queue sends this instead (it makes no claim about the site):
-
-> Hi {name},
+> ptechsolutions.net
 >
-> Do you want to change something on {site}?
-> Do you want to do it with AI, without waiting a week for an agency?
->
-> Use our portal:
-> 1. You write the change in one sentence.
-> 2. A developer approves it. An AI agent does the work.
-> 3. You check a preview. It goes live when you say yes.
->
-> Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
->
-> Try it: ptechsolutions.net/portal
->
-> Muhammet
-> PTech Solutions
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 4
 
-**Subject:** a change on {site}?
+**Subject:** {business} — quick one
 
 > Hi {name},
 >
-> Is there one change you want on {site}?
+> Should I take that fix? A one-line reply is enough. If it is not a fit, tell me and I will stop.
 >
-> Write it in one sentence: ptechsolutions.net/portal
-> You set a budget. Work stops at the budget.
-> You see a preview before anything goes live.
->
-> Muhammet
-> PTech Solutions
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 10
 
-**Subject:** a change on {site}?
+**Subject:** {business} — quick one
 
 > Hi {name},
 >
-> This is my last email.
->
-> If you need a website change later: ptechsolutions.net/portal
+> Last note from me. If it comes up later, the door is open: ptechsolutions.net/portal. No call, no quote.
 >
 > Muhammet
-> PTech Solutions
-
-Without a written observation, the queue sends this instead (it makes no claim about the site):
-
-> Hi {name},
 >
-> This is my last email.
->
-> If you need a website change later: ptechsolutions.net/portal
->
-> Muhammet
-> PTech Solutions
+> Not useful? Reply “stop” and I will not write again.
 
 ---
 
@@ -290,24 +199,8 @@ observation writer has reached get this sequence.
 > Muhammet
 > PTech Solutions
 > ptechsolutions.net
-
-Without a written observation, the queue sends this instead (it makes no claim about the site):
-
-> Hi {name},
 >
-> {gap}
->
-> Do you want it fixed?
->
-> 1. Reply "yes".
-> 2. An AI agent makes the fix. A developer checks it.
-> 3. You check a preview. It goes live when you say yes.
->
-> Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
->
-> Muhammet
-> PTech Solutions
-> ptechsolutions.net
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 4
 
@@ -319,7 +212,8 @@ Without a written observation, the queue sends this instead (it makes no claim a
 > Reply "yes" or "no".
 >
 > Muhammet
-> PTech Solutions
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 10
 
@@ -332,7 +226,8 @@ Without a written observation, the queue sends this instead (it makes no claim a
 > If you need a website change later: ptechsolutions.net/portal
 >
 > Muhammet
-> PTech Solutions
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ---
 
@@ -360,6 +255,8 @@ For a business OpenStreetMap lists with an email and no website
 > Muhammet
 > PTech Solutions
 > ptechsolutions.net
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 4
 
@@ -371,7 +268,8 @@ For a business OpenStreetMap lists with an email and no website
 > Reply "yes" or "no".
 >
 > Muhammet
-> PTech Solutions
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 10
 
@@ -384,7 +282,8 @@ For a business OpenStreetMap lists with an email and no website
 > If you need a website change later: ptechsolutions.net/portal
 >
 > Muhammet
-> PTech Solutions
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ---
 
