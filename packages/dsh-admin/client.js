@@ -4480,7 +4480,7 @@ ${block(Object.entries(TOKENS))}
       danger: true,
       run: () => decline().catch(() => void 0)
     });
-    const offered = notEmpty(node?.executors) ?? notEmpty(read.info?.localConfig?.executors) ?? DEFAULT_LEND;
+    const offered2 = notEmpty(node?.executors) ?? notEmpty(read.info?.localConfig?.executors) ?? DEFAULT_LEND;
     const lending = consent?.lend ?? notEmpty(node?.executors) ?? [];
     const signedOut = Boolean(data.error && ["unauthorized", "signed_out", "forbidden"].includes(data.error.code));
     return {
@@ -4498,7 +4498,7 @@ ${block(Object.entries(TOKENS))}
       consent,
       consented,
       state: stateKey,
-      offered,
+      offered: offered2,
       lending,
       pause,
       resume,
