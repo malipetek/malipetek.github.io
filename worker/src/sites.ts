@@ -949,12 +949,36 @@ async function previewManifest(env: Env, projectId: string): Promise<{ slug: str
   return { slug: site.slug, manifest: (await object.json().catch(() => ({}))) as WorkspaceManifest };
 }
 
+/** Folders a build may leave in the source list that are never source. */
+const NOT_SOURCE = new Set([
+  'node_modules', '.pnpm-store', '.npm', '.yarn', '.cache', '.turbo', '.next', '.nuxt', '.svelte-kit',
+  '.vercel', '.netlify', '.wrangler', '.parcel-cache', '.astro', '.malipetek-files', 'bower_components',
+]);
+
+/**
+ * The paths a client's agent may read, and whether that is the whole site.
+ * An older node walked the folder and stopped at the cap, so a package cache
+ * inside the project could fill the list and push the real source out; the
+ * agent then guessed paths and got file_not_found for each. Here such entries
+ * are dropped, and a list that hit the cap or was mostly cache says so.
+ */
+export function sourceListing(paths: string[]): { files: string[]; complete: boolean; note?: string } {
+  const files = paths.filter((p) => !p.split('/').slice(0, -1).some((part) => NOT_SOURCE.has(part))).sort();
+  const complete = paths.length < SOURCE_LIMITS.files && files.length === paths.length;
+  if (complete) return { files, complete };
+  return {
+    files,
+    complete,
+    note: 'This preview stored an incomplete source list, so files you need may be missing. Do not guess paths. Tell the client PTech must rebuild the preview before you can edit it, and say so in the request with portal_reply; a developer is notified.',
+  };
+}
+
 /** The source tree the current preview was built from. */
 export async function workspaceFor(env: Env, projectId: string) {
   const found = await previewManifest(env, projectId);
   if (!found) return null;
   return {
-    files: Object.keys(found.manifest.source ?? {}).sort(),
+    ...sourceListing(Object.keys(found.manifest.source ?? {})),
     siteConfig: found.manifest.siteConfig ?? null,
   };
 }

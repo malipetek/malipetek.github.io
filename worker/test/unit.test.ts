@@ -42,7 +42,7 @@ import { billOf } from '../../src/lib/pricing.js';
 import { acceptTranslations, catalogWork, mailBundleSource, orderedCatalog } from '../../src/lib/i18nSync.js';
 import { cleanVerify, normalizeReport, sharedLine } from '../src/runs.ts';
 import { setupFor, slugify, type SetupInput } from '../src/setup.ts';
-import { cleanDeployManifest, cleanSiteSlug, siteView, type SiteRow } from '../src/sites.ts';
+import { cleanDeployManifest, cleanSiteSlug, siteView, sourceListing, type SiteRow } from '../src/sites.ts';
 import { checkUploads, cleanFileName, fileType } from '../src/files.ts';
 import {
   cleanCountry,
@@ -2224,4 +2224,26 @@ test('content: the reader\'s own Claude Code or ChatGPT may be named in a post',
   for (const ok of ['Are you rebuilding your website with Claude Code?', 'Did ChatGPT get your site 90% there?', 'Send it from Claude or ChatGPT.']) {
     assert.equal(cleanPost(ok, 'x').ok, true, ok);
   }
+});
+
+test('a source list full of package cache says it is incomplete and lists only source', () => {
+  const liftor = ['.gitignore', ...Array.from({ length: 499 }, (_, i) => `.pnpm-store/v10/files/${String(i % 100).padStart(2, '0')}/${i}`)];
+  const out = sourceListing(liftor);
+  assert.deepEqual(out.files, ['.gitignore']);
+  assert.equal(out.complete, false);
+  assert.match(out.note ?? '', /rebuild the preview/);
+  assert.match(out.note ?? '', /Do not guess paths/);
+});
+
+test('a normal source list is complete and carries no note', () => {
+  const out = sourceListing(['src/pages/index.astro', 'package.json', 'astro.config.mjs']);
+  assert.deepEqual(out.files, ['astro.config.mjs', 'package.json', 'src/pages/index.astro']);
+  assert.equal(out.complete, true);
+  assert.equal(out.note, undefined);
+});
+
+test('a list cut at the 500-file cap is incomplete even without cache entries', () => {
+  const out = sourceListing(Array.from({ length: 500 }, (_, i) => `src/content/p${i}.md`));
+  assert.equal(out.files.length, 500);
+  assert.equal(out.complete, false);
 });

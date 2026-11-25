@@ -332,7 +332,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
   {
     name: 'workspace_files',
     title: 'List source files',
-    description: 'Every source file in the site’s current preview, as a path list. Read what you need with workspace_read.',
+    description: 'Every source file in the site’s current preview, as a path list. Read what you need with workspace_read. When `complete` is false the list is missing files: follow `note` instead of guessing paths.',
     inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
     readOnly: true,
   },
@@ -540,7 +540,7 @@ async function portalCall(env: Env, ctx: Ctx, token: string, method: string, pat
       unauthorized: 'The agent token is missing, wrong or revoked. Make a new one in the portal: Connect an assistant.',
       not_found: 'No such request or project on this account.',
       not_hosted: 'This project has no hosted preview yet. A developer must set up the site first.',
-      file_not_found: 'That path is not in the current preview. Use workspace_files to list the exact paths.',
+      file_not_found: 'That path is not in the current preview. Use a path exactly as workspace_files listed it; if workspace_files says the list is incomplete, do not guess: ask PTech to rebuild the preview.',
       rate_limited: 'Too many requests for now; try again later.',
       bad_ticket: 'The title (up to 140 characters) and the body are both required; attention must be auto, checked or hands_on; a budget is 1–10000 whole dollars.',
       bad_budget: 'A budget is a whole number of dollars from 1 to 10000, or null for none.',
