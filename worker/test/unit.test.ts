@@ -70,6 +70,8 @@ import {
   templateHash,
   validEmail,
   wantsImage,
+  countedPostLength,
+  POST_MAX,
 } from '../src/marketing.ts';
 import { observeSite } from '../src/observe.ts';
 import { sesBody, signV4 } from '../src/ses.ts';
@@ -2332,4 +2334,29 @@ test('a complete source list never queues a rebuild', async () => {
   assert.equal(out?.complete, true);
   assert.equal(out?.note, undefined);
   assert.equal(site.rebuild_requested_at, null);
+});
+
+test('a post is counted the way X counts it, so the editor and the save agree', () => {
+  const link = 'https://ptechsolutions.net/portal';
+  // 23 however long it is, which is what lets a post with a link fit at all.
+  assert.equal(countedPostLength(`hello ${link}`, 'x'), 'hello '.length + 23);
+  assert.equal(countedPostLength('no link at all', 'x'), 'no link at all'.length);
+  // A short link counts as itself: X does not pad what is already shorter.
+  assert.equal(countedPostLength('a.co', 'x'), 4);
+  // LinkedIn counts plainly, so both numbers are the raw length there.
+  assert.equal(countedPostLength(`hello ${link}`, 'linkedin'), `hello ${link}`.length);
+  assert.equal(POST_MAX.x, 280);
+  assert.equal(POST_MAX.linkedin, 3000);
+});
+
+test('a post the desk shows as fitting is accepted, and one over is refused', () => {
+  // 249 characters of text plus a 33-character link: raw 283, counted 273.
+  const body = `${'word '.repeat(50).trim()} https://ptechsolutions.net/portal`;
+  const counted = countedPostLength(body, 'x');
+  assert.equal(body.length, 283);
+  assert.equal(counted, 273);
+  assert.ok(body.length > 280, 'the raw text is over the limit');
+  assert.ok(counted <= 280, `but X counts ${counted}`);
+  const over = `${'word '.repeat(60).trim()}`;
+  assert.ok(countedPostLength(over, 'x') > 280);
 });

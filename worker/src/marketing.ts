@@ -538,6 +538,21 @@ export function isRoleAccount(email: string): boolean {
   return ROLE_NAMES.has(email.split('@')[0].toLowerCase().split('+')[0].replace(/[._-]/g, ''));
 }
 
+/**
+ * How long a social post counts as, per network. X charges 23 characters for a
+ * link however long it is, so counting the text raw refuses posts X itself
+ * accepts. The desk counts this way too; both sides must agree or the editor
+ * says a post fits and the save then rejects it.
+ */
+export function countedPostLength(body: string, channel: string): number {
+  const text = String(body ?? '');
+  if (channel !== 'x') return text.length;
+  return text.replace(/https?:\/\/\S+/g, (url) => 'x'.repeat(Math.min(url.length, 23))).length;
+}
+
+/** The limit each network accepts, for the same reason. */
+export const POST_MAX: Record<string, number> = { x: 280, linkedin: 3000 };
+
 export function cleanVerifiedAt(value: unknown): number | null {
   if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 && value < 253402300800 ? value : null;
   if (typeof value !== 'string') return null;
@@ -2794,8 +2809,9 @@ marketing.patch('/admin/marketing/messages/:id', async (c) => {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   if (!text) return out(c, { error: 'empty' }, 400);
-  const max = message.channel === 'x' ? 280 : 3_000;
-  if (text.length > max) return out(c, { error: 'too_long', max, length: text.length }, 400);
+  const max = POST_MAX[message.channel] ?? 3_000;
+  const length = countedPostLength(text, message.channel);
+  if (length > max) return out(c, { error: 'too_long', max, length }, 400);
 
   const updated = await env.DB.prepare(
     `UPDATE marketing_messages SET body = ?, updated_at = ?
@@ -2933,7 +2949,11 @@ marketing.get('/admin/marketing/messages/:id', async (c) => {
     };
   } else {
     const verdict = cleanPost(message.body, message.channel);
-    preview = { checks: verdict.ok ? null : verdict.reason, length: message.body.length, max: message.channel === 'x' ? 280 : 3_000 };
+    preview = {
+      checks: verdict.ok ? null : verdict.reason,
+      length: countedPostLength(message.body, message.channel),
+      max: POST_MAX[message.channel] ?? 3_000,
+    };
   }
   return out(c, {
     message: messageView(message),
