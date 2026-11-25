@@ -985,8 +985,18 @@ function TranslationsPanel() {
 export function SettingsView() {
   const { api, act, data, platform, host, notify, reload } = useAdmin();
   const [draft, setDraft] = useState(data.settings ?? {});
-  useEffect(() => setDraft(data.settings ?? {}), [data.settings]);
-  const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
+  const [touched, setTouched] = useState(false);
+  // `data` polls every 15 seconds and each answer carries a fresh settings
+  // object: never overwrite edits in progress with it (the marketing desk's
+  // SettingsTab and the SEO desk's use the same `touched` guard). A save that
+  // landed resyncs; one that failed keeps the draft for a retry.
+  useEffect(() => {
+    if (!touched) setDraft(data.settings ?? {});
+  }, [data.settings, touched]);
+  const set = (k, v) => {
+    setTouched(true);
+    setDraft((d) => ({ ...d, [k]: v }));
+  };
   const changed = data.settings && Object.keys(draft).some((k) => draft[k] !== data.settings[k]);
   const [token, setToken] = useState('');
   return (
@@ -1057,7 +1067,13 @@ export function SettingsView() {
           </div>
           <div className="aw-inline">
             <span className="aw-toolbar__fill" />
-            <Button disabled={!changed} onClick={() => setDraft(data.settings)}>
+            <Button
+              disabled={!changed}
+              onClick={() => {
+                setTouched(false);
+                setDraft(data.settings ?? {});
+              }}
+            >
               Reset
             </Button>
             <Button
@@ -1065,7 +1081,9 @@ export function SettingsView() {
               disabled={!changed}
               onClick={() => {
                 const patch = Object.fromEntries(Object.entries(draft).filter(([k, v]) => v !== data.settings[k]));
-                void act(() => api('PATCH', '/admin/settings', patch), 'Settings saved.').catch(() => undefined);
+                void act(() => api('PATCH', '/admin/settings', patch), 'Settings saved.')
+                  .then(() => setTouched(false))
+                  .catch(() => undefined);
               }}
             >
               Save

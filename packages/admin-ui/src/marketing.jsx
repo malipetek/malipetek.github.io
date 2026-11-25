@@ -1392,20 +1392,40 @@ function ModelHealth({ api }) {
 
 function SettingsTab({ overview, run, api, contactsById }) {
   const [draft, setDraft] = useState(overview.settings);
-  useEffect(() => setDraft(overview.settings), [overview.settings]);
-  const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
-  const changed = Object.keys(draft).some((key) => draft[key] !== overview.settings[key]);
-  const save = () => {
-    const patch = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== overview.settings[key]));
-    void run(() => api('PUT', '/admin/marketing/settings', patch), 'Marketing settings saved.');
+  const [touched, setTouched] = useState(false);
+  // The desk polls every 30 seconds and every answer carries a fresh settings
+  // object, so a bare reset effect would wipe edits in progress (a click on
+  // Live/Paused or a typed field would switch back on its own). Only resync
+  // while nothing is being edited — the SEO desk's `touched` guard is the
+  // pattern. A save that landed resyncs; one the server rejected keeps the
+  // draft so the rejected fields can be fixed and retried.
+  useEffect(() => {
+    if (!touched) setDraft(overview.settings);
+  }, [overview.settings, touched]);
+  const set = (key, value) => {
+    setTouched(true);
+    setDraft((d) => ({ ...d, [key]: value }));
   };
-  const actions = (
+  const changed = Object.keys(draft).some((key) => draft[key] !== overview.settings[key]);
+  const reset = () => {
+    setTouched(false);
+    setDraft(overview.settings);
+  };
+  const save = async () => {
+    const patch = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== overview.settings[key]));
+    const out = await run(() => api('PUT', '/admin/marketing/settings', patch), 'Marketing settings saved.');
+    // `run` resolves with the Worker's answer, or nothing when the PUT failed:
+    // resync to what the server kept; a failure or a rejected field keeps the
+    // draft so it can be fixed and retried.
+    if (out) setTouched(Boolean(out.rejected?.length));
+  };
+  const actions = (primary) => (
     <div className="aw-inline">
       <span className="aw-toolbar__fill" />
-      <Button disabled={!changed} onClick={() => setDraft(overview.settings)}>
+      <Button disabled={!changed} onClick={reset}>
         Reset
       </Button>
-      <Button kind="primary" disabled={!changed} onClick={save}>
+      <Button kind={primary ? 'primary' : 'default'} disabled={!changed} onClick={save}>
         Save
       </Button>
     </div>
@@ -1525,7 +1545,7 @@ function SettingsTab({ overview, run, api, contactsById }) {
             <input inputMode="numeric" value={draft.offsetMinutes} onChange={(e) => set('offsetMinutes', Number(e.target.value))} />
           </Field>
         </div>
-        {actions}
+        {actions(true)}
       </section>
 
       <section className="aw-panel">
@@ -1567,7 +1587,7 @@ function SettingsTab({ overview, run, api, contactsById }) {
             onChange={(e) => set('voiceNotes', e.target.value)}
           />
         </Field>
-        {actions}
+        {actions(false)}
       </section>
 
       <section className="aw-panel">
