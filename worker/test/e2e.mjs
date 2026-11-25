@@ -472,7 +472,22 @@ const groups = {
     check('the desk starts paused, with the outreach sender', desk.status === 200 && desk.data.settings.live === false && desk.data.sender === 'hello@ptechsolutions.net');
     check('a paused desk sends nothing', (await call('/admin/marketing/run', { method: 'POST', auth: admin })).data.reason === 'paused');
 
-    const csv = 'email,name,business,site,gap\nsara@bakery-nine.test,Sara,Bakery Nine,bakerynine.test,menu still says summer\nnobody@example.test,,,,';
+    const postContact = (path, body) => call(`/admin/marketing/contacts${path}`, { method: 'POST', auth: admin, body });
+    sql(`INSERT INTO marketing_domains (domain, mx, checked_at) VALUES ('quality.test', 1, unixepoch()), ('bakery-nine.test', 1, unixepoch());`);
+    const roleImport = await postContact('/import', { sequence: 'none', csv: 'email,source_url,trigger,trigger_url,verified_at\nhello+test@quality.test,https://quality.test/team,new menu,https://quality.test/news,2025-11-23' });
+    const role = (await call('/admin/marketing/contacts?q=quality.test', { auth: admin })).data.contacts[0];
+    check('role CSV import holds and preserves provenance', roleImport.data.paused === 1 && role.qualityHold === 'role_account' && role.trigger === 'new menu' && role.verifiedAt > 0 && role.sourceUrl.endsWith('/team') && role.triggerUrl.endsWith('/news'));
+    check('role queue refuses a blank override reason', (await postContact(`/${role.id}/queue`, { sequence: 'warm', force: true, reason: ' ' })).status === 400);
+    check('role queue accepts an explicit written override', (await postContact(`/${role.id}/queue`, { sequence: 'warm', force: true, reason: 'Owner confirmed this is their inbox' })).status === 200);
+    check('cold create refuses missing trigger despite old generic flag', (await postContact('', { email: 'owner@quality.test', gap: 'Menu PDF is hard to read', sequence: 'cold_a', genericGap: true })).data.error === 'trigger_required');
+    check('bulk queue rejects oversized selection before querying', (await postContact('/queue', { batch: 'quality-cap', ids: Array.from({ length: 101 }, (_, i) => i + 1) })).status === 400);
+
+    const manual = await postContact('', { email: 'alex@unknown-quality.test', gap: 'The form rejects all dates.', trigger: 'New opening hours', sourceUrl: 'https://unknown-quality.test/about', triggerUrl: 'https://unknown-quality.test/hours', verifiedAt: '2025-11-23', sequence: 'cold_a' });
+    check('manual creation saves provenance without queueing on unknown MX', manual.status === 201 && manual.data.contact.sourceUrl.endsWith('/about') && manual.data.contact.triggerUrl.endsWith('/hours') && manual.data.contact.verifiedAt > 0 && manual.data.contact.status === 'new' && manual.data.reasons.includes('unverified'), JSON.stringify(manual.data));
+    check('named batch refuses an omitted selection', (await postContact('/queue', { batch: 'no-selection' })).status === 400);
+    check('role override cannot bypass cold eligibility', (await postContact(`/${role.id}/queue`, { sequence: 'cold_a', force: true, reason: 'Owner confirmed' })).data.error === 'gap_required');
+
+    const csv = 'email,name,business,site,gap,trigger,verified_at\nsara@bakery-nine.test,Sara,Bakery Nine,bakerynine.test,The menu still says summer.,the winter menu,2025-11-23\nnobody@example.test,,,,,';
     const imported = await call('/admin/marketing/contacts/import', {
       method: 'POST',
       auth: admin,
@@ -492,12 +507,11 @@ const groups = {
     check('the contact without a gap is held, not sent', contacts.find((c) => c.email === 'nobody@example.test')?.status === 'paused');
 
     const emails = (await call('/admin/marketing/messages?channel=email', { auth: admin })).data.messages;
-    check('three steps are scheduled for the queued contact', emails.filter((m) => m.status === 'scheduled').length === 3);
-    const firstEmail = emails.find((m) => m.step === 0);
-    check('the first email is the plain pitch, every placeholder filled', /billed by the second/.test(firstEmail?.body ?? '') && !firstEmail.body.includes('{{'));
-    // A big import is one request: contacts are written in batches, then the
-    // desk can queue everyone in another. A missing observation is a choice,
-    // not a dead end.
+    check('three steps are scheduled for the queued contact', emails.filter((m) => m.status === 'scheduled' && m.contactEmail === 'sara@bakery-nine.test').length === 3);
+    const firstEmail = emails.find((m) => m.step === 0 && m.contactEmail === 'sara@bakery-nine.test');
+    check('the first email uses the approved pitch, every placeholder filled', /five-minute fix, I do it for free/.test(firstEmail?.body ?? '') && !firstEmail.body.includes('{{'));
+    // A big import is one request; only individually eligible contacts in
+    // an explicit selection may subsequently be queued.
     const bigCsv = [
       'email,name,business,site,gap',
       ...Array.from({ length: 500 }, (_, i) => `bulk${i}@example.test,Bulk ${i},Bulk Co ${i},bulk${i}.example.test,`),
@@ -517,35 +531,31 @@ const groups = {
       'a cold sequence still refuses a contact without an observation',
       (await call(`/admin/marketing/contacts/${nobody.id}/queue`, { method: 'POST', auth: admin, body: { sequence: 'cold_a' } })).data.error === 'gap_required',
     );
-    const bulk = await call('/admin/marketing/contacts/queue', {
-      method: 'POST',
-      auth: admin,
-      body: { sequence: 'cold_a', campaign: 'bulk', genericGap: true },
-    });
-    check(
-      'one bulk action queues the imported contacts with a general opener',
-      bulk.status === 200 && bulk.data.queued >= 500 && bulk.data.emails >= 1500,
-      JSON.stringify(bulk.data),
-    );
-    // Without a real observation, no email may claim someone looked at the site.
-    const firstOf = () =>
-      sql(`SELECT body FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
-            WHERE c.email = 'bulk7@example.test' AND m.step = 0 AND m.status = 'scheduled'`).toString();
-    const plainFirst = firstOf();
-    check('a contact without an observation gets the plain opener, not "I looked at…"', /help you use AI and deploy what you build/.test(plainFirst) && !/I looked at/.test(plainFirst), plainFirst.slice(0, 300));
-    sql(`UPDATE marketing_messages SET body = 'stale wording' WHERE status = 'scheduled' AND to_email = 'bulk7@example.test';`);
+    sql(`UPDATE marketing_contacts SET verified_at = unixepoch(), trigger = 'the winter menu', gap = 'The menu still says summer.' WHERE email = 'bulk7@example.test';
+         UPDATE marketing_contacts SET status = 'bounced' WHERE email = 'bulk8@example.test';
+         UPDATE marketing_contacts SET status = 'opted_out' WHERE email = 'bulk9@example.test';
+         UPDATE marketing_contacts SET email = 'other@badmx.test' WHERE email = 'bulk10@example.test';
+         INSERT INTO marketing_domains (domain, mx, checked_at) VALUES ('example.test', 1, unixepoch()), ('badmx.test', 0, unixepoch());`);
+    const ids = (await call('/admin/marketing/contacts?q=example.test', { auth: admin })).data.contacts.slice(0, 99).map((c) => c.id);
+    ids.push(nobody.id);
+    const batchContacts = (await call('/admin/marketing/contacts?q=bulk7%40example.test', { auth: admin })).data.contacts;
+    const batchId = batchContacts[0].id;
+    const bouncedId = (await call('/admin/marketing/contacts?q=bulk8%40example.test', { auth: admin })).data.contacts[0].id;
+    const suppressedId = (await call('/admin/marketing/contacts?q=bulk9%40example.test', { auth: admin })).data.contacts[0].id;
+    const noMxId = (await call('/admin/marketing/contacts?q=other%40badmx.test', { auth: admin })).data.contacts[0].id;
+    const selected = [...new Set([batchId, bouncedId, suppressedId, noMxId, nobody.id, ...ids])].slice(0, 100);
+    const bulk = await postContact('/queue', { sequence: 'cold_a', batch: 'bulk-verified', ids: selected, genericGap: true });
+    const reasons = (id) => bulk.data.excluded?.find((row) => row.id === id)?.reasons ?? [];
+    check('named batch reports inclusion and all quality exclusions', bulk.status === 200 && bulk.data.batch === 'bulk-verified' && bulk.data.queued === 1 && bulk.data.included[0].id === batchId && bulk.data.included.length + bulk.data.excluded.length === 100 && reasons(nobody.id).includes('gap_required') && reasons(nobody.id).includes('trigger_required') && reasons(nobody.id).includes('unverified') && reasons(bouncedId).includes('bounced') && reasons(suppressedId).includes('suppressed') && reasons(noMxId).includes('no_mx'), JSON.stringify(bulk.data).slice(0, 600));
+    const firstOf = (column) => sql(`SELECT m.${column} FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
+             WHERE c.email = 'bulk7@example.test' AND m.step = 0 AND m.status = 'scheduled'`).toString();
+    sql(`UPDATE marketing_messages SET body = 'stale wording', subject = 'Vibe contracting', sequence_kind = NULL WHERE step = 0 AND status = 'scheduled' AND to_email = 'bulk7@example.test';`);
     const rerendered = await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin });
-    check('re-render brings scheduled emails back to the current templates', rerendered.status === 200 && rerendered.data.updated >= 1500 && !/stale wording/.test(firstOf()), JSON.stringify(rerendered.data));
-    const subjectOf = () =>
-      sql(`SELECT subject FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
-            WHERE c.email = 'bulk7@example.test' AND m.step = 0 AND m.status = 'scheduled'`).toString();
+    check('re-render recognizes older subjects and updates to current templates', rerendered.status === 200 && rerendered.data.updated >= 6 && /five-minute fix/.test(firstOf('body')), JSON.stringify(rerendered.data));
     check('an unknown sequence move is refused', (await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin, body: { from: 'cold_a', to: 'nope' } })).status === 400);
+    const slot = firstOf('scheduled_at');
     const movedSeq = await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin, body: { from: 'cold_a', to: 'cold_b' } });
-    check(
-      'queued Cold A mail can move to Cold B, keeping its slots',
-      movedSeq.status === 200 && movedSeq.data.moved >= 1500 && /Vibe contracting for bulk7\.example\.test/.test(subjectOf()) && /billed by the second/.test(firstOf()),
-      JSON.stringify(movedSeq.data),
-    );
+    check('queued Cold A can move to Cold B with its trigger and original slots', movedSeq.status === 200 && movedSeq.data.moved === 6 && /Bulk Co 7 — quick one/.test(firstOf('subject')) && /updating the winter menu/.test(firstOf('body')) && firstOf('scheduled_at') === slot, JSON.stringify(movedSeq.data));
 
     const bad = await call('/admin/marketing/settings', { method: 'PUT', auth: admin, body: { dailyCap: 0, live: 'yes' } });
     check('a bad setting is refused and the old value stands', bad.data.rejected.length === 2 && bad.data.settings.dailyCap === 20);
@@ -622,7 +632,7 @@ const groups = {
 
     // Review mode: first emails in send order, and the gate on sending.
     const review = await call('/admin/marketing/review?limit=5', { auth: admin });
-    check('the review queue lists unread first emails in send order', review.status === 200 && review.data.messages.length === 5 && review.data.messages.every((m) => m.step === 0 && !m.editedAt), JSON.stringify(review.data).slice(0, 300));
+    check('the review queue lists unread first emails in send order', review.status === 200 && review.data.messages.length === 2 && review.data.messages.every((m) => m.step === 0 && !m.editedAt), JSON.stringify(review.data).slice(0, 300));
     const firstUp = review.data.messages[0];
     const marked = await call(`/admin/marketing/messages/${firstUp.id}/review`, { method: 'POST', auth: admin });
     check('reading an email marks it reviewed', marked.status === 200 && marked.data.message.reviewedAt > 0);
@@ -635,7 +645,7 @@ const groups = {
     check('the next page holds other contacts', page2.data.contacts.length > 0 && !page2.data.contacts.some((c) => page.data.contacts.some((p) => p.id === c.id)));
     const detail = await call(`/admin/marketing/contacts/${firstUp.contactId}`, { auth: admin });
     check('a contact opens with its messages and events', detail.status === 200 && detail.data.messages.length === 3);
-    const pick = page2.data.contacts.filter((c) => c.status === 'queued').slice(0, 3).map((c) => c.id);
+    const pick = [role.id, firstEmail.contactId, batchId];
     const bulkOut = await call('/admin/marketing/contacts/bulk', { method: 'POST', auth: admin, body: { action: 'opt_out', ids: pick } });
     const left = Number(sql(`SELECT 'left=' || COUNT(*) AS n FROM marketing_messages WHERE status = 'scheduled' AND contact_id IN (${pick.join(',')});`).toString().match(/left=(\d+)/)?.[1]);
     check('a bulk opt-out closes the contacts and cancels their mail', bulkOut.data.changed === 3 && left === 0, JSON.stringify(bulkOut.data) + ' left ' + left);
@@ -645,6 +655,14 @@ const groups = {
 
     const client = account(`desk-${Date.now()}@example.com`);
     check('a client cannot open the marketing desk', (await call('/admin/marketing', { auth: client.session })).status === 403);
+    sql('ALTER TABLE marketing_domains RENAME TO marketing_domains_test_hidden');
+    try {
+      const partial = await call('/admin/marketing', { auth: admin });
+      check('overview serves core data when optional domain statistics fail', partial.status === 200 && partial.data.unavailable?.includes('domains') && partial.data.counts.contacts.new > 0, `HTTP ${partial.status}`);
+    } finally {
+      sql('ALTER TABLE marketing_domains_test_hidden RENAME TO marketing_domains');
+    }
+
   },
 
   async content({ admin }) {

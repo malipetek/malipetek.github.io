@@ -221,7 +221,7 @@ export function MarketingView() {
               </Button>
             ) : null}
             <Button onClick={() => setModal({ kind: 'import' })}>Import CSV</Button>
-            <Button onClick={() => setModal({ kind: 'bulkqueue' })}>Queue everyone</Button>
+            <Button disabled={!selected.size || selected.size > 100} onClick={() => setModal({ kind: 'bulkqueue' })}>Queue selected batch</Button>
             <Button kind="primary" onClick={() => setModal({ kind: 'contact' })}>
               Add contact
             </Button>
@@ -253,6 +253,8 @@ export function MarketingView() {
           <Button onClick={() => run(() => api('POST', '/admin/marketing/run'), runMessage)}>Run now</Button>
         ) : null}
       </div>
+
+      {overview.unavailable?.length ? <div className="aw-banner" role="status">Some marketing statistics could not load. Contact and message counts are still available.</div> : null}
 
       {tab === 'overview' ? (
         <OverviewTab api={api} tick={tick} health={health} overview={overview} onReview={() => setModal({ kind: 'review' })} onContact={(id) => setModal({ kind: 'person', id })} />
@@ -410,7 +412,7 @@ export function MarketingView() {
 
       {modal?.kind === 'import' ? <ImportModal sequences={overview.sequences} onClose={() => setModal(null)} onDone={done} api={api} /> : null}
 
-      {modal?.kind === 'bulkqueue' ? <BulkQueueModal sequences={overview.sequences} onClose={() => setModal(null)} onDone={done} api={api} /> : null}
+      {modal?.kind === 'bulkqueue' ? <BulkQueueModal ids={[...selected]} sequences={overview.sequences} onClose={() => setModal(null)} onDone={done} api={api} /> : null}
 
       {modal?.kind === 'contact' ? (
         <ContactModal contact={modal.contact} sequences={overview.sequences} api={api} onClose={() => setModal(null)} onSaved={done} />
@@ -798,15 +800,16 @@ function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
             {c.country ? <Tag tone="dash">{c.country}</Tag> : null}
             <Tag tone="dash">added {ago(c.createdAt)} ago</Tag>
           </div>
-          {c.gap ? <p>Observation: {c.gap}</p> : <p className="aw-muted">No observation written; the plain versions are used.</p>}
+          {c.gap ? <p>Observation: {c.gap}</p> : <p className="aw-muted">No observation recorded. Cold email requires one.</p>}
           {c.sourceUrl ? (
             <p className="aw-muted">
               Found on{' '}
-              <a href={c.sourceUrl} target="_blank" rel="noreferrer">
-                {c.sourceUrl}
-              </a>
+              {/^https?:\/\//i.test(c.sourceUrl) ? <a href={c.sourceUrl} target="_blank" rel="noreferrer">{c.sourceUrl}</a> : c.sourceUrl}
             </p>
           ) : null}
+          {c.trigger ? <p>Trigger: {c.trigger}{/^https?:\/\//i.test(c.triggerUrl ?? '') ? <> (<a href={c.triggerUrl} target="_blank" rel="noreferrer">source</a>)</> : null}</p> : null}
+          <p className="aw-muted">Contact verified: {c.verifiedAt ? new Date(c.verifiedAt * 1000).toISOString().slice(0, 10) : 'not recorded'}</p>
+          {c.qualityHold ? <p className="aw-muted">Quality hold: {c.qualityHold.replaceAll('_', ' ')}</p> : null}
           {c.notes ? <p className="aw-muted">{c.notes}</p> : null}
           <h3>Messages</h3>
           <table className="aw-table">
@@ -1232,7 +1235,7 @@ function SequencesTab({ api, sequences }) {
             <tr key={s.key}>
               <td className="aw-table__title">
                 {s.label}
-                {s.needsGap ? <div className="aw-muted">needs a site observation</div> : null}
+                {s.needsGap ? <div className="aw-muted">needs a site observation and trigger</div> : null}
               </td>
               <td>{s.stats.sent || '·'}</td>
               <td>{s.stats.replies || '·'}</td>
@@ -1592,12 +1595,10 @@ function ImportModal({ api, sequences, onClose, onDone }) {
   const [file, setFile] = useState(null);
   const [sequence, setSequence] = useState('none');
   const [campaign, setCampaign] = useState('launch');
-  const [genericGap, setGenericGap] = useState(false);
+
   const [sourceKind, setSourceKind] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const chosen = sequences.find((s) => s.key === sequence);
-  const needsGap = Boolean(chosen?.needsGap);
 
   const pick = async (event) => {
     const picked = event.target.files?.[0] ?? null;
@@ -1612,10 +1613,10 @@ function ImportModal({ api, sequences, onClose, onDone }) {
     setBusy(true);
     setError(null);
     try {
-      const result = await api('POST', '/admin/marketing/contacts/import', { csv, sequence, campaign, genericGap, sourceKind });
+      const result = await api('POST', '/admin/marketing/contacts/import', { csv, sequence, campaign, sourceKind });
       onDone(
         `${result.added} added${result.queued ? `, ${result.queued} queued (${result.emails} emails)` : ''}` +
-          `${result.paused ? `, ${result.paused} held for a missing observation` : ''}` +
+          `${result.paused ? `, ${result.paused} held for contact quality` : ''}` +
           `${result.skipped.length ? `, ${result.skipped.length} skipped` : ''}.`,
       );
     } catch (err) {
@@ -1628,7 +1629,7 @@ function ImportModal({ api, sequences, onClose, onDone }) {
   return (
     <Modal
       title="Import contacts"
-      subtitle="Upload a CSV. Columns: email, name, business, site, gap, source_url, notes, and optionally source_kind and country (two letters; DE, AT, CH, IT, ES, PL, DK, NO and TR are never mailed cold). The gap is the one specific, true observation the first email opens with."
+      subtitle="Upload a CSV. Columns: email, name, business, site, gap, source_url, trigger, trigger_url, verified_at, notes, and optionally source_kind and country (two letters; DE, AT, CH, IT, ES, PL, DK, NO and TR are never mailed cold). The gap is the one specific, true observation the first email opens with."
       onClose={onClose}
       wide
       actions={
@@ -1648,7 +1649,7 @@ function ImportModal({ api, sequences, onClose, onDone }) {
           {file.name} · {Math.round(file.size / 1024)} KB
         </p>
       ) : null}
-      <Field label="Sequence" hint="Choose “Import only” to review the list first; the bulk Queue action can queue everyone later.">
+      <Field label="Sequence" hint="Choose “Import only” to review the list first; select up to 100 verified contacts to queue later.">
         <select value={sequence} onChange={(e) => setSequence(e.target.value)}>
           <option value="none">Import only — do not queue yet</option>
           {sequences.map((s) => (
@@ -1664,14 +1665,6 @@ function ImportModal({ api, sequences, onClose, onDone }) {
       <Field label="Source" hint="Which list this is. Sources shows reply, bounce and complaint rates per source, so you know which kind of list to build more of.">
         <input value={sourceKind} maxLength={60} placeholder="osm-colorado-mail-only" onChange={(e) => setSourceKind(e.target.value)} />
       </Field>
-      {needsGap ? (
-        <Field label="Contacts without an observation" hint="A cold email without one is usually spam. Leave this off to hold them; turn it on to use a general, true opener instead.">
-          <label className="aw-inline">
-            <input type="checkbox" checked={genericGap} onChange={(e) => setGenericGap(e.target.checked)} />
-            Use a general opener when the gap is empty
-          </label>
-        </Field>
-      ) : null}
       {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
     </Modal>
   );
@@ -1686,8 +1679,12 @@ function ContactModal({ api, contact, sequences, onClose, onSaved }) {
     site: contact?.site ?? '',
     gap: contact?.gap ?? '',
     notes: contact?.notes ?? '',
+    sourceUrl: contact?.sourceUrl ?? '',
+    trigger: contact?.trigger ?? '',
+    triggerUrl: contact?.triggerUrl ?? '',
+    verifiedAt: contact?.verifiedAt ? new Date(contact.verifiedAt * 1000).toISOString().slice(0, 10) : '',
   });
-  const [queue, setQueue] = useState(!editing);
+  const [queue, setQueue] = useState(false);
   const [sequence, setSequence] = useState('cold_a');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -1703,7 +1700,7 @@ function ContactModal({ api, contact, sequences, onClose, onSaved }) {
         onSaved(`${contact.email} saved.`);
       } else {
         const out = await api('POST', '/admin/marketing/contacts', { ...form, sequence: queue ? sequence : undefined });
-        onSaved(`${out.contact.email} added${queue ? ' and queued' : ''}.`);
+        onSaved(`${out.contact.email} added${out.reasons?.length ? `; not queued (${out.reasons.join(', ')}).` : out.contact.status === 'queued' ? ' and queued.' : '.'}`);
       }
     } catch (err) {
       setError(err.message ?? err.code);
@@ -1743,6 +1740,13 @@ function ContactModal({ api, contact, sequences, onClose, onSaved }) {
       <Field label="The gap" hint="One specific, true observation. If it is not true, the whole email is spam.">
         <textarea rows={3} value={form.gap} onChange={(e) => set('gap', e.target.value)} />
       </Field>
+      <div className="aw-grid2">
+        <Field label="Email source URL"><input value={form.sourceUrl} onChange={(e) => set('sourceUrl', e.target.value)} /></Field>
+        <Field label="Trigger"><input value={form.trigger} onChange={(e) => set('trigger', e.target.value)} /></Field>
+        <Field label="Trigger URL"><input value={form.triggerUrl} onChange={(e) => set('triggerUrl', e.target.value)} /></Field>
+        <Field label="Verified on"><input type="date" value={form.verifiedAt} onChange={(e) => set('verifiedAt', e.target.value)} /></Field>
+      </div>
+      {contact?.qualityHold ? <p className="aw-muted">Quality hold: {contact.qualityHold.replaceAll('_', ' ')}</p> : null}
       <Field label="Notes">
         <textarea rows={2} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
       </Field>
@@ -1772,14 +1776,14 @@ function ContactModal({ api, contact, sequences, onClose, onSaved }) {
 
 function QueueModal({ api, contact, sequences, onClose, onQueued }) {
   const [sequence, setSequence] = useState('cold_a');
-  const [genericGap, setGenericGap] = useState(false);
+  const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const chosen = sequences.find((s) => s.key === sequence);
   const submit = async () => {
     setBusy(true);
     try {
-      const out = await api('POST', `/admin/marketing/contacts/${contact.id}/queue`, { sequence, genericGap });
+      const out = await api('POST', `/admin/marketing/contacts/${contact.id}/queue`, { sequence, force: Boolean(reason.trim()), reason });
       onQueued(out.queued);
     } catch (err) {
       setError(err.message ?? err.code);
@@ -1803,12 +1807,10 @@ function QueueModal({ api, contact, sequences, onClose, onQueued }) {
       <Field label="Sequence">
         <Segmented value={sequence} options={sequences.map((s) => ({ value: s.key, label: s.label }))} onChange={setSequence} />
       </Field>
-      {chosen?.needsGap && !contact.gap ? (
-        <Field label="No observation on this contact" hint="A cold email without one is usually spam.">
-          <label className="aw-inline">
-            <input type="checkbox" checked={genericGap} onChange={(e) => setGenericGap(e.target.checked)} />
-            Queue with a general opener
-          </label>
+      {chosen?.needsGap ? <p className="aw-muted">Cold email requires a specific observation and a trigger.</p> : null}
+      {contact.qualityHold === 'role_account' ? (
+        <Field label="Role inbox exception" hint="Leave blank to keep the hold. Enter the reason this inbox should receive outreach.">
+          <input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} />
         </Field>
       ) : null}
       {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
@@ -1816,61 +1818,44 @@ function QueueModal({ api, contact, sequences, onClose, onQueued }) {
   );
 }
 
-function BulkQueueModal({ api, sequences, onClose, onDone }) {
+function BulkQueueModal({ api, ids, sequences, onClose, onDone }) {
   const [sequence, setSequence] = useState('cold_a');
-  const [campaign, setCampaign] = useState('launch');
-  const [genericGap, setGenericGap] = useState(false);
+  const [batch, setBatch] = useState('');
+  const [report, setReport] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const chosen = sequences.find((s) => s.key === sequence);
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
-      const result = await api('POST', '/admin/marketing/contacts/queue', { sequence, campaign, genericGap });
-      onDone(
-        `${result.queued} contacts queued (${result.emails} emails)` +
-          `${result.skippedNoGap ? `, ${result.skippedNoGap} skipped without an observation` : ''}.`,
-      );
+      setReport(await api('POST', '/admin/marketing/contacts/queue', { sequence, batch, ids }));
     } catch (err) {
       setError(err.message ?? err.code);
+    } finally {
       setBusy(false);
     }
   };
+  const close = () => report ? onDone(`${report.batch}: ${report.queued} queued, ${report.excluded.length} excluded.`) : onClose();
   return (
-    <Modal
-      title="Queue everyone"
-      subtitle="Every new or paused contact without mail already queued. Contacts with an observation are queued; the rest are skipped unless you choose the general opener."
-      onClose={onClose}
-      actions={
+    <Modal title={report ? report.batch : 'Queue a named batch'} subtitle={report ? `${report.queued} queued · ${report.excluded.length} excluded` : `${ids.length} selected. Only contacts that pass the quality checks are queued.`} onClose={close} wide actions={
+      <>
+        <Button onClick={close}>{report ? 'Done' : 'Cancel'}</Button>
+        {!report ? <Button kind="primary" disabled={busy || !batch.trim() || !ids.length || ids.length > 100} onClick={submit}>{busy ? 'Queueing…' : 'Queue batch'}</Button> : null}
+      </>
+    }>
+      {report ? (
         <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button kind="primary" disabled={busy} onClick={submit}>
-            {busy ? 'Queueing…' : 'Queue everyone'}
-          </Button>
+          {report.excluded.length ? <ul>{report.excluded.map(({ id, email, reasons }) => <li key={id}>{email ?? `Contact ${id}`}: {reasons.map((reason) => reason.replaceAll('_', ' ')).join(', ')}</li>)}</ul> : null}
+        {report.included.length ? <details><summary>Queued contacts</summary><ul>{report.included.map(({ id, email }) => <li key={id}>{email}</li>)}</ul></details> : null}
         </>
-      }
-    >
-      <Field label="Sequence">
-        <select value={sequence} onChange={(e) => setSequence(e.target.value)}>
-          {sequences.map((s) => (
-            <option key={s.key} value={s.key}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Campaign">
-        <input value={campaign} maxLength={40} onChange={(e) => setCampaign(e.target.value)} />
-      </Field>
-      {chosen?.needsGap ? (
-        <Field label="Contacts without an observation" hint="Leave this off to skip them; turn it on to use a general, true opener.">
-          <label className="aw-inline">
-            <input type="checkbox" checked={genericGap} onChange={(e) => setGenericGap(e.target.checked)} />
-            Queue them anyway with a general opener
-          </label>
-        </Field>
-      ) : null}
+      ) : (
+        <>
+          <Field label="Batch name"><input value={batch} maxLength={40} onChange={(e) => setBatch(e.target.value)} /></Field>
+          <Field label="Sequence"><select value={sequence} onChange={(e) => setSequence(e.target.value)}>
+            {sequences.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select></Field>
+        </>
+      )}
       {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
     </Modal>
   );

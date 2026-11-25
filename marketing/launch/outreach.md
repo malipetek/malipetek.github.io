@@ -73,71 +73,44 @@ breaks.
 
 ### First email
 
-**Subject:** Vibe contracting
+**Subject:** saw this on {site}
 
 > Hi {name},
 >
-> Do you want help using AI on your business and getting your projects online?
+> {gap}
 >
-> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
+> I fix exactly that kind of last-mile thing. The agent does the typing in a sealed copy; I check it and sign off before anything goes live.
 >
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+> The first five pilot jobs came to $2.18–$8.25, no minimum, and you see the price before I start. If it is a five-minute fix, I do it for free.
 >
-> Reply with what you're working on and I'll tell you how I'd help.
->
-> Muhammet
-> ptechsolutions.net
-
-Without a written observation, the queue sends this instead (it makes no claim about the site):
-
-> Hi {name},
->
-> Do you want help using AI on your business and getting your projects online?
->
-> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
->
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
->
-> Reply with what you're working on and I'll tell you how I'd help.
+> Want me to fix this one? Reply “yes” and I will tell you what it takes.
 >
 > Muhammet
 > ptechsolutions.net
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 4
 
-**Subject:** Re: Vibe contracting
+**Subject:** saw this on {site}
 
 > Hi {name},
 >
-> Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
+> Should I take that fix? A one-line reply is enough. If it is not a fit, tell me and I will stop.
 >
-> Muhammet
-
-Without a written observation, the queue sends this instead (it makes no claim about the site):
-
-> Hi {name},
->
-> Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
->
-> Muhammet
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 10
 
-**Subject:** Re: Vibe contracting
+**Subject:** saw this on {site}
 
 > Hi {name},
 >
-> Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
+> Last note from me. If it comes up later, the door is open: ptechsolutions.net/portal. No call, no quote.
 >
 > Muhammet
-
-Without a written observation, the queue sends this instead (it makes no claim about the site):
-
-> Hi {name},
 >
-> Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
->
-> Muhammet
+> Not useful? Reply “stop” and I will not write again.
 
 ---
 
@@ -148,55 +121,44 @@ site that is mostly fine and a list of small things that never get done.
 
 ### First email
 
-**Subject:** Vibe contracting for {site}
+**Subject:** {business} — quick one
 
 > Hi {name},
 >
-> Do you want help using AI on your business and getting your projects online?
+> I saw you are updating {trigger}.
 >
-> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
+> {gap}
 >
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+> I do small last-mile fixes: the agent types, I check and sign off, and you see the price before I start. The first five pilot jobs were $2.18–$8.25, no minimum.
 >
-> Reply with what you're working on and I'll tell you how I'd help.
->
-> Muhammet
-> ptechsolutions.net
-
-Without a written observation, the queue sends this instead (it makes no claim about the site):
-
-> Hi {name},
->
-> Do you want help using AI on your business and getting your projects online?
->
-> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
->
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
->
-> Reply with what you're working on and I'll tell you how I'd help.
+> Want me to take this one? Reply with the page and I will tell you what it costs.
 >
 > Muhammet
 > ptechsolutions.net
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 4
 
-**Subject:** Re: Vibe contracting for {site}
+**Subject:** {business} — quick one
 
 > Hi {name},
 >
-> Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
+> Should I take that fix? A one-line reply is enough. If it is not a fit, tell me and I will stop.
 >
-> Muhammet
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 10
 
-**Subject:** Re: Vibe contracting for {site}
+**Subject:** {business} — quick one
 
 > Hi {name},
 >
-> Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
+> Last note from me. If it comes up later, the door is open: ptechsolutions.net/portal. No call, no quote.
 >
 > Muhammet
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ---
 
@@ -222,21 +184,8 @@ observation writer has reached get this sequence.
 >
 > Muhammet
 > ptechsolutions.net
-
-Without a written observation, the queue sends this instead (it makes no claim about the site):
-
-> Hi {name},
 >
-> {gap}
->
-> I can fix that for you. It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy the change.
->
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
->
-> Want me to fix it?
->
-> Muhammet
-> ptechsolutions.net
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 4
 
@@ -247,6 +196,8 @@ Without a written observation, the queue sends this instead (it makes no claim a
 > Should I go ahead with the fix on {site}? A one-line reply is enough.
 >
 > Muhammet
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 10
 
@@ -257,6 +208,8 @@ Without a written observation, the queue sends this instead (it makes no claim a
 > Last note from me. If you want it fixed later, you can ask at ptechsolutions.net/portal, with no call or quote first.
 >
 > Muhammet
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ---
 
@@ -279,6 +232,8 @@ For a business OpenStreetMap lists with an email and no website
 >
 > Muhammet
 > ptechsolutions.net
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 4
 
@@ -289,6 +244,8 @@ For a business OpenStreetMap lists with an email and no website
 > Should I sketch a one-page site for {business}, or is it not worth it right now? Either answer helps me.
 >
 > Muhammet
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ### Follow-up, day 10
 
@@ -299,6 +256,8 @@ For a business OpenStreetMap lists with an email and no website
 > Last note from me. If you want a site later, you can ask through ptechsolutions.net/portal, with no call or quote first.
 >
 > Muhammet
+>
+> Not useful? Reply “stop” and I will not write again.
 
 ---
 
