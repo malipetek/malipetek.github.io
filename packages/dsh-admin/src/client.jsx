@@ -43,6 +43,8 @@ const NAMESPACE = 'admin';
 const CLIENT_VERSION = '3.9.0';
 /** The conversation the Superagent panel started, so it can be continued. */
 const SUPERAGENT_SESSION = 'pta.superagent.session';
+/** Every superagent conversation is titled with this prefix, so the panel can list its own. */
+const SUPERAGENT_TITLE = 'Superagent · ';
 /**
  * The permission preset a superagent conversation runs under. It has to ask
  * before a write: under the profile's `danger-full-access` default the Host
@@ -450,6 +452,16 @@ function apply(ctx) {
     superagent: {
       last: () => {
         try { return globalThis.localStorage?.getItem(SUPERAGENT_SESSION) || null; } catch { return null; }
+      },
+      /** The conversations this panel started, newest first, from the session catalog. */
+      recent: () => {
+        const snapshot = ctx.sessions?.list?.getSnapshot?.();
+        if (!snapshot?.byId) return [];
+        return Object.values(snapshot.byId)
+          .filter((row) => typeof row.title === 'string' && row.title.startsWith(SUPERAGENT_TITLE))
+          .sort((a, b) => b.updatedAt - a.updatedAt)
+          .slice(0, 5)
+          .map((row) => ({ id: String(row.id), title: row.title, updatedAt: row.updatedAt, running: Boolean(row.running) }));
       },
       open: (sessionId) => {
         if (typeof workspace?.openSession !== 'function') throw new Error('This Harness cannot open a conversation from a plugin.');

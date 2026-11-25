@@ -2552,6 +2552,13 @@ ${block(Object.entries(TOKENS))}
     "Move this week\u2019s reviews to done"
   ];
   var counted = (list2, one, more) => `${list2.length} ${list2.length === 1 ? one : more}`;
+  function shorten(ask, max = 48) {
+    const line = String(ask).trim().split("\n")[0];
+    if (line.length <= max) return line;
+    const cut = line.slice(0, max);
+    const space = cut.lastIndexOf(" ");
+    return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}\u2026`;
+  }
   function briefingOf(data) {
     const n = needsYou(data);
     const running = data.running ?? [];
@@ -2577,6 +2584,13 @@ ${block(Object.entries(TOKENS))}
     const available = Boolean(superagent?.start);
     const last = superagent?.last?.() ?? null;
     const briefing = useMemo(() => data.loaded ? briefingOf(data) : null, [data]);
+    const recent = useMemo(() => {
+      try {
+        return superagent?.recent?.() ?? [];
+      } catch {
+        return [];
+      }
+    }, [superagent, started]);
     const ask = (question) => {
       setDraft(question);
       composer.current?.focus();
@@ -2605,7 +2619,7 @@ ${block(Object.entries(TOKENS))}
       try {
         const id = await superagent.start({
           brief: brief(content),
-          title: `Superagent \xB7 ${scope === "all" ? "whole system" : scopeLabel}`
+          title: `Superagent \xB7 ${scope === "all" ? "whole system" : scopeLabel} \u2014 ${shorten(content)}`
         });
         setStarted(id);
         setDraft("");
@@ -2622,7 +2636,7 @@ ${block(Object.entries(TOKENS))}
         {
           title: "Superagent",
           subtitle: "Ask the system, then watch it work. Every form action has a tool here, and every write waits for your yes.",
-          actions: last ? /* @__PURE__ */ jsx(Button, { onClick: () => superagent.open(last), children: "Continue last conversation" }) : null
+          actions: last && recent.length === 0 ? /* @__PURE__ */ jsx(Button, { onClick: () => superagent.open(last), children: "Continue last conversation" }) : null
         }
       ),
       /* @__PURE__ */ jsxs(FilterBar, { label: "Superagent scope", children: [
@@ -2687,6 +2701,13 @@ ${block(Object.entries(TOKENS))}
         "Started in a conversation",
         host?.superagent?.open ? " \u2014 opened in the main view" : ". Find it in the session list",
         "."
+      ] }) : null,
+      recent.length > 0 ? /* @__PURE__ */ jsxs("section", { className: "aw-superagent__recent", "aria-label": "Superagent conversations", children: [
+        /* @__PURE__ */ jsx("h2", { className: "aw-brief__title", children: "Conversations" }),
+        /* @__PURE__ */ jsx("ul", { className: "aw-superagent__recent-list", children: recent.map((row) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-superagent__recent-row", onClick: () => superagent.open(row.id), children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-superagent__recent-title", children: row.title }),
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: row.running ? "working now" : `${ago(Math.floor(row.updatedAt / 1e3))} ago` })
+        ] }) }, row.id)) })
       ] }) : null,
       /* @__PURE__ */ jsx("div", { className: "aw-superagent__prompts", children: EXAMPLES.map((example) => /* @__PURE__ */ jsx(
         "button",
@@ -11792,6 +11813,12 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-brief__link { padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
 .aw-brief__link:hover { text-decoration: underline; }
 .aw-superagent__composer-hint { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); margin-top: -6px; font-size: var(--aw-type-sm); color: var(--ui-text-secondary, var(--aw-ink-muted)); }
+.aw-superagent__recent { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); }
+.aw-superagent__recent-list { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 10px; overflow: hidden; }
+.aw-superagent__recent-list li + li { border-top: 1px solid var(--ui-border, var(--aw-hairline)); }
+.aw-superagent__recent-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--aw-space-3, 12px); width: 100%; padding: 10px var(--aw-space-3, 12px); border: 0; background: none; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
+.aw-superagent__recent-row:hover { background: var(--ui-hover, var(--aw-hover)); }
+.aw-superagent__recent-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aw-superagent__prompts { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px); }
 .aw-superagent__prompt { padding: 8px 12px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 999px; background: transparent; color: var(--aw-ink); font: inherit; font-size: var(--aw-type-sm); cursor: pointer; text-align: left; }
 .aw-superagent__prompt:hover:not(:disabled) { background: var(--ui-hover, var(--aw-hover)); }
@@ -17716,6 +17743,7 @@ ${question.text ?? ""}`)) {
   var NAMESPACE = "admin";
   var CLIENT_VERSION = "3.9.0";
   var SUPERAGENT_SESSION = "pta.superagent.session";
+  var SUPERAGENT_TITLE = "Superagent \xB7 ";
   var SUPERAGENT_PRESET = "workspace-write";
   var DICTIONARY = { title: "Admin" };
   var STATUS_TINT = {
@@ -18012,6 +18040,12 @@ ${question.text ?? ""}`)) {
           } catch {
             return null;
           }
+        },
+        /** The conversations this panel started, newest first, from the session catalog. */
+        recent: () => {
+          const snapshot = ctx.sessions?.list?.getSnapshot?.();
+          if (!snapshot?.byId) return [];
+          return Object.values(snapshot.byId).filter((row) => typeof row.title === "string" && row.title.startsWith(SUPERAGENT_TITLE)).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5).map((row) => ({ id: String(row.id), title: row.title, updatedAt: row.updatedAt, running: Boolean(row.running) }));
         },
         open: (sessionId) => {
           if (typeof workspace?.openSession !== "function") throw new Error("This Harness cannot open a conversation from a plugin.");

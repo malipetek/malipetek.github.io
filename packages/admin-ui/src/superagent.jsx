@@ -8,7 +8,7 @@
  * second chat rendered here.
  */
 import { useMemo, useRef, useState } from 'react';
-import { needsYou } from './format.js';
+import { ago, needsYou } from './format.js';
 import { useAdmin } from './store.js';
 import { Button, Dot, Empty, FilterBar, Icon, MetaChip, PageHeader, UiStyles } from './ui/index.js';
 
@@ -30,6 +30,15 @@ const EXAMPLES = [
 
 /** `3 tickets stalled`, `1 ticket stalled` — the count reads as a sentence. */
 const counted = (list, one, more) => `${list.length} ${list.length === 1 ? one : more}`;
+
+/** A conversation's title carries its first ask, so the list is scannable. */
+function shorten(ask, max = 48) {
+  const line = String(ask).trim().split('\n')[0];
+  if (line.length <= max) return line;
+  const cut = line.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
 
 /**
  * What the system is saying, before anyone asks. The same rule as Needs you,
@@ -62,6 +71,10 @@ export function SuperagentView() {
   const available = Boolean(superagent?.start);
   const last = superagent?.last?.() ?? null;
   const briefing = useMemo(() => (data.loaded ? briefingOf(data) : null), [data]);
+  /** The conversations this panel started, newest first; empty on a host that cannot list them. */
+  const recent = useMemo(() => {
+    try { return superagent?.recent?.() ?? []; } catch { return []; }
+  }, [superagent, started]);
   /** Put the question in the composer and leave the click on Start to the operator. */
   const ask = (question) => {
     setDraft(question);
@@ -95,7 +108,7 @@ export function SuperagentView() {
     try {
       const id = await superagent.start({
         brief: brief(content),
-        title: `Superagent · ${scope === 'all' ? 'whole system' : scopeLabel}`,
+        title: `Superagent · ${scope === 'all' ? 'whole system' : scopeLabel} — ${shorten(content)}`,
       });
       setStarted(id);
       setDraft('');
@@ -110,7 +123,7 @@ export function SuperagentView() {
       <PageHeader
         title="Superagent"
         subtitle="Ask the system, then watch it work. Every form action has a tool here, and every write waits for your yes."
-        actions={last ? <Button onClick={() => superagent.open(last)}>Continue last conversation</Button> : null}
+        actions={last && recent.length === 0 ? <Button onClick={() => superagent.open(last)}>Continue last conversation</Button> : null}
       />
       <FilterBar label="Superagent scope">
         <label className="aw-field__label" htmlFor="aw-superagent-scope">Scope</label>
@@ -178,6 +191,22 @@ export function SuperagentView() {
         <p className="aw-callout" role="status">
           Started in a conversation{host?.superagent?.open ? ' — opened in the main view' : '. Find it in the session list'}.
         </p>
+      ) : null}
+
+      {recent.length > 0 ? (
+        <section className="aw-superagent__recent" aria-label="Superagent conversations">
+          <h2 className="aw-brief__title">Conversations</h2>
+          <ul className="aw-superagent__recent-list">
+            {recent.map((row) => (
+              <li key={row.id}>
+                <button type="button" className="aw-superagent__recent-row" onClick={() => superagent.open(row.id)}>
+                  <span className="aw-superagent__recent-title">{row.title}</span>
+                  <span className="aw-muted">{row.running ? 'working now' : `${ago(Math.floor(row.updatedAt / 1000))} ago`}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       <div className="aw-superagent__prompts">
