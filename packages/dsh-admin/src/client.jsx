@@ -22,6 +22,7 @@ import { AdminContext, useAdminData } from '../../admin-ui/src/store.js';
 import { ConversationGitGraph } from './conversation-git-graph.mjs';
 import { BoardView, ListView } from '../../admin-ui/src/board.jsx';
 import { ClientsView, FleetView, SettingsView } from '../../admin-ui/src/fleet.jsx';
+import { isSettingsKey, openSettings, settingsSection } from '../../admin-ui/src/settings-link.js';
 import { MarketingView } from '../../admin-ui/src/marketing.jsx';
 import { SeoView } from '../../admin-ui/src/seo.jsx';
 import { Confirm, Icon, Segmented, Skeleton } from '../../admin-ui/src/ui.jsx';
@@ -3152,7 +3153,8 @@ function apply(ctx) {
     if (target === 'marketing') { ctx.layout?.selectPanel?.(MARKETING_PANEL); return; }
     if (target === 'seo') { ctx.layout?.selectPanel?.(SEO_PANEL); return; }
     if (target === 'fleet' || target === 'health') { ctx.layout?.selectPanel?.(FLEET_PANEL); return; }
-    if (target === 'settings') { ctx.layout?.selectPanel?.(SETTINGS_PANEL); }
+    // `settings#marketing` etc.: the section rides settings-link's handoff.
+    if (isSettingsKey(target)) { openSettings(() => ctx.layout?.selectPanel?.(SETTINGS_PANEL), settingsSection(target) ?? undefined); }
   }
 
   function DeskShell({ children, data, reload, allowSignedOut = false }) {
@@ -3582,7 +3584,7 @@ function apply(ctx) {
     }
     if (route === 'settings') {
       handledDeepLink = true;
-      ctx.layout?.selectPanel?.(SETTINGS_PANEL);
+      openSettings(() => ctx.layout?.selectPanel?.(SETTINGS_PANEL), (target ? settingsSection(`settings#${target}`) : null) ?? undefined);
       return true;
     }
     return false;
