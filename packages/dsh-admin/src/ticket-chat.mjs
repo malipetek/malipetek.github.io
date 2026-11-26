@@ -82,23 +82,32 @@ export function ticketActivity(detail) {
   if (!detail) return [];
   const rows = new Map();
   const { ticket } = detail;
-  const add = (source, seconds, label, text) => {
+  // `kind` picks the row's accent in the chat view; `author` fills its avatar.
+  const add = (source, seconds, label, text, kind, author) => {
     const time = seconds * 1000;
     const id = `ticket:${ticket.id}:${source}`;
-    if (typeof seconds === 'number' && seconds > 0 && time <= 8.64e15 && !rows.has(id)) rows.set(id, { id, time, label, text });
+    if (typeof seconds === 'number' && seconds > 0 && time <= 8.64e15 && !rows.has(id)) {
+      rows.set(id, { id, time, label, text, kind, ...(author ? { author } : {}) });
+    }
   };
-  add('opened', ticket.created_at, 'Ticket status', `Ticket #${ticket.id} opened`);
+  add('opened', ticket.created_at, 'Ticket status', `Ticket #${ticket.id} opened`, 'status');
   for (const message of detail.messages ?? []) {
     if (!Number.isSafeInteger(message?.id) || typeof message.body !== 'string') continue;
     const label = message.author === 'system' ? 'Ticket status'
       : message.internal ? 'Private note' : message.author === 'client' ? 'Client message'
         : message.author === 'runner' ? 'Fleet run' : 'Team reply';
-    add(`message:${message.id}`, message.created_at, label, message.body);
+    const kind = message.author === 'system' ? 'status'
+      : message.internal ? 'note' : message.author === 'client' ? 'client'
+        : message.author === 'runner' ? 'run' : 'team';
+    // The client has an identity on the ticket; ours is always us.
+    const author = kind === 'client' ? (ticket.client_email || 'Client')
+      : kind === 'team' || kind === 'note' ? 'You' : undefined;
+    add(`message:${message.id}`, message.created_at, label, message.body, kind, author);
   }
   for (const run of detail.runs) {
     if (!Number.isSafeInteger(run?.id)) continue;
-    add(`run:${run.id}:start`, run.started_at, 'Fleet run', `Run #${run.id} started`);
-    add(`run:${run.id}:finish`, run.finished_at, 'Fleet run', `Run #${run.id} finished${typeof run.status === 'string' ? ` · ${run.status}` : ''}`);
+    add(`run:${run.id}:start`, run.started_at, 'Fleet run', `Run #${run.id} started`, 'run');
+    add(`run:${run.id}:finish`, run.finished_at, 'Fleet run', `Run #${run.id} finished${typeof run.status === 'string' ? ` · ${run.status}` : ''}`, 'run');
   }
   return [...rows.values()].sort((a, b) => a.time - b.time || a.id.localeCompare(b.id));
 }
