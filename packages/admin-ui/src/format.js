@@ -50,7 +50,8 @@ export const clientWaiting = (t) =>
   Boolean(t.client_waiting_since) && !['new', 'done', 'declined'].includes(t.status);
 
 /** One label for sending work back to the queue, wherever it appears. */
-export const RUN_AGAIN = 'Run again';
+/** Queue a ticket for the fleet again; it resumes the last run with what was added since. */
+export const RUN_AGAIN = 'Send back to fleet';
 /** Why queueing again asks first: the fleet may resume the old session. */
 export const REQUEUE_WARNING =
   'This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.';

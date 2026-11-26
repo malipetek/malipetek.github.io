@@ -525,7 +525,7 @@ var __awPlugin = (() => {
   };
   var CLIENT_VISIBLE = ["approved", "declined", "done"];
   var clientWaiting = (t) => Boolean(t.client_waiting_since) && !["new", "done", "declined"].includes(t.status);
-  var RUN_AGAIN = "Run again";
+  var RUN_AGAIN = "Send back to fleet";
   var REQUEUE_WARNING = "This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.";
   var MINE_LABEL = "My task";
   var PRIORITIES = [
@@ -3436,6 +3436,50 @@ ${String(text)}` : String(text);
     return name === null ? null : `Filed by the client's assistant (${name}) through PTech's MCP server`;
   }
 
+  // ../admin-ui/src/requeue.mjs
+  var plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  function lastRun(runs = []) {
+    let best = null;
+    for (const run of runs) {
+      if (!run?.started_at) continue;
+      if (!best || Date.parse(run.started_at) > Date.parse(best.started_at)) best = run;
+    }
+    return best;
+  }
+  function addedSince(messages = [], run = null) {
+    const since = run ? Date.parse(run.started_at) : -Infinity;
+    const added = { client: 0, replies: 0, notes: 0 };
+    for (const m of messages) {
+      if (!m || Date.parse(m.created_at) <= since) continue;
+      if (m.author === "client") added.client += 1;
+      else if (m.author === "ali" && m.internal === 1) added.notes += 1;
+      else if (m.author === "ali") added.replies += 1;
+    }
+    return added;
+  }
+  function requeueBrief({ messages = [], runs = [] } = {}) {
+    const run = lastRun(runs);
+    if (!run) {
+      return { fresh: true, text: "A fleet node picks it up and works from the request and its thread. This can change the status and notify the client." };
+    }
+    const added = addedSince(messages, run);
+    const parts = [
+      added.client ? plural(added.client, "client message") : null,
+      added.replies ? plural(added.replies, "reply", "replies") : null,
+      added.notes ? plural(added.notes, "private note") : null
+    ].filter(Boolean);
+    if (!parts.length) {
+      return {
+        fresh: false,
+        text: `Nothing was added since run #${run.id}, so the agent gets the same instructions as last time. Add a private note saying what to change first. This can change the status and notify the client.`
+      };
+    }
+    return {
+      fresh: true,
+      text: `A fleet node resumes run #${run.id} with what was added since: ${parts.join(", ")}. This can change the status and notify the client.`
+    };
+  }
+
   // ../admin-ui/src/ticket.jsx
   var PRIMARY = {
     new: [
@@ -3450,7 +3494,7 @@ ${String(text)}` : String(text);
     done: [["approved", RUN_AGAIN, "ghost"]],
     declined: [["new", "Reopen", "ghost"]]
   };
-  function TicketView({ id, active, details = true, chrome = true }) {
+  function TicketView({ id, active, details = true, chrome = true, thread = true }) {
     const { api, act } = useAdmin();
     const [{ ticket, messages, runs, review, screenshots, land, error, loading, fetchedAt }, reload] = useTicket(api, id);
     const meter = useMeter(api, ticket, active);
@@ -3474,7 +3518,7 @@ ${String(text)}` : String(text);
           " ",
           /* @__PURE__ */ jsx(Button, { size: "sm", onClick: reload, children: "Retry refresh" })
         ] }) : null,
-        /* @__PURE__ */ jsxs("header", { className: "aw-ticket__head", children: [
+        chrome || thread || clientWaiting(ticket) ? /* @__PURE__ */ jsxs("header", { className: "aw-ticket__head", children: [
           chrome ? /* @__PURE__ */ jsxs("div", { className: "aw-ticket__crumbs", children: [
             /* @__PURE__ */ jsxs("span", { className: "aw-mono", children: [
               "#",
@@ -3507,7 +3551,7 @@ ${String(text)}` : String(text);
             ago(ticket.client_waiting_since),
             " ago and is waiting for an answer.",
             /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-            /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setReplyAt(Date.now()), children: "Reply" }),
+            thread ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setReplyAt(Date.now()), children: "Reply" }) : null,
             /* @__PURE__ */ jsx(
               Button,
               {
@@ -3518,8 +3562,12 @@ ${String(text)}` : String(text);
               }
             )
           ] }) : null,
-          details ? null : /* @__PURE__ */ jsx("div", { className: "aw-ticket__quick", children: /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }) })
-        ] }),
+          details || !thread ? null : /* @__PURE__ */ jsx("div", { className: "aw-ticket__quick", children: /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload, messages }) })
+        ] }) : null,
+        thread ? null : (
+          // The thread already lives in the host's chat; this is the ticket's controls.
+          /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload, messages, page: true })
+        ),
         ticket.status === "review" ? /* @__PURE__ */ jsx(
           ReviewCard,
           {
@@ -3539,21 +3587,24 @@ ${String(text)}` : String(text);
           ] }),
           /* @__PURE__ */ jsx(RecordedEvidence, { runs, screenshots, review })
         ] }) : null,
-        /* @__PURE__ */ jsx(Timeline, { ticket, messages, runs }, `timeline-${ticket.id}`),
-        /* @__PURE__ */ jsx(Composer, { ticket, onSent: reload, replyAt }, ticket.id)
+        thread ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Timeline, { ticket, messages, runs }, `timeline-${ticket.id}`),
+          /* @__PURE__ */ jsx(Composer, { ticket, onSent: reload, replyAt }, ticket.id)
+        ] }) : null
       ] }),
-      details ? /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload }) : null
+      details && thread ? /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload, messages }) : null
     ] });
   }
-  function TicketActions({ ticket, runs, land, reload }) {
+  function TicketActions({ ticket, runs, land, reload, messages = null }) {
     const { api, setStatus, act, ask } = useAdmin();
     const live = runs.find((r) => r.status === "running");
     const move = (s) => {
       if (s === "approved" && ticket.status !== "new" && ticket.kind !== "system") {
+        const brief = messages ? requeueBrief({ messages, runs }) : { fresh: true, text: REQUEUE_WARNING };
         ask({
           title: `${RUN_AGAIN} for #${ticket.id}?`,
-          text: REQUEUE_WARNING,
-          confirm: RUN_AGAIN,
+          text: brief.text,
+          confirm: brief.fresh ? RUN_AGAIN : "Send anyway",
           run: () => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, { status: "approved" })).then(reload)
         });
         return;
@@ -3563,7 +3614,17 @@ ${String(text)}` : String(text);
     const canLand = Boolean(ticket.project_id) && ticket.status === "done" && runs.length > 0;
     return /* @__PURE__ */ jsxs("div", { className: "aw-ticket__actions", children: [
       /* @__PURE__ */ jsx(StatusPill, { status: ticket.status }),
-      (PRIMARY[ticket.status] ?? []).map(([s, label, kind]) => /* @__PURE__ */ jsx(Button, { kind, size: "sm", onClick: () => void move(s), children: label }, s)),
+      (PRIMARY[ticket.status] ?? []).map(([s, label, kind]) => /* @__PURE__ */ jsx(
+        Button,
+        {
+          kind,
+          size: "sm",
+          onClick: () => void move(s),
+          title: label === RUN_AGAIN ? "Queue it for a fleet node, which resumes the last run with every message and private note added since." : void 0,
+          children: label
+        },
+        s
+      )),
       live && !live.cancel_requested ? /* @__PURE__ */ jsx(
         Button,
         {
@@ -4195,7 +4256,7 @@ ${String(text)}` : String(text);
       ] })
     ] });
   }
-  function TicketDetails({ ticket, runs, land, meter, reload, page = false }) {
+  function TicketDetails({ ticket, runs, land, meter, reload, messages = null, page = false }) {
     const { api, data, act, setStatus } = useAdmin();
     const isClient = ticket.kind !== "system";
     const projectSites = data.projects.find((p) => p.id === ticket.project_id)?.sites ?? [];
@@ -4207,7 +4268,7 @@ ${String(text)}` : String(text);
     const where = predict(data.nodes, { slug: ticket.project_slug, requires, executor: ticket.executor, kind: ticket.kind });
     const price = billOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0, firstPreview: Boolean(ticket.first_preview) });
     return /* @__PURE__ */ jsxs("aside", { className: cx2("aw-details", page && "aw-details--page"), "aria-label": "Details", children: [
-      /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }),
+      /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload, messages }),
       /* @__PURE__ */ jsxs("div", { className: "aw-details__pair", children: [
         /* @__PURE__ */ jsx(Field, { label: "Project", children: /* @__PURE__ */ jsxs("select", { value: ticket.project_id ?? "", onChange: (e) => void patch({ projectId: e.target.value || null }, "Project saved."), children: [
           /* @__PURE__ */ jsx("option", { value: "", children: "No project" }),
@@ -5098,7 +5159,7 @@ ${SITE_LINK}` : SITE_LINK;
   var cycleMessage = (result) => result?.filed ? `Filed #${result.id}: an agent writes the posts and the desk queues them.` : CYCLE_SKIP[result?.reason] ?? `Nothing filed: ${result?.reason ?? "unknown reason"}`;
   var offsetLabel = (minutes) => `UTC${minutes >= 0 ? "+" : "\u2212"}${Math.abs(minutes) / 60}`;
   var snippet = (text, max = 90) => text.length > max ? `${text.slice(0, max)}\u2026` : text;
-  var plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  var plural2 = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   var dateLabel = (unix) => unix ? new Date(unix * 1e3).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
   var siteHref = (site) => /^https?:/.test(site) ? site : `https://${site}`;
   var CONTACT_STATE = {
@@ -5797,14 +5858,14 @@ ${SITE_LINK}` : SITE_LINK;
     if (postsAwaiting > 0) {
       items.push({
         key: "posts-awaiting",
-        text: `${plural(postsAwaiting, "post awaits", "posts await")} approval.`,
+        text: `${plural2(postsAwaiting, "post awaits", "posts await")} approval.`,
         action: { label: "Review posts", run: () => onTab("posts") }
       });
     }
     if (pulse.postsFailed > 0) {
       items.push({
         key: "posts-failed",
-        text: `${plural(pulse.postsFailed, "post", "posts")} failed to publish.`,
+        text: `${plural2(pulse.postsFailed, "post", "posts")} failed to publish.`,
         action: { label: "Open Posts", run: () => onTab("posts") }
       });
     }
@@ -5812,7 +5873,7 @@ ${SITE_LINK}` : SITE_LINK;
       const n = queue.messages.length;
       items.push({
         key: "review",
-        text: `${plural(n >= 100 ? "100+" : n, "first email waits", "first emails wait")} for review.`,
+        text: `${plural2(n >= 100 ? "100+" : n, "first email waits", "first emails wait")} for review.`,
         action: { label: "Review next", run: onReview }
       });
     }
@@ -6389,7 +6450,7 @@ ${SITE_LINK}` : SITE_LINK;
         /* @__PURE__ */ jsx(Button, { size: "sm", disabled: filters.offset + paging.page >= paging.total, onClick: () => filter({ offset: filters.offset + paging.page }), children: "Next" }),
         /* @__PURE__ */ jsx("span", { className: "aw-mk-spacer" }),
         selectedBulk.size ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("span", { children: plural(selectedBulk.size, "contact selected", "contacts selected") }),
+          /* @__PURE__ */ jsx("span", { children: plural2(selectedBulk.size, "contact selected", "contacts selected") }),
           /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", disabled: selectedBulk.size > 100, onClick: () => setModal({ kind: "bulkqueue" }), children: "Queue selected" }),
           /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => bulk("pause"), children: "Pause" }),
           /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => bulk("opt_out"), children: "Opt out" }),
@@ -6429,7 +6490,7 @@ ${SITE_LINK}` : SITE_LINK;
       /* @__PURE__ */ jsxs("details", { className: "ui-disclosure", children: [
         /* @__PURE__ */ jsxs("summary", { children: [
           "Source health breakdown",
-          /* @__PURE__ */ jsx("span", { className: "ui-disclosure__hint", children: sources.length ? plural(sources.length, "source", "sources") : sourcesRes.loading ? "Loading\u2026" : "None" })
+          /* @__PURE__ */ jsx("span", { className: "ui-disclosure__hint", children: sources.length ? plural2(sources.length, "source", "sources") : sourcesRes.loading ? "Loading\u2026" : "None" })
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "ui-disclosure__body", children: [
           /* @__PURE__ */ jsx("p", { className: "aw-muted aw-mk-no-top", children: "A source is the label given at import (the file name by default). Rates are per contact reached. A source whose bounces pass 4% will pause the whole desk, so drop or verify it first. Click any source to filter Contacts." }),
@@ -6617,7 +6678,7 @@ ${SITE_LINK}` : SITE_LINK;
       /* @__PURE__ */ jsxs("details", { className: "ui-disclosure", children: [
         /* @__PURE__ */ jsxs("summary", { children: [
           "Recent events",
-          /* @__PURE__ */ jsx("span", { className: "ui-disclosure__hint", children: plural(visibleEvents.length, "event", "events") })
+          /* @__PURE__ */ jsx("span", { className: "ui-disclosure__hint", children: plural2(visibleEvents.length, "event", "events") })
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "ui-disclosure__body", children: [
           /* @__PURE__ */ jsxs("div", { className: "aw-mk-bar", children: [
@@ -8360,7 +8421,7 @@ ${SITE_LINK}` : SITE_LINK;
     no_admin: "there is no admin account to file it for",
     insert_failed: "the ticket could not be written"
   };
-  var plural2 = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  var plural3 = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   var OUR_DOMAINS = ["malipetek.dev", "ptechsolutions.net"];
   var isOurDomain = (domain) => OUR_DOMAINS.some((host) => domain === host || domain.endsWith(`.${host}`));
   var pct2 = (rate) => `${Number(((rate ?? 0) * 100).toFixed(1))}%`;
@@ -8545,7 +8606,7 @@ ${SITE_LINK}` : SITE_LINK;
               state: "late",
               tone: "warn",
               label: late.length === 1 ? `${late[0].label} overdue` : `${late.length} runs overdue`,
-              title: late.map((entry) => `${entry.label}: due every ${plural2(entry.days, "day", "days")}`).join("; ")
+              title: late.map((entry) => `${entry.label}: due every ${plural3(entry.days, "day", "days")}`).join("; ")
             }
           ) : /* @__PURE__ */ jsx(StateIndicator, { state: "on_schedule", tone: "ok", label: "On schedule" }),
           actions: /* @__PURE__ */ jsx(
@@ -8614,9 +8675,9 @@ ${SITE_LINK}` : SITE_LINK;
       if (result.skipped === "no_keywords") return "No keywords tracked. Add some in Settings first.";
       if (result.skipped === "api_failed") return "DataForSEO did not answer; nothing was queued or charged.";
       if (result.posted) {
-        return `Queued ${plural2(result.posted, "keyword", "keywords")} on the standard queue (~$${(result.cost ?? 0).toFixed(4)}). Results land on later cron ticks.`;
+        return `Queued ${plural3(result.posted, "keyword", "keywords")} on the standard queue (~$${(result.cost ?? 0).toFixed(4)}). Results land on later cron ticks.`;
       }
-      return `Collected ${plural2(result.collected ?? 0, "keyword", "keywords")}; ${result.pending ?? 0} still queued.`;
+      return `Collected ${plural3(result.collected ?? 0, "keyword", "keywords")}; ${result.pending ?? 0} still queued.`;
     }
     if (result.what === "cycle") {
       if (result.filed) return `Filed #${result.id}. An agent takes the worst findings next.`;
@@ -8658,7 +8719,7 @@ ${SITE_LINK}` : SITE_LINK;
         StatRow,
         {
           items: [
-            ...overview.hosts.map((host) => ({ label: `${host.host} score`, value: host.averageScore, hint: plural2(host.pages, "page", "pages") })),
+            ...overview.hosts.map((host) => ({ label: `${host.host} score`, value: host.averageScore, hint: plural3(host.pages, "page", "pages") })),
             { label: "open findings", value: openFindings },
             { label: "assistant mention rate", value: pct2(overview.geo.rate), hint: `${overview.geo.mentions} of ${overview.geo.runs} answers named us` },
             { label: "average Google position", value: hasValue(rank.avgPosition) ? rank.avgPosition : "\u2014" },
@@ -8739,10 +8800,10 @@ ${SITE_LINK}` : SITE_LINK;
             /* @__PURE__ */ jsx("dt", { children: "Swing" }),
             /* @__PURE__ */ jsx("dd", { title: "Week over week; a few positions is normal", children: swingText(rank.swing) }),
             /* @__PURE__ */ jsx("dt", { children: "Keywords" }),
-            /* @__PURE__ */ jsx("dd", { children: plural2(rank.keywords ?? 0, "keyword", "keywords") }),
+            /* @__PURE__ */ jsx("dd", { children: plural3(rank.keywords ?? 0, "keyword", "keywords") }),
             rank.pending ? /* @__PURE__ */ jsxs(Fragment2, { children: [
               /* @__PURE__ */ jsx("dt", { children: "Queued" }),
-              /* @__PURE__ */ jsx("dd", { children: plural2(rank.pending, "task", "tasks") })
+              /* @__PURE__ */ jsx("dd", { children: plural3(rank.pending, "task", "tasks") })
             ] }) : null
           ] }),
           /* @__PURE__ */ jsx("p", { className: "ui-note aw-seo-gap", children: rank.rankReady ? `Weekly Google positions for the keywords we sell against, last checked ${rank.latestDay ? shortDay2(rank.latestDay) : "never"}.` : "Add the DATAFORSEO_API_KEY secret to the intercom Worker to turn rank tracking on." })
@@ -8835,7 +8896,7 @@ ${SITE_LINK}` : SITE_LINK;
         entry.at ? `${ago(entry.at)} ago` : "Not run yet",
         /* @__PURE__ */ jsxs("span", { className: "ui-note", children: [
           " \xB7 every ",
-          plural2(entry.days, "day", "days")
+          plural3(entry.days, "day", "days")
         ] }),
         late ? /* @__PURE__ */ jsxs(Fragment2, { children: [
           " ",
@@ -9085,7 +9146,7 @@ ${SITE_LINK}` : SITE_LINK;
             data ? /* @__PURE__ */ jsxs("span", { className: "aw-seo-filters__meta", children: [
               data.averageScore,
               " average \xB7 ",
-              plural2(data.pages?.length ?? 0, "page", "pages")
+              plural3(data.pages?.length ?? 0, "page", "pages")
             ] }) : null
           ] }),
           error && data ? /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load }) : null,
@@ -9629,7 +9690,7 @@ ${SITE_LINK}` : SITE_LINK;
       ) }),
       /* @__PURE__ */ jsxs("dl", { className: "ui-props", children: [
         /* @__PURE__ */ jsx("dt", { children: "Asked" }),
-        /* @__PURE__ */ jsx("dd", { children: plural2(entry.runs.length, "time", "times") }),
+        /* @__PURE__ */ jsx("dd", { children: plural3(entry.runs.length, "time", "times") }),
         /* @__PURE__ */ jsx("dt", { children: "Named us" }),
         /* @__PURE__ */ jsxs("dd", { children: [
           entry.named,
@@ -9745,10 +9806,10 @@ ${SITE_LINK}` : SITE_LINK;
                 { label: "swing", value: swingText(data.swing), hint: "Week over week; a few positions is normal" },
                 {
                   label: "keywords",
-                  value: plural2((data.keywords ?? []).length, "keyword", "keywords"),
+                  value: plural3((data.keywords ?? []).length, "keyword", "keywords"),
                   hint: `DataForSEO location ${location2.locationCode}/${location2.languageCode}`
                 },
-                ...data.pending ? [{ label: "queued", value: plural2(data.pending, "task", "tasks") }] : []
+                ...data.pending ? [{ label: "queued", value: plural3(data.pending, "task", "tasks") }] : []
               ]
             }
           ) }) : null,
@@ -17606,13 +17667,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
   function useTicketContext({ api, data, reload, host, files }) {
-    const ask = useCallback((question) => {
-      if (typeof window !== "undefined" && window.confirm(`${question.title}
-
-${question.text ?? ""}`)) {
-        void question.run?.();
-      }
-    }, []);
+    const [question, setQuestion] = useState(null);
+    const ask = useCallback((next) => setQuestion(next), []);
+    const dialog = question ? /* @__PURE__ */ jsx(Confirm, { ask: question, onClose: () => setQuestion(null) }) : null;
     const onNotify = useCallback((text, kind) => host?.notify?.(text, kind), [host]);
     const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: ask, onNotify });
     const value = useMemo(
@@ -17638,17 +17695,17 @@ ${question.text ?? ""}`)) {
       }),
       [api, files, data, reload, host, setStatus, act, notify, ask]
     );
-    return { value, toast, dismissToast };
+    return { value, toast, dismissToast, dialog };
   }
   function TicketSidePanel({ api, host = null, ticketId, page = false }) {
     const [data, reloadData] = useAdminData(api);
-    const [{ ticket, runs, land, loading }, reloadTicket] = useTicket(api, ticketId);
+    const [{ ticket, messages, runs, land, loading }, reloadTicket] = useTicket(api, ticketId);
     const meter = useMeter(api, ticket, Boolean(ticket));
     const reload = useCallback(() => {
       void reloadData();
       void reloadTicket();
     }, [reloadData, reloadTicket]);
-    const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files: null });
+    const { value, toast, dismissToast, dialog } = useTicketContext({ api, data, reload, host, files: null });
     const scope = page ? "aw--page" : "aw--scroll";
     if (loading && !ticket) {
       return /* @__PURE__ */ jsxs("div", { className: cx2("aw", scope), children: [
@@ -17665,40 +17722,43 @@ ${question.text ?? ""}`)) {
     return /* @__PURE__ */ jsxs("div", { className: cx2("aw aw--dsh", scope), children: [
       /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
-        /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload, page }),
-        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast })
+        /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload, messages, page }),
+        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast }),
+        dialog
       ] })
     ] });
   }
-  function TicketPage({ api, host = null, files = null, ticketId, part = "thread", autoMeter = true, chrome = true }) {
+  function TicketPage({ api, host = null, files = null, ticketId, part = "thread", autoMeter = true, chrome = true, thread = true }) {
     if (part === "details") return /* @__PURE__ */ jsx(TicketSidePanel, { api, host, ticketId, page: true });
-    return /* @__PURE__ */ jsx(TicketThread, { api, host, files, ticketId, autoMeter, chrome });
+    return /* @__PURE__ */ jsx(TicketThread, { api, host, files, ticketId, autoMeter, chrome, thread });
   }
   function ClientPage({ api, host = null, files = null, clientId }) {
     const [data, reloadData] = useAdminData(api);
     const reload = useCallback(() => {
       void reloadData();
     }, [reloadData]);
-    const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
+    const { value, toast, dismissToast, dialog } = useTicketContext({ api, data, reload, host, files });
     return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh aw--scroll", children: [
       /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
         data.error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: errorText(data.error) }) : /* @__PURE__ */ jsx(ClientView, { id: clientId }),
-        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast })
+        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast }),
+        dialog
       ] })
     ] });
   }
-  function TicketThread({ api, host, files, ticketId, autoMeter, chrome = true }) {
+  function TicketThread({ api, host, files, ticketId, autoMeter, chrome = true, thread = true }) {
     const [data, reloadData] = useAdminData(api);
     const reload = useCallback(() => {
       void reloadData();
     }, [reloadData]);
-    const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
+    const { value, toast, dismissToast, dialog } = useTicketContext({ api, data, reload, host, files });
     return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh aw--scroll", children: [
       /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
-        /* @__PURE__ */ jsx(TicketView, { id: ticketId, active: autoMeter, details: false, chrome }),
-        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast })
+        /* @__PURE__ */ jsx(TicketView, { id: ticketId, active: autoMeter, details: false, chrome, thread }),
+        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast }),
+        dialog
       ] })
     ] });
   }
@@ -18485,7 +18545,7 @@ ${question.text ?? ""}`)) {
     function NativeTask({ sessionId }) {
       const ticket = ticketFromCwd(useSessionCwd(sessionId));
       if (!ticket) return null;
-      return /* @__PURE__ */ jsx("div", { className: "pta-native-task", children: /* @__PURE__ */ jsx(TicketPage, { api, host, files, ticketId: ticket.ticketId, autoMeter: false, chrome: false }, `${sessionId}:${ticket.ticketId}`) });
+      return /* @__PURE__ */ jsx("div", { className: "pta-native-task", children: /* @__PURE__ */ jsx(TicketPage, { api, host, files, ticketId: ticket.ticketId, autoMeter: false, chrome: false, thread: false }, `${sessionId}:${ticket.ticketId}`) });
     }
     function NativeHistory({ sessionId }) {
       const ticket = ticketFromCwd(useSessionCwd(sessionId));

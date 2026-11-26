@@ -1193,14 +1193,14 @@ export function ProjectPage({ api, id, host = null, files = null }) {
  * details pane and the whole page cannot answer differently — through the same
  * actions the shell uses. `files` is how the host saves attachments (a download);
  * `host.upload` is how it sends them, and a host without one gets no attach
- * control. A host without a dialog asks with `window.confirm` instead.
+ * control. Questions open the same in-page `Confirm` the workbench uses:
+ * `window.confirm` cannot be trusted in a desktop host (Electron may answer it
+ * without showing anything, which once queued a ticket nobody confirmed).
  */
 function useTicketContext({ api, data, reload, host, files }) {
-  const ask = useCallback((question) => {
-    if (typeof window !== 'undefined' && window.confirm(`${question.title}\n\n${question.text ?? ''}`)) {
-      void question.run?.();
-    }
-  }, []);
+  const [question, setQuestion] = useState(null);
+  const ask = useCallback((next) => setQuestion(next), []);
+  const dialog = question ? <Confirm ask={question} onClose={() => setQuestion(null)} /> : null;
   const onNotify = useCallback((text, kind) => host?.notify?.(text, kind), [host]);
   const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: ask, onNotify });
   const value = useMemo(
@@ -1223,7 +1223,7 @@ function useTicketContext({ api, data, reload, host, files }) {
     }),
     [api, files, data, reload, host, setStatus, act, notify, ask],
   );
-  return { value, toast, dismissToast };
+  return { value, toast, dismissToast, dialog };
 }
 
 /**
@@ -1234,7 +1234,7 @@ function useTicketContext({ api, data, reload, host, files }) {
  */
 export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
   const [data, reloadData] = useAdminData(api);
-  const [{ ticket, runs, land, loading }, reloadTicket] = useTicket(api, ticketId);
+  const [{ ticket, messages, runs, land, loading }, reloadTicket] = useTicket(api, ticketId);
   const meter = useMeter(api, ticket, Boolean(ticket));
   const reload = useCallback(() => {
     void reloadData();
@@ -1243,7 +1243,7 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
 
   // The host as given: the pane offers what its host can do (Git Graph, the
   // Admin copy of the ticket) and nothing it cannot.
-  const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files: null });
+  const { value, toast, dismissToast, dialog } = useTicketContext({ api, data, reload, host, files: null });
 
   // The theme lives on `.aw` (every `--aw-*` variable is defined there). Without
   // it the panel renders with no accent, no panel background and the wrong ink —
@@ -1271,8 +1271,8 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
     <div className={cx('aw aw--dsh', scope)}>
       <InjectedStyles id="aw-app-styles" css={STYLES} />
       <AdminContext.Provider value={value}>
-        <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} page={page} />
-        <Toast toast={toast} onDismiss={dismissToast} />
+        <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} messages={messages} page={page} />
+        <Toast toast={toast} onDismiss={dismissToast} />{dialog}
       </AdminContext.Provider>
     </div>
   );
@@ -1284,11 +1284,11 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
  * workbench: the Harness conversation's Ticket view. Same `TicketView`, data
  * hooks, provider and styles as the workbench page, so the two cannot drift.
  */
-export function TicketPage({ api, host = null, files = null, ticketId, part = 'thread', autoMeter = true, chrome = true }) {
+export function TicketPage({ api, host = null, files = null, ticketId, part = 'thread', autoMeter = true, chrome = true, thread = true }) {
   // A host with a narrow conversation shows the details as a tab of their own
   // (`part: 'details'`) rather than as a column that squeezes the thread.
   if (part === 'details') return <TicketSidePanel api={api} host={host} ticketId={ticketId} page />;
-  return <TicketThread api={api} host={host} files={files} ticketId={ticketId} autoMeter={autoMeter} chrome={chrome} />;
+  return <TicketThread api={api} host={host} files={files} ticketId={ticketId} autoMeter={autoMeter} chrome={chrome} thread={thread} />;
 }
 
 /**
@@ -1300,32 +1300,32 @@ export function ClientPage({ api, host = null, files = null, clientId }) {
   const reload = useCallback(() => {
     void reloadData();
   }, [reloadData]);
-  const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
+  const { value, toast, dismissToast, dialog } = useTicketContext({ api, data, reload, host, files });
   return (
     <div className="aw aw--dsh aw--scroll">
       <InjectedStyles id="aw-app-styles" css={STYLES} />
       <AdminContext.Provider value={value}>
         {data.error ? <p className="aw-empty">{errorText(data.error)}</p> : <ClientView id={clientId} />}
-        <Toast toast={toast} onDismiss={dismissToast} />
+        <Toast toast={toast} onDismiss={dismissToast} />{dialog}
       </AdminContext.Provider>
     </div>
   );
 }
 
-function TicketThread({ api, host, files, ticketId, autoMeter, chrome = true }) {
+function TicketThread({ api, host, files, ticketId, autoMeter, chrome = true, thread = true }) {
   const [data, reloadData] = useAdminData(api);
   const reload = useCallback(() => {
     void reloadData();
   }, [reloadData]);
-  const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
+  const { value, toast, dismissToast, dialog } = useTicketContext({ api, data, reload, host, files });
   // `.aw` scopes the panel's variables; block layout, because `.aw` is also the
   // app shell's grid. The page scrolls inside the tab, not the conversation.
   return (
     <div className="aw aw--dsh aw--scroll">
       <InjectedStyles id="aw-app-styles" css={STYLES} />
       <AdminContext.Provider value={value}>
-        <TicketView id={ticketId} active={autoMeter} details={false} chrome={chrome} />
-        <Toast toast={toast} onDismiss={dismissToast} />
+        <TicketView id={ticketId} active={autoMeter} details={false} chrome={chrome} thread={thread} />
+        <Toast toast={toast} onDismiss={dismissToast} />{dialog}
       </AdminContext.Provider>
     </div>
   );

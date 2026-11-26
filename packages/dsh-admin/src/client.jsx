@@ -537,7 +537,7 @@ function apply(ctx) {
     if (!ticket) return null;
     return (
       <div className="pta-native-task">
-        <TicketPage key={`${sessionId}:${ticket.ticketId}`} api={api} host={host} files={files} ticketId={ticket.ticketId} autoMeter={false} chrome={false} />
+        <TicketPage key={`${sessionId}:${ticket.ticketId}`} api={api} host={host} files={files} ticketId={ticket.ticketId} autoMeter={false} chrome={false} thread={false} />
       </div>
     );
   }

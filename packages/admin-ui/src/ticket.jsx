@@ -33,6 +33,7 @@ import { createStepRequest } from './request-state.js';
 import { MentionRecipients } from './mention-recipients.jsx';
 import { createMentionDelivery } from './mention-delivery.js';
 import { assistantBadge, assistantBadgeTitle } from './ticket-assistant.mjs';
+import { requeueBrief } from './requeue.mjs';
 
 /** The obvious next moves for each status; anything else is in the Status select. */
 const PRIMARY = {
@@ -55,7 +56,7 @@ const PRIMARY = {
  * its own instead — the status moves then move up into the header, because
  * that column is where they lived.
  */
-export function TicketView({ id, active, details = true, chrome = true }) {
+export function TicketView({ id, active, details = true, chrome = true, thread = true }) {
   const { api, act } = useAdmin();
   const [{ ticket, messages, runs, review, screenshots, land, error, loading, fetchedAt }, reload] = useTicket(api, id);
   const meter = useMeter(api, ticket, active);
@@ -79,6 +80,7 @@ export function TicketView({ id, active, details = true, chrome = true }) {
       ) : null}
       <div className="aw-ticket__main">
         {error ? <div className="aw-banner aw-banner--warn" role="alert"><span className="aw-banner__text">Refresh failed. Showing ticket evidence last fetched {fetchedAt ? new Date(fetchedAt).toLocaleString() : 'at an unknown time'}. {errorText(error)}</span> <Button size="sm" onClick={reload}>Retry refresh</Button></div> : null}
+        {chrome || thread || clientWaiting(ticket) ? (
         <header className="aw-ticket__head">
           {chrome ? (
           <div className="aw-ticket__crumbs">
@@ -110,9 +112,11 @@ export function TicketView({ id, active, details = true, chrome = true }) {
             <div className="aw-banner aw-banner--warn">
               <Dot state="warn" /> The client wrote {ago(ticket.client_waiting_since)} ago and is waiting for an answer.
               <span className="aw-toolbar__fill" />
-              <Button size="sm" onClick={() => setReplyAt(Date.now())}>
-                Reply
-              </Button>
+              {thread ? (
+                <Button size="sm" onClick={() => setReplyAt(Date.now())}>
+                  Reply
+                </Button>
+              ) : null}
               <Button
                 size="sm"
                 kind="ghost"
@@ -122,12 +126,17 @@ export function TicketView({ id, active, details = true, chrome = true }) {
               </Button>
             </div>
           ) : null}
-          {details ? null : (
+          {details || !thread ? null : (
             <div className="aw-ticket__quick">
-              <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} />
+              <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} messages={messages} />
             </div>
           )}
         </header>
+        ) : null}
+        {thread ? null : (
+          // The thread already lives in the host's chat; this is the ticket's controls.
+          <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} messages={messages} page />
+        )}
 
         {ticket.status === 'review' ? (
           <ReviewCard
@@ -144,10 +153,14 @@ export function TicketView({ id, active, details = true, chrome = true }) {
             <RecordedEvidence runs={runs} screenshots={screenshots} review={review} />
           </details>
         ) : null}
-        <Timeline key={`timeline-${ticket.id}`} ticket={ticket} messages={messages} runs={runs} />
-        <Composer key={ticket.id} ticket={ticket} onSent={reload} replyAt={replyAt} />
+        {thread ? (
+          <>
+            <Timeline key={`timeline-${ticket.id}`} ticket={ticket} messages={messages} runs={runs} />
+            <Composer key={ticket.id} ticket={ticket} onSent={reload} replyAt={replyAt} />
+          </>
+        ) : null}
       </div>
-      {details ? <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} /> : null}
+      {details && thread ? <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} messages={messages} /> : null}
     </div>
   );
 }
@@ -157,17 +170,18 @@ export function TicketView({ id, active, details = true, chrome = true }) {
  * run, landing the work, reviewing it. At the top of the sticky details
  * column, so it stays in reach however far the thread scrolls.
  */
-function TicketActions({ ticket, runs, land, reload }) {
+function TicketActions({ ticket, runs, land, reload, messages = null }) {
   const { api, setStatus, act, ask } = useAdmin();
   const live = runs.find((r) => r.status === 'running');
   const move = (s) => {
     // Queueing again is deliberate: the fleet may resume the old session. System
     // work has no client to notify, so it just goes back to the queue.
     if (s === 'approved' && ticket.status !== 'new' && ticket.kind !== 'system') {
+      const brief = messages ? requeueBrief({ messages, runs }) : { fresh: true, text: REQUEUE_WARNING };
       ask({
         title: `${RUN_AGAIN} for #${ticket.id}?`,
-        text: REQUEUE_WARNING,
-        confirm: RUN_AGAIN,
+        text: brief.text,
+        confirm: brief.fresh ? RUN_AGAIN : 'Send anyway',
         run: () => act(() => api('PATCH', `/admin/tickets/${ticket.id}`, { status: 'approved' })).then(reload),
       });
       return;
@@ -181,7 +195,8 @@ function TicketActions({ ticket, runs, land, reload }) {
     <div className="aw-ticket__actions">
       <StatusPill status={ticket.status} />
       {(PRIMARY[ticket.status] ?? []).map(([s, label, kind]) => (
-        <Button key={s} kind={kind} size="sm" onClick={() => void move(s)}>
+        <Button key={s} kind={kind} size="sm" onClick={() => void move(s)}
+          title={label === RUN_AGAIN ? 'Queue it for a fleet node, which resumes the last run with every message and private note added since.' : undefined}>
           {label}
         </Button>
       ))}
@@ -898,7 +913,7 @@ function AdminSite({ project, site }) {
   );
 }
 
-export function TicketDetails({ ticket, runs, land, meter, reload, page = false }) {
+export function TicketDetails({ ticket, runs, land, meter, reload, messages = null, page = false }) {
   const { api, data, act, setStatus } = useAdmin();
   const isClient = ticket.kind !== 'system';
   const projectSites = data.projects.find((p) => p.id === ticket.project_id)?.sites ?? [];
@@ -911,7 +926,7 @@ export function TicketDetails({ ticket, runs, land, meter, reload, page = false 
   const price = billOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0, firstPreview: Boolean(ticket.first_preview) });
   return (
     <aside className={cx('aw-details', page && 'aw-details--page')} aria-label="Details">
-      <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} />
+      <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} messages={messages} />
       <div className="aw-details__pair">
         <Field label="Project">
           <select value={ticket.project_id ?? ''} onChange={(e) => void patch({ projectId: e.target.value || null }, 'Project saved.')}>
