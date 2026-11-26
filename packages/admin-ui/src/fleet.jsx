@@ -4,6 +4,7 @@ import { LOCALES } from '../../../src/lib/locales.js';
 import { useAdmin, usePoll } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } from './format.js';
 import { AskSuperagentButton } from './superagent-ask.jsx';
+import { clientsLabel, projectRows } from './projects-model.mjs';
 import {
   Button,
   Chips,
@@ -1238,6 +1239,64 @@ export function ClientsView() {
         </div>
         {selected ? <ClientInspector c={selected} onClose={close} /> : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Every project in the portal, whether or not a client is on it yet. The
+ * Clients page reaches a project through its client; this is the way in for a
+ * project nobody has been invited to.
+ */
+export function ProjectsView() {
+  const { data, setModal, open } = useAdmin();
+  const [query, setQuery] = useState('');
+  const [scope, setScope] = useState('all');
+  const rows = useMemo(() => projectRows(data.projects, data.clients, { query, scope }), [data.projects, data.clients, query, scope]);
+  const total = data.projects?.length ?? 0;
+  return (
+    <div className="ui-workspace aw-projects">
+      <UiStyles />
+      <PageHeader
+        title="Projects"
+        subtitle="Every project in the portal, with the clients who can file against it. Enter opens a project."
+        actions={<Button kind="primary" icon="plus" onClick={() => setModal({ kind: 'project' })}>New project</Button>}
+      />
+      <FilterBar label="Project filters">
+        <input className="aw-search" type="search" value={query} aria-label="Filter projects by name, slug or client" placeholder="Filter projects…" onChange={(e) => setQuery(e.target.value)} />
+        <Segmented value={scope} options={[{ value: 'all', label: 'All' }, { value: 'clients', label: 'With clients' }, { value: 'none', label: 'No client' }]} onChange={setScope} label="Project clients" />
+        {query || scope !== 'all' ? <Button kind="ghost" size="sm" onClick={() => { setQuery(''); setScope('all'); }}>Clear filters</Button> : null}
+        <span className="aw-toolbar__fill" />
+        <span className="ui-note">{rows.length} of {total}</span>
+      </FilterBar>
+      <DataTable
+        label="Projects"
+        rows={rows.map((row) => ({ ...row.project, _clients: row.clients }))}
+        onOpen={(p) => open(`p:${p.id}`)}
+        empty={query || scope !== 'all'
+          ? { title: 'No projects match those filters.', hint: 'Clear the search or choose All.' }
+          : { title: 'No projects yet.', hint: 'Create one, then invite its client from the project or the Clients page.' }}
+        columns={[
+          { key: 'name', header: 'Project', render: (p) => <span title={p.slug}><strong>{p.name}</strong> <span className="ui-note">{p.slug}</span></span> },
+          {
+            key: 'clients',
+            header: 'Clients',
+            render: (p) => p._clients.length
+              ? <span title={p._clients.map((c) => c.email).join(', ')}>{clientsLabel(p._clients)}</span>
+              : <StateIndicator state="none" tone="warn" label="No client" />,
+          },
+          { key: 'node', header: 'Node', render: (p) => <StateIndicator {...projectNodeState(p, data.nodes)} /> },
+          { key: 'site', header: 'Site', render: (p) => siteStateOf(p) },
+          {
+            key: 'actions',
+            header: 'Actions',
+            fit: true,
+            render: (p) => (
+              <Button size="sm" kind="ghost" aria-label={`Open ${p.name}`} onClick={(e) => { e.stopPropagation(); open(`p:${p.id}`); }}>Open</Button>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

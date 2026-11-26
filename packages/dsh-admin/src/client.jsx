@@ -23,7 +23,7 @@ import { createConversationMeter, formatRecordedTime } from './conversation-mete
 import { AdminContext, useAdminData } from '../../admin-ui/src/store.js';
 import { ConversationGitGraph } from './conversation-git-graph.mjs';
 import { BoardView, ListView } from '../../admin-ui/src/board.jsx';
-import { ClientsView, FleetView, SettingsView } from '../../admin-ui/src/fleet.jsx';
+import { ClientsView, FleetView, ProjectsView, SettingsView } from '../../admin-ui/src/fleet.jsx';
 import { SuperagentView } from '../../admin-ui/src/superagent.jsx';
 import { isSettingsKey, openSettings, settingsSection } from '../../admin-ui/src/settings-link.js';
 import { MarketingView } from '../../admin-ui/src/marketing.jsx';
@@ -1374,6 +1374,10 @@ function apply(ctx) {
     return <Icon name="clients" size={props?.size ?? 16} />;
   }
 
+  function ProjectsEntryIcon(props) {
+    return <Icon name="folder" size={props?.size ?? 16} />;
+  }
+
   function FleetEntryIcon(props) {
     return <Icon name="fleet" size={props?.size ?? 16} />;
   }
@@ -2464,6 +2468,7 @@ function apply(ctx) {
   const MARKETING_PANEL = 'admin-marketing';
   const SEO_PANEL = 'admin-seo';
   const CLIENTS_PANEL = 'admin-clients';
+  const PROJECTS_PANEL = 'admin-projects';
   const FLEET_PANEL = 'admin-fleet';
   const SETTINGS_PANEL = 'admin-settings';
 
@@ -3444,6 +3449,10 @@ function apply(ctx) {
     return <DeskPage withData><ClientsView /></DeskPage>;
   }
 
+  function ProjectsPage() {
+    return <DeskPage withData><ProjectsView /></DeskPage>;
+  }
+
   function FleetPage() {
     return <DeskPage withData><FleetView /></DeskPage>;
   }
@@ -3827,6 +3836,7 @@ function apply(ctx) {
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: SUPERAGENT_PANEL, locale: NAMESPACE }, SuperagentPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: SEO_PANEL, locale: NAMESPACE }, SeoPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: CLIENTS_PANEL, locale: NAMESPACE }, ClientsPage));
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PROJECTS_PANEL, locale: NAMESPACE }, ProjectsPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: FLEET_PANEL, locale: NAMESPACE }, FleetPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: SETTINGS_PANEL, locale: NAMESPACE }, SettingsPage));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: HOME_PANEL, order: 11, label: 'Inbox' }, InboxEntryIcon));
@@ -3835,6 +3845,7 @@ function apply(ctx) {
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: MARKETING_PANEL, order: 13, label: 'Marketing' }, MarketingEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: SEO_PANEL, order: 14, label: 'SEO' }, SeoEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: CLIENTS_PANEL, order: 14.5, label: 'Clients' }, ClientsEntryIcon));
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PROJECTS_PANEL, order: 12.5, label: 'Projects' }, ProjectsEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: FLEET_PANEL, order: 15, label: 'Fleet' }, FleetEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: SETTINGS_PANEL, order: 16, label: 'Settings' }, SettingsEntryIcon));
   ctx.inject(['conversation'], (scope) => {

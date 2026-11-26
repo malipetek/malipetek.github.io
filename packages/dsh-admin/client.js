@@ -4584,6 +4584,28 @@ ${String(text)}` : String(text);
     return null;
   }
 
+  // ../admin-ui/src/projects-model.mjs
+  function projectRows(projects, clients, { query = "", scope = "all" } = {}) {
+    const byProject = /* @__PURE__ */ new Map();
+    for (const client of clients ?? []) {
+      for (const id of client.projectIds ?? []) {
+        if (!byProject.has(id)) byProject.set(id, []);
+        byProject.get(id).push(client);
+      }
+    }
+    const q = query.trim().toLowerCase();
+    return (projects ?? []).map((project) => ({ project, clients: byProject.get(project.id) ?? [] })).filter(({ clients: who }) => scope === "clients" ? who.length > 0 : scope === "none" ? who.length === 0 : true).filter(({ project, clients: who }) => {
+      if (!q) return true;
+      const text = [project.name, project.slug, ...who.flatMap((c) => [c.name, c.email])].filter(Boolean).join(" ").toLowerCase();
+      return text.includes(q);
+    }).sort((a, b) => String(a.project.name ?? a.project.slug ?? "").localeCompare(String(b.project.name ?? b.project.slug ?? "")));
+  }
+  function clientsLabel(clients) {
+    if (!clients?.length) return "No client";
+    const first = clients[0].name || clients[0].email || "Client";
+    return clients.length === 1 ? first : `${first} +${clients.length - 1}`;
+  }
+
   // ../admin-ui/src/health.jsx
   var tone = (status) => status === "ok" ? "ok" : status === "fail" ? "bad" : "warn";
   function CheckRow({ check }) {
@@ -11586,6 +11608,70 @@ ${SITE_LINK}` : SITE_LINK;
         ] }),
         selected ? /* @__PURE__ */ jsx(ClientInspector, { c: selected, onClose: close }) : null
       ] })
+    ] });
+  }
+  function ProjectsView() {
+    const { data, setModal: setModal2, open } = useAdmin();
+    const [query, setQuery] = useState("");
+    const [scope, setScope] = useState("all");
+    const rows = useMemo(() => projectRows(data.projects, data.clients, { query, scope }), [data.projects, data.clients, query, scope]);
+    const total = data.projects?.length ?? 0;
+    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace aw-projects", children: [
+      /* @__PURE__ */ jsx(UiStyles, {}),
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: "Projects",
+          subtitle: "Every project in the portal, with the clients who can file against it. Enter opens a project.",
+          actions: /* @__PURE__ */ jsx(Button, { kind: "primary", icon: "plus", onClick: () => setModal2({ kind: "project" }), children: "New project" })
+        }
+      ),
+      /* @__PURE__ */ jsxs(FilterBar, { label: "Project filters", children: [
+        /* @__PURE__ */ jsx("input", { className: "aw-search", type: "search", value: query, "aria-label": "Filter projects by name, slug or client", placeholder: "Filter projects\u2026", onChange: (e) => setQuery(e.target.value) }),
+        /* @__PURE__ */ jsx(Segmented, { value: scope, options: [{ value: "all", label: "All" }, { value: "clients", label: "With clients" }, { value: "none", label: "No client" }], onChange: setScope, label: "Project clients" }),
+        query || scope !== "all" ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", onClick: () => {
+          setQuery("");
+          setScope("all");
+        }, children: "Clear filters" }) : null,
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsxs("span", { className: "ui-note", children: [
+          rows.length,
+          " of ",
+          total
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx(
+        DataTable,
+        {
+          label: "Projects",
+          rows: rows.map((row) => ({ ...row.project, _clients: row.clients })),
+          onOpen: (p) => open(`p:${p.id}`),
+          empty: query || scope !== "all" ? { title: "No projects match those filters.", hint: "Clear the search or choose All." } : { title: "No projects yet.", hint: "Create one, then invite its client from the project or the Clients page." },
+          columns: [
+            { key: "name", header: "Project", render: (p) => /* @__PURE__ */ jsxs("span", { title: p.slug, children: [
+              /* @__PURE__ */ jsx("strong", { children: p.name }),
+              " ",
+              /* @__PURE__ */ jsx("span", { className: "ui-note", children: p.slug })
+            ] }) },
+            {
+              key: "clients",
+              header: "Clients",
+              render: (p) => p._clients.length ? /* @__PURE__ */ jsx("span", { title: p._clients.map((c) => c.email).join(", "), children: clientsLabel(p._clients) }) : /* @__PURE__ */ jsx(StateIndicator, { state: "none", tone: "warn", label: "No client" })
+            },
+            { key: "node", header: "Node", render: (p) => /* @__PURE__ */ jsx(StateIndicator, { ...projectNodeState(p, data.nodes) }) },
+            { key: "site", header: "Site", render: (p) => siteStateOf(p) },
+            {
+              key: "actions",
+              header: "Actions",
+              fit: true,
+              render: (p) => /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", "aria-label": `Open ${p.name}`, onClick: (e) => {
+                e.stopPropagation();
+                open(`p:${p.id}`);
+              }, children: "Open" })
+            }
+          ]
+        }
+      )
     ] });
   }
   function TranslationsPanel() {
@@ -19516,6 +19602,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     function ClientsEntryIcon(props) {
       return /* @__PURE__ */ jsx(Icon, { name: "clients", size: props?.size ?? 16 });
     }
+    function ProjectsEntryIcon(props) {
+      return /* @__PURE__ */ jsx(Icon, { name: "folder", size: props?.size ?? 16 });
+    }
     function FleetEntryIcon(props) {
       return /* @__PURE__ */ jsx(Icon, { name: "fleet", size: props?.size ?? 16 });
     }
@@ -20466,6 +20555,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const MARKETING_PANEL = "admin-marketing";
     const SEO_PANEL = "admin-seo";
     const CLIENTS_PANEL = "admin-clients";
+    const PROJECTS_PANEL = "admin-projects";
     const FLEET_PANEL = "admin-fleet";
     const SETTINGS_PANEL = "admin-settings";
     const ticketLabel = (ticket) => ticket?.title_en || ticket?.title || "(untitled)";
@@ -21321,6 +21411,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     function ClientsPage() {
       return /* @__PURE__ */ jsx(DeskPage, { withData: true, children: /* @__PURE__ */ jsx(ClientsView, {}) });
     }
+    function ProjectsPage() {
+      return /* @__PURE__ */ jsx(DeskPage, { withData: true, children: /* @__PURE__ */ jsx(ProjectsView, {}) });
+    }
     function FleetPage() {
       return /* @__PURE__ */ jsx(DeskPage, { withData: true, children: /* @__PURE__ */ jsx(FleetView, {}) });
     }
@@ -21682,6 +21775,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: SUPERAGENT_PANEL, locale: NAMESPACE }, SuperagentPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: SEO_PANEL, locale: NAMESPACE }, SeoPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: CLIENTS_PANEL, locale: NAMESPACE }, ClientsPage));
+    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: PROJECTS_PANEL, locale: NAMESPACE }, ProjectsPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: FLEET_PANEL, locale: NAMESPACE }, FleetPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: SETTINGS_PANEL, locale: NAMESPACE }, SettingsPage));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: HOME_PANEL, order: 11, label: "Inbox" }, InboxEntryIcon));
@@ -21690,6 +21784,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: MARKETING_PANEL, order: 13, label: "Marketing" }, MarketingEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: SEO_PANEL, order: 14, label: "SEO" }, SeoEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: CLIENTS_PANEL, order: 14.5, label: "Clients" }, ClientsEntryIcon));
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: PROJECTS_PANEL, order: 12.5, label: "Projects" }, ProjectsEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: FLEET_PANEL, order: 15, label: "Fleet" }, FleetEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: SETTINGS_PANEL, order: 16, label: "Settings" }, SettingsEntryIcon));
     ctx.inject(["conversation"], (scope) => {
