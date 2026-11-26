@@ -3480,6 +3480,186 @@ ${String(text)}` : String(text);
     };
   }
 
+  // ../admin-ui/src/project-picker-model.mjs
+  var norm = (value) => typeof value === "string" ? value.trim().toLowerCase() : "";
+  var clientLabel = (client) => client?.name || client?.email || "Unnamed client";
+  function groupProjects(projects = [], { query = "", clientEmail = null } = {}) {
+    const q = norm(query);
+    const own = norm(clientEmail);
+    const groups = /* @__PURE__ */ new Map();
+    const add = (key, label, isOwn) => {
+      if (!groups.has(key)) groups.set(key, { key, label, own: isOwn, items: [] });
+      return groups.get(key);
+    };
+    const ordered = [...projects].sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")));
+    for (const project of ordered) {
+      const clients = Array.isArray(project.clients) ? project.clients.filter(Boolean) : [];
+      const haystack = [project.name, project.slug, ...clients.flatMap((c) => [c.email, c.name])].map(norm).join(" ");
+      if (q && !q.split(/\s+/).every((word) => haystack.includes(word))) continue;
+      const mine = clients.find((c) => own && norm(c.email) === own);
+      const first = mine ?? [...clients].sort((a, b) => clientLabel(a).localeCompare(clientLabel(b)))[0];
+      const others = clients.length - (first ? 1 : 0);
+      const item = { id: project.id, name: project.name || project.slug || "Untitled project", slug: project.slug ?? null, hint: others > 0 ? `+${others} client${others === 1 ? "" : "s"}` : null };
+      if (!first) add("none", "No client", false).items.push(item);
+      else add(`c:${norm(first.email) || first.id}`, clientLabel(first), Boolean(mine)).items.push(item);
+    }
+    return [...groups.values()].sort((a, b) => {
+      if (a.own !== b.own) return a.own ? -1 : 1;
+      if (a.key === "none" !== (b.key === "none")) return a.key === "none" ? 1 : -1;
+      return a.label.localeCompare(b.label);
+    });
+  }
+  var flatItems = (groups) => groups.flatMap((g) => g.items);
+
+  // ../admin-ui/src/project-picker.jsx
+  var NONE = { id: null, name: "No project" };
+  function ProjectPicker({ projects = [], value = null, clientEmail = null, onChange, disabled = false }) {
+    const [open, setOpen] = useState(false);
+    const button = useRef(null);
+    const current = projects.find((p) => p.id === value);
+    const owner = current?.clients?.find((c) => clientEmail && c.email?.toLowerCase() === clientEmail.toLowerCase()) ?? current?.clients?.[0];
+    return /* @__PURE__ */ jsxs("div", { className: "aw-picker", children: [
+      /* @__PURE__ */ jsxs(
+        "button",
+        {
+          ref: button,
+          type: "button",
+          className: "aw-picker__button",
+          "aria-haspopup": "listbox",
+          "aria-expanded": open,
+          disabled,
+          onClick: () => setOpen((o) => !o),
+          children: [
+            /* @__PURE__ */ jsx("span", { className: "aw-picker__value", children: current ? current.name || current.slug : "No project" }),
+            owner ? /* @__PURE__ */ jsx("small", { className: "aw-picker__owner", children: owner.name || owner.email }) : null,
+            /* @__PURE__ */ jsx("span", { className: "aw-picker__chevron", "aria-hidden": "true", children: "\u25BE" })
+          ]
+        }
+      ),
+      open ? /* @__PURE__ */ jsx(
+        PickerList,
+        {
+          projects,
+          value,
+          clientEmail,
+          anchor: button,
+          onClose: () => {
+            setOpen(false);
+            button.current?.focus();
+          },
+          onPick: (id) => {
+            setOpen(false);
+            button.current?.focus();
+            if (id !== value) onChange?.(id);
+          }
+        }
+      ) : null
+    ] });
+  }
+  function PickerList({ projects, value, clientEmail, anchor, onClose, onPick }) {
+    const layer = useLayer();
+    const uid = useUid("aw-picker");
+    const panel = useRef(null);
+    const list2 = useRef(null);
+    const [query, setQuery] = useState("");
+    const groups = useMemo(() => groupProjects(projects, { query, clientEmail }), [projects, query, clientEmail]);
+    const items = useMemo(() => [...query ? [] : [NONE], ...flatItems(groups)], [groups, query]);
+    const [active, setActive] = useState(() => Math.max(0, items.findIndex((i) => i.id === value)));
+    const [pos, setPos] = useState({ visibility: "hidden" });
+    useLayoutEffect(() => {
+      const a = anchor.current?.getBoundingClientRect();
+      const el = panel.current;
+      if (!a || !el) return;
+      const width = Math.max(a.width, 320);
+      const left = Math.max(8, Math.min(a.left, window.innerWidth - width - 8));
+      const below = window.innerHeight - a.bottom - 12;
+      const top = below >= 240 || below >= a.top ? a.bottom + 4 : Math.max(8, a.top - 4 - Math.min(el.offsetHeight, a.top - 12));
+      setPos({ left, top, width, maxHeight: Math.max(200, below >= 240 || below >= a.top ? below : a.top - 12) });
+    }, [anchor]);
+    useEffect(() => {
+      const down = (e) => {
+        if (panel.current?.contains(e.target) || anchor.current?.contains(e.target)) return;
+        onClose();
+      };
+      window.addEventListener("pointerdown", down, true);
+      return () => window.removeEventListener("pointerdown", down, true);
+    }, [anchor, onClose]);
+    useEffect(() => setActive((n2) => Math.min(n2, Math.max(0, items.length - 1))), [items.length]);
+    useEffect(() => {
+      list2.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest" });
+    }, [active]);
+    const key = (e) => {
+      if (e.key === "Escape") {
+        if (!isTop(layer)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      } else if (e.key === "ArrowDown") e.preventDefault(), setActive((n2) => Math.min(items.length - 1, n2 + 1));
+      else if (e.key === "ArrowUp") e.preventDefault(), setActive((n2) => Math.max(0, n2 - 1));
+      else if (e.key === "Enter") {
+        e.preventDefault();
+        if (items[active]) onPick(items[active].id);
+      } else if (e.key === "Tab") onClose();
+    };
+    let n = query ? 0 : 1;
+    const option = (item, index) => /* @__PURE__ */ jsxs(
+      "li",
+      {
+        id: `${uid}-${index}`,
+        role: "option",
+        "aria-selected": index === active,
+        className: index === active ? "is-active" : void 0,
+        onMouseEnter: () => setActive(index),
+        onMouseDown: (e) => {
+          e.preventDefault();
+          onPick(item.id);
+        },
+        children: [
+          /* @__PURE__ */ jsx("span", { children: item.name }),
+          item.hint ? /* @__PURE__ */ jsx("small", { children: item.hint }) : null,
+          item.id === value ? /* @__PURE__ */ jsx("span", { className: "aw-picker__check", "aria-label": "current", children: "\u2713" }) : null
+        ]
+      },
+      item.id ?? "none"
+    );
+    return /* @__PURE__ */ jsxs("div", { ref: panel, className: "aw-picker__panel", style: pos, role: "dialog", "aria-label": "Choose a project", children: [
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          autoFocus: true,
+          role: "combobox",
+          "aria-expanded": "true",
+          "aria-controls": `${uid}-list`,
+          "aria-autocomplete": "list",
+          "aria-activedescendant": items[active] ? `${uid}-${active}` : void 0,
+          "aria-label": "Search projects and clients",
+          placeholder: "Search projects or clients\u2026",
+          value: query,
+          onChange: (e) => {
+            setQuery(e.target.value);
+            setActive(0);
+          },
+          onKeyDown: key
+        }
+      ),
+      /* @__PURE__ */ jsxs("ul", { ref: list2, id: `${uid}-list`, role: "listbox", "aria-label": "Projects", children: [
+        query ? null : option(NONE, 0),
+        groups.map((group) => /* @__PURE__ */ jsxs("li", { role: "presentation", className: "aw-picker__group", children: [
+          /* @__PURE__ */ jsxs("div", { className: "aw-picker__heading", role: "presentation", children: [
+            group.label,
+            group.own ? /* @__PURE__ */ jsx("small", { children: "this ticket\u2019s client" }) : null
+          ] }),
+          /* @__PURE__ */ jsx("ul", { role: "group", "aria-label": group.label, children: group.items.map((item) => option(item, n++)) })
+        ] }, group.key)),
+        !groups.length ? /* @__PURE__ */ jsxs("li", { className: "aw-picker__empty", role: "presentation", children: [
+          "No project or client matches \u201C",
+          query,
+          "\u201D."
+        ] }) : null
+      ] })
+    ] });
+  }
+
   // ../admin-ui/src/ticket.jsx
   var PRIMARY = {
     new: [
@@ -4270,10 +4450,15 @@ ${String(text)}` : String(text);
     return /* @__PURE__ */ jsxs("aside", { className: cx2("aw-details", page && "aw-details--page"), "aria-label": "Details", children: [
       /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload, messages }),
       /* @__PURE__ */ jsxs("div", { className: "aw-details__pair", children: [
-        /* @__PURE__ */ jsx(Field, { label: "Project", children: /* @__PURE__ */ jsxs("select", { value: ticket.project_id ?? "", onChange: (e) => void patch({ projectId: e.target.value || null }, "Project saved."), children: [
-          /* @__PURE__ */ jsx("option", { value: "", children: "No project" }),
-          data.projects.map((p) => /* @__PURE__ */ jsx("option", { value: p.id, children: p.name }, p.id))
-        ] }) }),
+        /* @__PURE__ */ jsx(Field, { label: "Project", children: /* @__PURE__ */ jsx(
+          ProjectPicker,
+          {
+            projects: data.projects,
+            value: ticket.project_id ?? null,
+            clientEmail: isClient ? ticket.client_email : null,
+            onChange: (projectId) => void patch({ projectId }, "Project saved.")
+          }
+        ) }),
         /* @__PURE__ */ jsx(Field, { label: "Site", children: /* @__PURE__ */ jsxs("select", { value: ticket.site_id ?? "", onChange: (e) => void patch({ siteId: e.target.value || null }, "Site saved."), children: [
           /* @__PURE__ */ jsx("option", { value: "", children: "Main site" }),
           projectSites.map((s) => /* @__PURE__ */ jsx("option", { value: s.id, children: s.name || s.slug }, s.id))
@@ -13143,6 +13328,26 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-toast__close { flex: none; border: 0; background: none; color: inherit; cursor: pointer; padding: 0; width: 18px; height: 18px; display: grid; place-items: center; opacity: .7; border-radius: var(--aw-radius-sm); }
 .aw-toast__close:hover { opacity: 1; }
 .aw-palette__count { margin: 2px 12px 8px; color: var(--aw-ink-3); font-size: var(--aw-type-xs); }
+/* Project picker: a field-shaped button and a searchable list grouped by client. */
+.aw-picker { position: relative; min-width: 0; }
+.aw-picker__button { display: flex; align-items: center; gap: var(--aw-space-2); width: 100%; min-height: 30px; padding: 5px 8px; border: 1px solid var(--aw-hairline-strong); border-radius: var(--aw-radius-md); background: var(--aw-surface); color: var(--aw-ink); text-align: left; cursor: pointer; }
+.aw-picker__button:hover { border-color: var(--aw-ink-3); }
+.aw-picker__button:disabled { opacity: .6; cursor: default; }
+.aw-picker__value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-picker__owner { color: var(--aw-ink-3); font-size: var(--aw-type-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+.aw-picker__chevron { color: var(--aw-ink-3); font-size: var(--aw-type-xs); }
+.aw-picker__panel { position: fixed; z-index: 70; display: flex; flex-direction: column; background: var(--aw-surface-raised); border-radius: var(--aw-radius-lg); box-shadow: var(--aw-shadow-float); overflow: hidden; animation: aw-fade var(--aw-dur) var(--aw-ease); }
+.aw-picker__panel input:not(#aw-override) { width: 100%; border: 0; border-bottom: 1px solid var(--aw-hairline); border-radius: 0; padding: 10px 12px; background: none; outline: none; }
+.aw-picker__panel ul { list-style: none; margin: 0; padding: 0; }
+.aw-picker__panel > ul { padding: 4px; overflow-y: auto; min-height: 0; flex: 1; }
+.aw-picker__panel li[role=option] { display: flex; align-items: center; gap: var(--aw-space-3); height: 30px; padding: 0 10px; border-radius: var(--aw-radius-sm); cursor: pointer; }
+.aw-picker__panel li[role=option] > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-picker__panel li[role=option] small { color: var(--aw-ink-3); font-size: var(--aw-type-xs); white-space: nowrap; }
+.aw-picker__panel li[role=option].is-active { background: var(--aw-selected); }
+.aw-picker__check { color: var(--aw-accent); }
+.aw-picker__heading { display: flex; align-items: baseline; gap: var(--aw-space-2); padding: 8px 10px 4px; color: var(--aw-ink-3); font-size: var(--aw-type-xs); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-picker__heading small { font-weight: 400; color: var(--aw-accent); }
+.aw-picker__empty { padding: 12px 10px; color: var(--aw-ink-3); }
 .aw-drawer-scrim { position: fixed; inset: 0; z-index: 59; background: var(--aw-scrim); animation: aw-fade var(--aw-dur) var(--aw-ease); }
 @media (max-width: 900px) {
   .aw-explorer--drawer { display: block; position: fixed; z-index: 60; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); box-shadow: var(--aw-shadow-float); animation: aw-slide var(--aw-dur) var(--aw-ease); }
@@ -19568,12 +19773,19 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       if (await openTicketThread(ticket)) return;
       openTicket({ ticketId: ticket.id });
     }
-    async function openTicketThread(ticket) {
+    async function openTicketThread(ticket, onError = null) {
       const ws = workspace;
       if (!desktop || typeof ws?.openSession !== "function" || typeof ctx.sessions?.create !== "function") return false;
       try {
         const out = await adminOperation({ operation: "ticket-thread", ticketId: ticket.id });
-        if (!out?.dir) return false;
+        if (!out?.dir) {
+          onError?.(out?.error ? `Could not open the ticket folder: ${out.error}` : "Could not open the ticket folder.");
+          return false;
+        }
+        if (out.state === "none" && out.hasRepo) {
+          onError?.(`Could not clone the repository${out.error ? `: ${out.error}` : "."}`);
+          return false;
+        }
         const rows = Object.values(ctx.sessions?.list?.getSnapshot?.()?.byId ?? {});
         const existing = rows.find((row) => typeof row?.cwd === "string" && row.cwd.replace(/\/+$/, "") === out.dir);
         const sessionId = existing && !existing.blank ? existing.id : await startTicketThread({
@@ -20181,6 +20393,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     .pta-dock__actions{display:inline-flex;gap:2px;flex:none}
     .pta-dock__thread{border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));padding:6px 8px 6px 10px;align-items:center}
     .pta-dock__thread-text{flex:1 1 auto;min-width:0;font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary,inherit)}
+    .pta-dock__error{font-size:12px;line-height:17px;color:var(--dsw-alias-state-danger-primary,#e5534b);min-width:0}
     .pta-dock__pull{flex:none;height:26px;padding:0 12px;border:0;border-radius:999px;background:var(--dsw-alias-state-business-primary,#ff8a5c);color:var(--dsw-alias-label-on-primary,#0f1115);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
     .pta-dock__pull:hover:not(:disabled){filter:brightness(1.08)}
     .pta-dock__pull:disabled{opacity:.55;cursor:default}
@@ -21121,6 +21334,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     };
     function TicketWorkspace({ sessionId, ticketId }) {
       const [opening, setOpening] = useState(false);
+      const [openError, setOpenError] = useState("");
       const [result, setResult] = useState({ state: "pending" });
       const active = useRef(null);
       const request = useCallback(async (action) => {
@@ -21176,11 +21390,13 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             title: "Open this ticket in its own folder, cloned from the remote: Git Graph shows its branch, and pulling the repo lets an agent work on it again.",
             onClick: () => {
               setOpening(true);
-              void openTicketThread({ id: ticketId }).finally(() => setOpening(false));
+              setOpenError("");
+              void openTicketThread({ id: ticketId }, setOpenError).finally(() => setOpening(false));
             },
-            children: opening ? "Opening\u2026" : "Open from remote"
+            children: opening ? "Cloning\u2026" : "Open from remote"
           }
-        ) : null
+        ) : null,
+        openError ? /* @__PURE__ */ jsx("span", { className: "pta-dock__error", role: "alert", children: openError }) : null
       ] });
     }
     function TicketMessageForm({ mode, ticket }) {
@@ -21304,7 +21520,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       if (!run || !sessionId) return null;
       return /* @__PURE__ */ jsx("div", { ref: anchor, style: { display: "contents" }, children: chat ? /* @__PURE__ */ jsx(LinkedTicketDock, { ticketId: run.ticketId, sessionId, thread }, `${run.ticketId}:${sessionId}`) : null });
     }
-    const THREAD_LOCK = "The client\u2019s own agent works this ticket. Pull the repo to chat with an agent here.";
+    const THREAD_LOCK = "This folder only has the repo\u2019s history. Pull the repo to chat with an agent here.";
     function useThreadLock(sessionId, cwd) {
       const [state, setState] = useState(sessionId ? "pending" : null);
       const [error, setError] = useState("");
@@ -21319,7 +21535,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       useEffect(() => {
         const blocks = nativeConversation?.blocks;
         if (!sessionId || typeof blocks?.set !== "function") return void 0;
-        blocks.set(sessionId, state === "history" || state === "pending" || state === "pulling" ? { reason: THREAD_LOCK } : void 0);
+        blocks.set(sessionId, state === "history" || state === "pending" || state === "pulling" || state === "cloning" ? { reason: THREAD_LOCK } : void 0);
         return () => blocks.set(sessionId, void 0);
       }, [sessionId, state]);
       if (!sessionId) return null;
@@ -21330,15 +21546,24 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         if (out?.error) setError(`Could not pull the repo: ${out.error}`);
         setState(out?.state ?? "history");
       };
-      return { state, pull, cwd, error };
+      const clone = async (ticketId) => {
+        setState("cloning");
+        setError("");
+        const out = await adminOperation({ operation: "ticket-thread", ticketId });
+        if (out?.hasRepo === false) setError("This project has no repository, so there is nothing to clone. Reply or add a note above.");
+        else if (out?.error || out?.state === "none") setError(`Could not clone the repository${out?.error ? `: ${out.error}` : "."}`);
+        setState(out?.state ?? "none");
+      };
+      return { state, pull, clone, cwd, error };
     }
     function ThreadPull({ thread, ticket }) {
       if (thread.state === "checkout") return null;
       const who = ticket?.worked_by === "client_agent" ? "The client\u2019s own agent works this ticket over the portal. " : "";
-      const text = thread.state === "none" ? "This project has no repository to pull, so there is nothing to work on here. Reply or add a note above." : `${who}Git Graph shows the remote\u2019s history; pull the repo to check out the ticket\u2019s branch and chat with an agent here.`;
+      const bare = thread.state === "none" || thread.state === "cloning";
+      const text = bare ? "The repository is not cloned into this ticket\u2019s folder yet, so Git Graph has nothing to show." : `${who}Git Graph shows the remote\u2019s history; pull the repo to check out the ticket\u2019s branch and chat with an agent here.`;
       return /* @__PURE__ */ jsxs("div", { className: "pta-dock__row pta-dock__thread", children: [
         /* @__PURE__ */ jsx("span", { className: "pta-dock__thread-text", children: thread.error || text }),
-        thread.state === "none" ? null : /* @__PURE__ */ jsx("button", { type: "button", className: "pta-dock__pull", disabled: thread.state === "pulling" || thread.state === "pending", onClick: () => void thread.pull(), children: thread.state === "pulling" ? "Pulling\u2026" : "Pull the repo" })
+        bare ? ticket?.id ? /* @__PURE__ */ jsx("button", { type: "button", className: "pta-dock__pull", disabled: thread.state === "cloning", onClick: () => void thread.clone(ticket.id), children: thread.state === "cloning" ? "Cloning\u2026" : "Clone from remote" }) : null : /* @__PURE__ */ jsx("button", { type: "button", className: "pta-dock__pull", disabled: thread.state === "pulling" || thread.state === "pending", onClick: () => void thread.pull(), children: thread.state === "pulling" ? "Pulling\u2026" : "Pull the repo" })
       ] });
     }
     function openAdminLink(url) {

@@ -34,6 +34,7 @@ import { MentionRecipients } from './mention-recipients.jsx';
 import { createMentionDelivery } from './mention-delivery.js';
 import { assistantBadge, assistantBadgeTitle } from './ticket-assistant.mjs';
 import { requeueBrief } from './requeue.mjs';
+import { ProjectPicker } from './project-picker.jsx';
 
 /** The obvious next moves for each status; anything else is in the Status select. */
 const PRIMARY = {
@@ -929,14 +930,12 @@ export function TicketDetails({ ticket, runs, land, meter, reload, messages = nu
       <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} messages={messages} />
       <div className="aw-details__pair">
         <Field label="Project">
-          <select value={ticket.project_id ?? ''} onChange={(e) => void patch({ projectId: e.target.value || null }, 'Project saved.')}>
-            <option value="">No project</option>
-            {data.projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <ProjectPicker
+            projects={data.projects}
+            value={ticket.project_id ?? null}
+            clientEmail={isClient ? ticket.client_email : null}
+            onChange={(projectId) => void patch({ projectId }, 'Project saved.')}
+          />
         </Field>
         <Field label="Site">
           <select value={ticket.site_id ?? ''} onChange={(e) => void patch({ siteId: e.target.value || null }, 'Site saved.')}>

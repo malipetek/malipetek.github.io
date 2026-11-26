@@ -17,7 +17,7 @@
  * @module @malipetek/dsh-admin
  */
 import { superagentSection } from './superagent-prompt.mjs';
-import { TICKET_THREADS, prepareThread, pullThread, threadState } from './ticket-thread.mjs';
+import { TICKET_THREADS, prepareThread, pullThread, threadState, withRepoToken } from './ticket-thread.mjs';
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { access, link, mkdir, readdir, readFile, realpath, unlink, writeFile } from 'node:fs/promises';
@@ -2216,18 +2216,43 @@ export function apply(ctx) {
       if (!ticket?.project_slug) return reply(200, { state: 'none', error: 'no_project' });
       const projects = await request(config, '/admin/projects');
       const project = (projects?.projects ?? []).find((p) => p.id === ticket.project_id);
-      const out = await prepareThread({ slug: ticket.project_slug, ticketId: id, repo: project?.repo ?? null });
-      return reply(200, { ...out, title: ticket.title_en || ticket.title || '' });
+      const token = await projectGitToken(config, project);
+      const out = await withRepoToken(token, (git) => prepareThread({ slug: ticket.project_slug, ticketId: id, repo: project?.repo ?? null, git }));
+      return reply(200, { ...out, hasRepo: Boolean(project?.repo), title: ticket.title_en || ticket.title || '' });
     } catch (error) {
       return reply(200, { state: 'none', error: error?.message ?? String(error) });
+    }
+  }
+
+  /**
+   * A short-lived token for the project's repo from the portal, or null. A
+   * client's private repo is out of reach of the operator's own GitHub login;
+   * the fleet reaches it through this same token.
+   */
+  async function projectGitToken(config, project) {
+    if (!project?.id || !project?.repo) return null;
+    try {
+      const out = await request(config, `/admin/projects/${encodeURIComponent(project.id)}/git-token`, { method: 'POST', body: {} });
+      return typeof out?.token === 'string' ? out.token : null;
+    } catch {
+      return null;
     }
   }
 
   async function ticketThreadAction(operation, cwd, reply) {
     const dir = typeof cwd === 'string' ? cwd.replace(/\/+$/, '') : '';
     if (!dir.startsWith(`${TICKET_THREADS}/`) || dir.includes('..')) return reply(400, { state: 'none', error: 'not_a_ticket_folder' });
-    const out = operation === 'ticket-pull' ? await pullThread(dir) : { state: await threadState(dir) };
-    return reply(200, out);
+    if (operation !== 'ticket-pull') return reply(200, { state: await threadState(dir) });
+    let token = null;
+    try {
+      const slug = /^(.+)-ticket-\d+$/.exec(dir.slice(TICKET_THREADS.length + 1))?.[1];
+      const config = await loadConfig();
+      const projects = slug ? await request(config, '/admin/projects') : null;
+      token = await projectGitToken(config, (projects?.projects ?? []).find((p) => p.slug === slug));
+    } catch {
+      token = null;
+    }
+    return reply(200, await withRepoToken(token, (git) => pullThread(dir, git)));
   }
 
   async function ticketWorkspace(operation, sessionId, reply) {

@@ -1715,12 +1715,20 @@ function apply(ctx) {
    * remote's branches; the composer stays locked until the repo is pulled.
    * @returns true when the conversation opened.
    */
-  async function openTicketThread(ticket) {
+  async function openTicketThread(ticket, onError = null) {
     const ws = workspace;
     if (!desktop || typeof ws?.openSession !== 'function' || typeof ctx.sessions?.create !== 'function') return false;
     try {
       const out = await adminOperation({ operation: 'ticket-thread', ticketId: ticket.id });
-      if (!out?.dir) return false;
+      if (!out?.dir) {
+        onError?.(out?.error ? `Could not open the ticket folder: ${out.error}` : 'Could not open the ticket folder.');
+        return false;
+      }
+      // A failed clone leaves an empty folder: say why instead of opening a chat with no history.
+      if (out.state === 'none' && out.hasRepo) {
+        onError?.(`Could not clone the repository${out.error ? `: ${out.error}` : '.'}`);
+        return false;
+      }
       const rows = Object.values(ctx.sessions?.list?.getSnapshot?.()?.byId ?? {});
       const existing = rows.find((row) => typeof row?.cwd === 'string' && row.cwd.replace(/\/+$/, '') === out.dir);
       const sessionId = existing && !existing.blank ? existing.id : await startTicketThread({
@@ -2390,6 +2398,7 @@ function apply(ctx) {
     .pta-dock__actions{display:inline-flex;gap:2px;flex:none}
     .pta-dock__thread{border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));padding:6px 8px 6px 10px;align-items:center}
     .pta-dock__thread-text{flex:1 1 auto;min-width:0;font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary,inherit)}
+    .pta-dock__error{font-size:12px;line-height:17px;color:var(--dsw-alias-state-danger-primary,#e5534b);min-width:0}
     .pta-dock__pull{flex:none;height:26px;padding:0 12px;border:0;border-radius:999px;background:var(--dsw-alias-state-business-primary,#ff8a5c);color:var(--dsw-alias-label-on-primary,#0f1115);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
     .pta-dock__pull:hover:not(:disabled){filter:brightness(1.08)}
     .pta-dock__pull:disabled{opacity:.55;cursor:default}
@@ -3462,6 +3471,7 @@ function apply(ctx) {
   /** One inline chip in the dock row; the full explanation lives in its tooltip. */
   function TicketWorkspace({ sessionId, ticketId }) {
     const [opening, setOpening] = useState(false);
+    const [openError, setOpenError] = useState('');
     const [result, setResult] = useState({ state: 'pending' });
     const active = useRef(null);
     const request = useCallback(async (action) => {
@@ -3503,10 +3513,11 @@ function apply(ctx) {
       {(result.state === 'unavailable' || result.state === 'unmanaged') && ticketId ? (
         <PtaButton disabled={opening}
           title="Open this ticket in its own folder, cloned from the remote: Git Graph shows its branch, and pulling the repo lets an agent work on it again."
-          onClick={() => { setOpening(true); void openTicketThread({ id: ticketId }).finally(() => setOpening(false)); }}>
-          {opening ? 'Opening…' : 'Open from remote'}
+          onClick={() => { setOpening(true); setOpenError(''); void openTicketThread({ id: ticketId }, setOpenError).finally(() => setOpening(false)); }}>
+          {opening ? 'Cloning…' : 'Open from remote'}
         </PtaButton>
       ) : null}
+      {openError ? <span className="pta-dock__error" role="alert">{openError}</span> : null}
     </span>;
   }
 
@@ -3611,7 +3622,7 @@ function apply(ctx) {
     </div>;
   }
 
-  const THREAD_LOCK = 'The client’s own agent works this ticket. Pull the repo to chat with an agent here.';
+  const THREAD_LOCK = 'This folder only has the repo’s history. Pull the repo to chat with an agent here.';
 
   /**
    * A ticket chat folder's state, and the composer lock that goes with it: a
@@ -3630,7 +3641,7 @@ function apply(ctx) {
     useEffect(() => {
       const blocks = nativeConversation?.blocks;
       if (!sessionId || typeof blocks?.set !== 'function') return undefined;
-      blocks.set(sessionId, state === 'history' || state === 'pending' || state === 'pulling' ? { reason: THREAD_LOCK } : undefined);
+      blocks.set(sessionId, state === 'history' || state === 'pending' || state === 'pulling' || state === 'cloning' ? { reason: THREAD_LOCK } : undefined);
       return () => blocks.set(sessionId, undefined);
     }, [sessionId, state]);
     if (!sessionId) return null;
@@ -3641,19 +3652,34 @@ function apply(ctx) {
       if (out?.error) setError(`Could not pull the repo: ${out.error}`);
       setState(out?.state ?? 'history');
     };
-    return { state, pull, cwd, error };
+    const clone = async (ticketId) => {
+      setState('cloning');
+      setError('');
+      const out = await adminOperation({ operation: 'ticket-thread', ticketId });
+      if (out?.hasRepo === false) setError('This project has no repository, so there is nothing to clone. Reply or add a note above.');
+      else if (out?.error || out?.state === 'none') setError(`Could not clone the repository${out?.error ? `: ${out.error}` : '.'}`);
+      setState(out?.state ?? 'none');
+    };
+    return { state, pull, clone, cwd, error };
   }
 
   /** The dock row for a ticket chat folder: why the input is locked, and the pull that unlocks it. */
   function ThreadPull({ thread, ticket }) {
     if (thread.state === 'checkout') return null;
     const who = ticket?.worked_by === 'client_agent' ? 'The client’s own agent works this ticket over the portal. ' : '';
-    const text = thread.state === 'none'
-      ? 'This project has no repository to pull, so there is nothing to work on here. Reply or add a note above.'
+    const bare = thread.state === 'none' || thread.state === 'cloning';
+    const text = bare
+      ? 'The repository is not cloned into this ticket’s folder yet, so Git Graph has nothing to show.'
       : `${who}Git Graph shows the remote’s history; pull the repo to check out the ticket’s branch and chat with an agent here.`;
     return <div className="pta-dock__row pta-dock__thread">
       <span className="pta-dock__thread-text">{thread.error || text}</span>
-      {thread.state === 'none' ? null : (
+      {bare ? (
+        ticket?.id ? (
+          <button type="button" className="pta-dock__pull" disabled={thread.state === 'cloning'} onClick={() => void thread.clone(ticket.id)}>
+            {thread.state === 'cloning' ? 'Cloning…' : 'Clone from remote'}
+          </button>
+        ) : null
+      ) : (
         <button type="button" className="pta-dock__pull" disabled={thread.state === 'pulling' || thread.state === 'pending'} onClick={() => void thread.pull()}>
           {thread.state === 'pulling' ? 'Pulling…' : 'Pull the repo'}
         </button>

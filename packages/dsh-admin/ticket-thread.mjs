@@ -21,8 +21,8 @@
  * @module @malipetek/dsh-admin/ticket-thread
  */
 import { execFile } from 'node:child_process';
-import { mkdir, readdir, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { chmod, mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export const TICKET_THREADS = join(homedir(), '.dsh-admin', 'tickets');
@@ -37,17 +37,41 @@ export function threadFolder(root, slug, ticketId) {
 }
 
 /** Run git with no prompt; resolves `{ code, stdout, stderr }`, never rejects. */
-export function runGit(args, { cwd, timeoutMs = 120_000 } = {}) {
+export function runGit(args, { cwd, timeoutMs = 120_000, env = {} } = {}) {
   return new Promise((resolve) => {
     execFile('git', args, {
       cwd,
       timeout: timeoutMs,
       maxBuffer: 8 * 1024 * 1024,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...env },
     }, (error, stdout, stderr) => {
       resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout: String(stdout), stderr: String(stderr) });
     });
   });
+}
+
+/**
+ * Run `fn` with a git that authenticates as the project's short-lived portal
+ * token (a client's private repo is out of reach of the operator's own GitHub
+ * login). The token lives only in the child environment of each git call, read
+ * by a one-off askpass script: never in argv, output, config or the stored
+ * remote. Without a token, `fn` gets the plain git.
+ */
+export async function withRepoToken(token, fn, git = runGit) {
+  if (typeof token !== 'string' || token === '') return fn(git);
+  const dir = await mkdtemp(join(tmpdir(), 'ptech-thread-auth-'));
+  const askpass = join(dir, 'askpass');
+  await writeFile(askpass, '#!/bin/sh\ncase "$1" in *Username*) printf "%s\\n" "x-access-token";; *Password*) printf "%s\\n" "$PTECH_GIT_TOKEN";; *) exit 1;; esac\n');
+  await chmod(askpass, 0o700);
+  const authed = (args, options = {}) => git(['-c', 'credential.helper=', ...args], {
+    ...options,
+    env: { ...(options.env ?? {}), GIT_ASKPASS: askpass, PTECH_GIT_TOKEN: token },
+  });
+  try {
+    return await fn(authed);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 const exists = async (path) => {

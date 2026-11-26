@@ -100,3 +100,22 @@ test('once one ticket of a project is pulled, its other tickets open pulled too'
   const other = await prepareThread({ root, slug: 'other-co', ticketId: 7, repo });
   assert.equal(other.state, 'history');
 });
+
+test('a project token reaches git only through the environment, and the askpass file is gone afterwards', async () => {
+  const calls = [];
+  const fake = async (args, options) => { calls.push({ args, options }); return { code: 0, stdout: '', stderr: '' }; };
+  const { withRepoToken } = await import('./ticket-thread.mjs');
+  let askpass;
+  await withRepoToken('ghs_secret', async (git) => {
+    await git(['ls-remote', 'origin'], { cwd: '/tmp' });
+    askpass = calls[0].options.env.GIT_ASKPASS;
+    assert.ok(existsSync(askpass), 'askpass exists while git runs');
+  }, fake);
+  assert.deepEqual(calls[0].args, ['-c', 'credential.helper=', 'ls-remote', 'origin']);
+  assert.equal(calls[0].options.env.PTECH_GIT_TOKEN, 'ghs_secret');
+  assert.ok(!calls[0].args.join(' ').includes('ghs_secret'), 'never in argv');
+  assert.ok(!existsSync(askpass), 'askpass removed');
+  calls.length = 0;
+  await withRepoToken(null, (git) => git(['status'], {}), fake);
+  assert.deepEqual(calls[0].args, ['status'], 'no token: plain git');
+});

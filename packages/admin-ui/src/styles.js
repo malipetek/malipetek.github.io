@@ -1319,6 +1319,26 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-toast__close { flex: none; border: 0; background: none; color: inherit; cursor: pointer; padding: 0; width: 18px; height: 18px; display: grid; place-items: center; opacity: .7; border-radius: var(--aw-radius-sm); }
 .aw-toast__close:hover { opacity: 1; }
 .aw-palette__count { margin: 2px 12px 8px; color: var(--aw-ink-3); font-size: var(--aw-type-xs); }
+/* Project picker: a field-shaped button and a searchable list grouped by client. */
+.aw-picker { position: relative; min-width: 0; }
+.aw-picker__button { display: flex; align-items: center; gap: var(--aw-space-2); width: 100%; min-height: 30px; padding: 5px 8px; border: 1px solid var(--aw-hairline-strong); border-radius: var(--aw-radius-md); background: var(--aw-surface); color: var(--aw-ink); text-align: left; cursor: pointer; }
+.aw-picker__button:hover { border-color: var(--aw-ink-3); }
+.aw-picker__button:disabled { opacity: .6; cursor: default; }
+.aw-picker__value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-picker__owner { color: var(--aw-ink-3); font-size: var(--aw-type-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+.aw-picker__chevron { color: var(--aw-ink-3); font-size: var(--aw-type-xs); }
+.aw-picker__panel { position: fixed; z-index: 70; display: flex; flex-direction: column; background: var(--aw-surface-raised); border-radius: var(--aw-radius-lg); box-shadow: var(--aw-shadow-float); overflow: hidden; animation: aw-fade var(--aw-dur) var(--aw-ease); }
+.aw-picker__panel input:not(#aw-override) { width: 100%; border: 0; border-bottom: 1px solid var(--aw-hairline); border-radius: 0; padding: 10px 12px; background: none; outline: none; }
+.aw-picker__panel ul { list-style: none; margin: 0; padding: 0; }
+.aw-picker__panel > ul { padding: 4px; overflow-y: auto; min-height: 0; flex: 1; }
+.aw-picker__panel li[role=option] { display: flex; align-items: center; gap: var(--aw-space-3); height: 30px; padding: 0 10px; border-radius: var(--aw-radius-sm); cursor: pointer; }
+.aw-picker__panel li[role=option] > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-picker__panel li[role=option] small { color: var(--aw-ink-3); font-size: var(--aw-type-xs); white-space: nowrap; }
+.aw-picker__panel li[role=option].is-active { background: var(--aw-selected); }
+.aw-picker__check { color: var(--aw-accent); }
+.aw-picker__heading { display: flex; align-items: baseline; gap: var(--aw-space-2); padding: 8px 10px 4px; color: var(--aw-ink-3); font-size: var(--aw-type-xs); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-picker__heading small { font-weight: 400; color: var(--aw-accent); }
+.aw-picker__empty { padding: 12px 10px; color: var(--aw-ink-3); }
 .aw-drawer-scrim { position: fixed; inset: 0; z-index: 59; background: var(--aw-scrim); animation: aw-fade var(--aw-dur) var(--aw-ease); }
 @media (max-width: 900px) {
   .aw-explorer--drawer { display: block; position: fixed; z-index: 60; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); box-shadow: var(--aw-shadow-float); animation: aw-slide var(--aw-dur) var(--aw-ease); }
