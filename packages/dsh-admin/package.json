@@ -22,6 +22,7 @@
     "superagent-prompt.mjs",
     "ticket-thread.mjs",
     "picked-directory.mjs",
+    "client-invite.mjs",
     "client.js",
     "cordis.patch.yml",
     "icon.svg",

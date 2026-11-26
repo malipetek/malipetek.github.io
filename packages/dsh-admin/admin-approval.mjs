@@ -15,7 +15,7 @@
 /** Write actions per tool. Anything not listed is a read and passes through. */
 export const WRITE_ACTIONS = {
   admin_tickets: ['reply', 'note', 'set_status'],
-  admin_directory: ['create_project', 'set_folder', 'link', 'unlink'],
+  admin_directory: ['create_project', 'set_folder', 'link', 'unlink', 'invite'],
   admin_project_local: ['configure', 'clone'],
   admin_project_operations: ['project.update', 'mentions.send', 'work.draft', 'work.queue'],
   admin_fleet: ['file_task', 'route', 'cancel', 'drain', 'undrain', 'node_control'],
@@ -36,11 +36,15 @@ function describe(tool, action, args) {
     case 'admin_directory create_project':
       return `Create the project “${text(args.name) ?? text(args.title) ?? 'untitled'}”?`;
     case 'admin_directory set_folder':
-      return `Point project ${text(args.projectId) ?? ''} at ${text(args.path) ?? 'a folder'}?`;
+      return `Point project ${text(args.slug) ?? text(args.projectId) ?? ''} at ${text(args.folder) ?? text(args.path) ?? 'a folder'}?`;
     case 'admin_directory link':
-      return `Link a folder to project ${text(args.projectId) ?? ''}?`;
+      return `Give client ${text(args.clientId) ?? ''} access to project ${text(args.projectId) ?? ''}?`;
     case 'admin_directory unlink':
-      return `Unlink the folder from project ${text(args.projectId) ?? ''}?`;
+      return `Remove client ${text(args.clientId) ?? ''} from project ${text(args.projectId) ?? ''}?`;
+    case 'admin_directory invite': {
+      const projects = Array.isArray(args.projects) ? args.projects.filter((p) => text(p)).join(', ') : '';
+      return `Invite ${text(args.email) ?? 'this address'} to ${projects || 'the project'}? They are emailed a sign-in link.`;
+    }
     case 'admin_project_local configure':
       return `Point project ${text(args.projectId) ?? ''} at ${text(args.path) ?? 'a folder'} on this machine?`;
     case 'admin_project_local clone':

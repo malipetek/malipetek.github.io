@@ -29,6 +29,7 @@ import { createLocalProjects } from './local-project.mjs';
 import { readConsent, writeConsent } from './machine-consent.mjs';
 import { createToolbox } from './local-toolbox.mjs';
 import { writeApproval } from './admin-approval.mjs';
+import { inviteMessage } from './client-invite.mjs';
 import { PROJECT_OPERATIONS, projectOperationRequest } from './project-operations.mjs';
 import { createWorkspaceRecovery } from './workspace-recovery.mjs';
 import { fleetWorkspaceCandidate, verifiedTicketWorkspace } from './ticket-workspace-source.mjs';
@@ -1162,6 +1163,13 @@ const linkProject = (config, userId, projectId) =>
   request(config, `/admin/clients/${encodeURIComponent(userId)}/projects/${encodeURIComponent(projectId)}`, {
     method: 'PUT',
   });
+
+/**
+ * Invite an email address to projects. The portal makes the client account if
+ * the address is new, links the projects either way, and mails a week-long
+ * sign-in link, so nobody has to sign up before they can be given a project.
+ */
+const inviteClient = (config, invite) => request(config, '/admin/clients', { method: 'POST', body: invite });
 
 const unlinkProject = (config, userId, projectId) =>
   request(config, `/admin/clients/${encodeURIComponent(userId)}/projects/${encodeURIComponent(projectId)}`, {
@@ -2486,6 +2494,7 @@ export function apply(ctx) {
           'The PTech client portal directory (ptechsolutions.net): clients, projects, and which projects a client may file against.',
           'A project slug is what the local runner maps to a folder on disk, so a ticket is only workable once its project exists and the runner knows the slug.',
           'Action "set_folder" writes that slug → folder mapping into the local runner config; without an entry the runner falls back to <projectsRoot>/<slug>.',
+          'Action "invite" gives an email address access to one or more projects whether or not that person has an account yet: the portal makes the client account if needed, links the projects and emails a week-long sign-in link. Use it instead of waiting for someone to sign up.',
         ].join(' '),
         parameters: {
           type: 'object',
@@ -2494,9 +2503,17 @@ export function apply(ctx) {
           properties: {
             action: {
               type: 'string',
-              enum: ['clients', 'projects', 'create_project', 'set_folder', 'link', 'unlink'],
-              description: 'List clients, list projects, create a project, point a project at a local folder, or link/unlink a project to a client.',
+              enum: ['clients', 'projects', 'create_project', 'set_folder', 'link', 'unlink', 'invite'],
+              description: 'List clients, list projects, create a project, point a project at a local folder, link/unlink a project to an existing client, or invite an email address to projects.',
             },
+            email: { type: 'string', description: 'Email address to invite, for invite.' },
+            projects: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Project ids or slugs to give the invited address, for invite.',
+            },
+            locale: { type: 'string', description: 'Language of the invite email (e.g. en-US, tr-TR), for invite. Defaults to en-US.' },
+            note: { type: 'string', description: 'A short personal line added to the invite email, for invite.' },
             name: { type: 'string', description: 'Project display name, for create_project.' },
             slug: { type: 'string', description: 'Project slug (lowercase, dashes), for create_project and set_folder.' },
             folder: {
@@ -2504,6 +2521,7 @@ export function apply(ctx) {
               description: 'Absolute or ~/… path to the project folder, for set_folder. Empty clears it and falls back to the projects root.',
             },
             clientId: { type: 'string', description: 'Client user id, for link and unlink.' },
+            clientName: { type: 'string', description: 'The invited person\'s name, for invite (optional).' },
             projectId: { type: 'string', description: 'Project id, for link and unlink.' },
           },
         },
@@ -2572,6 +2590,26 @@ export function apply(ctx) {
               else await unlinkProject(config, args.clientId, args.projectId);
               await refresh(config);
               return { message: args.action === 'link' ? 'Project linked.' : 'Project unlinked.' };
+            }
+            case 'invite': {
+              if (typeof args.email !== 'string' || args.email.trim() === '') throw new Error('email is required.');
+              const wanted = Array.isArray(args.projects) ? args.projects.filter((p) => typeof p === 'string' && p.trim() !== '') : [];
+              if (wanted.length === 0) throw new Error('projects is required: one or more project ids or slugs.');
+              const snapshot = await refresh(config);
+              const projectIds = wanted.map((key) => {
+                const project = snapshot.projects.find((p) => p.id === key || p.slug === key.toLowerCase());
+                if (project === undefined) throw new Error(`No project "${key}". List them with action "projects".`);
+                return project.id;
+              });
+              const result = await inviteClient(config, {
+                email: args.email.trim(),
+                projectIds,
+                ...(typeof args.clientName === 'string' && args.clientName.trim() ? { name: args.clientName.trim() } : {}),
+                ...(typeof args.locale === 'string' && args.locale.trim() ? { locale: args.locale.trim() } : {}),
+                ...(typeof args.note === 'string' && args.note.trim() ? { note: args.note.trim() } : {}),
+              });
+              await refresh(config);
+              return { message: inviteMessage(result) };
             }
             default:
               throw new Error(`Unknown action "${args.action}".`);

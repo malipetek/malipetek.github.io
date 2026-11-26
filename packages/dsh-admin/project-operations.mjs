@@ -1,7 +1,7 @@
 /** Only project-scoped, current-session portal operations. Never use cat_ or global admin tokens. */
 const operations = ['project.read','project.update','recipients.list','mentions.send','work.list','work.draft','work.queue'];
 export const PROJECT_OPERATIONS = {
-  description: 'Read or update a project, list its people or work, notify saved-message recipients, or create a draft/queued system task. Uses current signed-in portal authority. work.queue creates a NEW approved task; it does not modify an existing ticket. Secrets, membership grants, global settings and raw runner execution require a super-admin decision and are unavailable here.',
+  description: 'Read or update a project, list its people or work, notify saved-message recipients, or create a draft/queued system task. Uses current signed-in portal authority. work.queue creates a NEW approved task; it does not modify an existing ticket. Secrets, membership grants, global settings and raw runner execution require a super-admin decision and are unavailable here. To give a client (by email, account or not) access to a project, use admin_directory with action "invite".',
   parameters: {
     type:'object', additionalProperties:false, required:['operation','projectId'],
     properties: {
