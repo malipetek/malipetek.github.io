@@ -1,9 +1,65 @@
-export function linkedTicketDetail(detail, ticketId, sessionId) {
-  return typeof sessionId === 'string' && sessionId !== '' && detail?.ticket?.id === ticketId
-    && Array.isArray(detail.runs) && detail.runs.some(run => run?.session_id === sessionId) ? detail : null;
+/**
+ * The ticket's detail when this session belongs to it: a run recorded the
+ * session, or (`thread`) the session runs in the ticket's own chat folder.
+ */
+export function linkedTicketDetail(detail, ticketId, sessionId, thread = false) {
+  if (typeof sessionId !== 'string' || sessionId === '' || detail?.ticket?.id !== ticketId) return null;
+  if (thread) return detail;
+  return Array.isArray(detail.runs) && detail.runs.some(run => run?.session_id === sessionId) ? detail : null;
 }
 
-export function createTicketDetailReader({ ticketId, sessionId, api, update }) {
+/** One Host admin operation over the Connection route; `{ state: 'none', error }` when it cannot answer. */
+export async function adminOperation(body, signal, fetcher = globalThis.fetch) {
+  try {
+    const response = await fetcher('/api/admin/command', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, redirect: 'error',
+      body: JSON.stringify(body), signal,
+    });
+    if (response.ok) return await response.json();
+    return { state: 'none', error: `http_${response.status}` };
+  } catch (error) {
+    return { state: 'none', error: error?.message ?? 'unavailable' };
+  }
+}
+
+/**
+ * Start the chat for a ticket no local run opened, in its own folder. No
+ * prompt goes out: the conversation opens on the ticket's activity, and the
+ * composer is locked until the repo is pulled.
+ * @returns {Promise<string>} the session id.
+ */
+/** The first turn of a ticket's chat: a read-only briefing, so the conversation opens on the ticket, not a blank start. */
+export function ticketBriefing(ticketId) {
+  return [
+    `Brief me on ticket #${ticketId} in a few short lines: what the client asked, what their own agent changed (its work is on branch malipetek/ticket-${ticketId} in this folder's git history), and what is on the preview now.`,
+    'Read only: change no file, run nothing that writes, and do not move the ticket. Use the admin tools and git log to read.',
+  ].join('\n');
+}
+
+export async function startTicketThread({ sessions, cwd, title, ticketId, preset = 'workspace-write', sessionId: reuse = null }) {
+  if (typeof sessions?.create !== 'function') throw new Error('This host cannot start a conversation.');
+  // A blank session already in the folder (an earlier open that never got its
+  // first turn) is reused rather than left behind.
+  const sessionId = reuse ?? await sessions.create({ cwd });
+  const reference = sessions.retain(sessionId, { source: 'workspaceOperation' });
+  try {
+    await reference.ready;
+    const session = reference.binding.session;
+    if (preset && typeof session.command === 'function') await session.command(`/permission ${preset}`).catch(() => undefined);
+    // The briefing is the turn that makes this a conversation (a session with
+    // no turn opens on the New Session start screen and hides from the tree).
+    if (ticketId != null && typeof session.prompt === 'function') {
+      const result = await session.prompt([{ type: 'text', text: ticketBriefing(ticketId) }], 'queue');
+      if (result?.ok === false) throw new Error(result.error?.message ?? 'The conversation rejected the briefing.');
+    }
+    if (title && typeof session.rename === 'function') await session.rename(title).catch(() => undefined);
+  } finally {
+    reference.release?.();
+  }
+  return sessionId;
+}
+
+export function createTicketDetailReader({ ticketId, sessionId, api, update, thread = false }) {
   let revision = 0, disposed = false;
   return {
     async load() {
@@ -11,7 +67,7 @@ export function createTicketDetailReader({ ticketId, sessionId, api, update }) {
       const current = ++revision;
       let result;
       try {
-        const detail = linkedTicketDetail(await api('GET', `/admin/tickets/${ticketId}`), ticketId, sessionId);
+        const detail = linkedTicketDetail(await api('GET', `/admin/tickets/${ticketId}`), ticketId, sessionId, thread);
         result = { detail, error: detail ? '' : 'This session is not linked to the ticket.' };
       } catch {
         result = { detail: null, error: 'Could not load the linked ticket.' };

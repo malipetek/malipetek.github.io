@@ -11,7 +11,7 @@
  *
  * @module @malipetek/dsh-admin
  */
-import { createTicketDetailReader, ticketActivity, sendTicketMessage, requestTicketWorkspace, migrateTicketView } from './ticket-chat.mjs';
+import { createTicketDetailReader, ticketActivity, sendTicketMessage, requestTicketWorkspace, migrateTicketView, adminOperation, startTicketThread } from './ticket-chat.mjs';
 import { startSuperagent } from '../superagent-start.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ClientPage, ProjectPage, TicketPage } from '../../admin-ui/src/index.js';
@@ -512,6 +512,13 @@ function apply(ctx) {
    */
   function ticketFromCwd(key) {
     const [cwd, title = ''] = String(key ?? '').split(SEP);
+    // A ticket's own chat folder (a client's agent works it; no local run did).
+    if (typeof cwd === 'string' && cwd.includes('/.dsh-admin/tickets/')) {
+      const thread = RUN_DIR_RE.exec(cwd.replace(/\/+$/, '').split('/').pop() ?? '');
+      return thread && thread[2] === 'ticket' && !thread[4]
+        ? { slug: thread[1], kind: 'ticket', ticketId: Number(thread[3]), runId: null, cwd, thread: true }
+        : null;
+    }
     if (typeof cwd !== 'string' || !cwd.includes('/malipetek-runner/worktrees/')) return null;
     const folder = cwd.replace(/\/+$/, '').split('/').pop() ?? '';
     const match = RUN_DIR_RE.exec(folder);
@@ -1697,7 +1704,43 @@ function apply(ctx) {
     } catch (error) {
       console.warn(`admin: could not open a run for ticket ${ticket.id}:`, error?.message ?? error);
     }
+    if (await openTicketThread(ticket)) return;
     openTicket({ ticketId: ticket.id });
+  }
+
+  /**
+   * No local run opened this ticket (a client's own agent works it): open it
+   * in the real chat view anyway, as a session in the ticket's own folder.
+   * The folder is a history-only clone of the project, so Git Graph has the
+   * remote's branches; the composer stays locked until the repo is pulled.
+   * @returns true when the conversation opened.
+   */
+  async function openTicketThread(ticket) {
+    const ws = workspace;
+    if (!desktop || typeof ws?.openSession !== 'function' || typeof ctx.sessions?.create !== 'function') return false;
+    try {
+      const out = await adminOperation({ operation: 'ticket-thread', ticketId: ticket.id });
+      if (!out?.dir) return false;
+      const rows = Object.values(ctx.sessions?.list?.getSnapshot?.()?.byId ?? {});
+      const existing = rows.find((row) => typeof row?.cwd === 'string' && row.cwd.replace(/\/+$/, '') === out.dir);
+      const sessionId = existing && !existing.blank ? existing.id : await startTicketThread({
+        sessions: ctx.sessions,
+        sessionId: existing?.id ?? null,
+        cwd: out.dir,
+        title: `Ticket #${ticket.id} — ${out.title || ticket.title || ''}`.trim(),
+        ticketId: ticket.id,
+      });
+      // Group it under its ticket's workspace now, not on the next 30-second pass.
+      await adminOperation({ operation: 'group-now' });
+      if (typeof ctx.sessions?.refresh === 'function') await ctx.sessions.refresh().catch(() => undefined);
+      if (archivedIds().includes(sessionId) && typeof ws.unarchiveSession === 'function') await ws.unarchiveSession(sessionId).catch(() => undefined);
+      await ws.openSession(sessionId);
+      nativeConversation?.selectView?.(sessionId, 'chat');
+      return true;
+    } catch (error) {
+      console.warn(`admin: could not open the chat for ticket ${ticket.id}:`, error?.message ?? error);
+      return false;
+    }
   }
 
   /** Open a client's main page, registering it first if the poll has not run yet. */
@@ -1987,12 +2030,12 @@ function apply(ctx) {
     ? json(`api ${method} ${path}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`, command.quiet)
     : api(method, path, body);
 
-  function useLinkedTicketDetail(ticketId, sessionId) {
-    const key = ticketId && sessionId ? `${ticketId}:${sessionId}` : null;
+  function useLinkedTicketDetail(ticketId, sessionId, thread = false) {
+    const key = ticketId && sessionId ? `${ticketId}:${sessionId}:${thread ? 't' : 'r'}` : null;
     const [state, setState] = useState(null);
     useEffect(() => {
       if (!key) return;
-      const reader = createTicketDetailReader({ ticketId, sessionId, api: ticketCommandApi, update: next => setState({ ...next, key }) });
+      const reader = createTicketDetailReader({ ticketId, sessionId, thread, api: ticketCommandApi, update: next => setState({ ...next, key }) });
       const changed = event => {
         if (event.detail?.ticketId == null || Number(event.detail.ticketId) === ticketId) void reader.load();
       };
@@ -2010,7 +2053,7 @@ function apply(ctx) {
 
   function TicketActivityFrame({ sessionId, ActivityProvider, children }) {
     const candidate = ticketFromCwd(useSessionCwd(sessionId));
-    const { detail } = useLinkedTicketDetail(candidate?.ticketId, sessionId);
+    const { detail } = useLinkedTicketDetail(candidate?.ticketId, sessionId, Boolean(candidate?.thread));
     const activity = useMemo(() => ticketActivity(detail), [detail]);
     return <ActivityProvider value={activity}>{children}</ActivityProvider>;
   }
@@ -2345,6 +2388,11 @@ function apply(ctx) {
     .pta-dock__ws[data-state=missing] .pta-dock__dot,.pta-dock__ws[data-state=conflict] .pta-dock__dot{background:#d29922}
     .pta-dock__ws[data-state=unavailable] .pta-dock__dot{background:#f85149}
     .pta-dock__actions{display:inline-flex;gap:2px;flex:none}
+    .pta-dock__thread{border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));padding:6px 8px 6px 10px;align-items:center}
+    .pta-dock__thread-text{flex:1 1 auto;min-width:0;font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary,inherit)}
+    .pta-dock__pull{flex:none;height:26px;padding:0 12px;border:0;border-radius:999px;background:var(--dsw-alias-state-business-primary,#ff8a5c);color:var(--dsw-alias-label-on-primary,#0f1115);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+    .pta-dock__pull:hover:not(:disabled){filter:brightness(1.08)}
+    .pta-dock__pull:disabled{opacity:.55;cursor:default}
     .pta-dock__toggle[aria-expanded=true]{color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
     .pta-hist{height:100%;width:100%;overflow-y:auto;box-sizing:border-box;padding:18px 24px 140px;max-width:860px;margin:0 auto;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary,inherit)}
     .pta-hist__bar{display:flex;align-items:center;gap:10px;margin:0 0 14px}
@@ -3491,8 +3539,8 @@ function apply(ctx) {
    * note/email toggles). A form opens below the row only when asked for.
    * Messages to the agent go through the native composer underneath.
    */
-  function LinkedTicketDock({ sessionId, ticketId }) {
-    const { detail, error } = useLinkedTicketDetail(ticketId, sessionId);
+  function LinkedTicketDock({ sessionId, ticketId, thread = null }) {
+    const { detail, error } = useLinkedTicketDetail(ticketId, sessionId, Boolean(thread));
     const ticket = detail?.ticket;
     const [open, setOpen] = useState(null);
     const canReply = ticket && ticket.kind !== 'system' && ticket.client_email;
@@ -3505,12 +3553,13 @@ function apply(ctx) {
         {ticket ? <StatusPill status={ticket.status} /> : null}
         <span className="pta-dock__id">#{ticketId}</span>
         <span className="pta-dock__title" title={title}>{title}</span>
-        {desktop ? <TicketWorkspace sessionId={sessionId} /> : null}
+        {desktop && !thread ? <TicketWorkspace sessionId={sessionId} /> : null}
         {ticket ? <span className="pta-dock__actions">
           {toggle('note', 'Add private note')}
           {canReply ? toggle('reply', 'Reply by email') : null}
         </span> : null}
       </div>
+      {thread ? <ThreadPull thread={thread} ticket={ticket} /> : null}
       {ticket && open === 'note' ? <TicketMessageForm key="note" mode="note" ticket={ticket} /> : null}
       {canReply && open === 'reply' ? <TicketMessageForm key="reply" mode="reply" ticket={ticket} /> : null}
     </section>;
@@ -3544,9 +3593,60 @@ function apply(ctx) {
     const run = ticketFromCwd(useSessionCwd(sessionId));
     const anchor = useRef(null);
     const chat = useChatViewActive(anchor, Boolean(run && sessionId));
+    const thread = useThreadLock(run?.thread ? sessionId : null, run?.cwd);
     if (!run || !sessionId) return null;
     return <div ref={anchor} style={{ display: 'contents' }}>
-      {chat ? <LinkedTicketDock key={`${run.ticketId}:${sessionId}`} ticketId={run.ticketId} sessionId={sessionId} /> : null}
+      {chat ? <LinkedTicketDock key={`${run.ticketId}:${sessionId}`} ticketId={run.ticketId} sessionId={sessionId} thread={thread} /> : null}
+    </div>;
+  }
+
+  const THREAD_LOCK = 'The client’s own agent works this ticket. Pull the repo to chat with an agent here.';
+
+  /**
+   * A ticket chat folder's state, and the composer lock that goes with it: a
+   * history-only clone keeps the input inert until the repo is pulled.
+   * Returns null for any other session.
+   */
+  function useThreadLock(sessionId, cwd) {
+    const [state, setState] = useState(sessionId ? 'pending' : null);
+    const [error, setError] = useState('');
+    const refresh = useCallback(async () => {
+      if (!sessionId || !cwd) return;
+      const out = await adminOperation({ operation: 'ticket-thread-state', cwd });
+      setState(out?.state ?? 'none');
+    }, [sessionId, cwd]);
+    useEffect(() => { void refresh(); }, [refresh]);
+    useEffect(() => {
+      const blocks = nativeConversation?.blocks;
+      if (!sessionId || typeof blocks?.set !== 'function') return undefined;
+      blocks.set(sessionId, state === 'history' || state === 'pending' || state === 'pulling' ? { reason: THREAD_LOCK } : undefined);
+      return () => blocks.set(sessionId, undefined);
+    }, [sessionId, state]);
+    if (!sessionId) return null;
+    const pull = async () => {
+      setState('pulling');
+      setError('');
+      const out = await adminOperation({ operation: 'ticket-pull', cwd });
+      if (out?.error) setError(`Could not pull the repo: ${out.error}`);
+      setState(out?.state ?? 'history');
+    };
+    return { state, pull, cwd, error };
+  }
+
+  /** The dock row for a ticket chat folder: why the input is locked, and the pull that unlocks it. */
+  function ThreadPull({ thread, ticket }) {
+    if (thread.state === 'checkout') return null;
+    const agent = ticket?.worked_by === 'client_agent' ? 'The client’s own agent' : 'Nobody here';
+    const text = thread.state === 'none'
+      ? 'This project has no repository to pull, so there is nothing to work on here. Reply or add a note above.'
+      : `${agent} works this ticket over the portal. Git Graph shows the remote’s history; pull the repo to check out the ticket’s branch and chat with an agent here.`;
+    return <div className="pta-dock__row pta-dock__thread">
+      <span className="pta-dock__thread-text">{thread.error || text}</span>
+      {thread.state === 'none' ? null : (
+        <button type="button" className="pta-dock__pull" disabled={thread.state === 'pulling' || thread.state === 'pending'} onClick={() => void thread.pull()}>
+          {thread.state === 'pulling' ? 'Pulling…' : 'Pull the repo'}
+        </button>
+      )}
     </div>;
   }
 

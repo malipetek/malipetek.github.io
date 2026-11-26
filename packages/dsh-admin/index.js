@@ -17,6 +17,7 @@
  * @module @malipetek/dsh-admin
  */
 import { superagentSection } from './superagent-prompt.mjs';
+import { TICKET_THREADS, prepareThread, pullThread, threadState } from './ticket-thread.mjs';
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { access, link, mkdir, readdir, readFile, realpath, unlink, writeFile } from 'node:fs/promises';
@@ -1987,7 +1988,7 @@ const toolbox = createToolbox();
 /** What the last pass did, for `/admin localinfo`. */
 export const runGrouping = { lastAt: null, attached: 0, error: null, folders: [] };
 
-export function groupFleetRuns(registry, { superagentFolder = SUPERAGENT_WORKSPACE, runsFile = RUN_WORKSPACES } = {}) {
+export function groupFleetRuns(registry, { superagentFolder = SUPERAGENT_WORKSPACE, runsFile = RUN_WORKSPACES, ticketsRoot = TICKET_THREADS } = {}) {
   let busy = false;
   const pass = async () => {
     if (busy || typeof registry?.create !== 'function') return;
@@ -2017,6 +2018,16 @@ export function groupFleetRuns(registry, { superagentFolder = SUPERAGENT_WORKSPA
       } catch {
         /* no home to write to */
       }
+      // A ticket a client's own agent works gets its own chat folder; each one
+      // is a workspace named for its ticket, so its conversation is not Unsorted.
+      try {
+        for (const entry of await readdir(ticketsRoot, { withFileTypes: true })) {
+          const match = entry.isDirectory() ? /-ticket-(\d+)$/.exec(entry.name) : null;
+          if (match) folders.push([join(ticketsRoot, entry.name), `Ticket #${match[1]}`]);
+        }
+      } catch {
+        /* no ticket has been opened this way yet */
+      }
       runGrouping.folders = folders.map(([path]) => path);
       if (folders.length === 0) return;
       const headers = await registry.listStoredHeaders();
@@ -2042,8 +2053,9 @@ export function groupFleetRuns(registry, { superagentFolder = SUPERAGENT_WORKSPA
     }
   };
   void pass();
+  runGrouping.now = pass;
   const timer = setInterval(() => void pass(), GROUP_EVERY_MS);
-  return () => clearInterval(timer);
+  return () => { clearInterval(timer); if (runGrouping.now === pass) runGrouping.now = null; };
 }
 
 export function apply(ctx) {
@@ -2188,6 +2200,36 @@ export function apply(ctx) {
     }, 'admin: ticket workspace policy');
   });
 
+  /**
+   * A chat folder for a ticket no local run opened (a client's own agent works
+   * it over the portal): a history-only clone of the project on the ticket's
+   * branch. The client starts the session there; the composer stays locked
+   * until `ticket-pull` checks the branch out.
+   */
+  async function ticketThread(ticketId, reply) {
+    const id = Number(ticketId);
+    if (!Number.isSafeInteger(id) || id <= 0) return reply(400, { state: 'none', error: 'bad_ticket' });
+    try {
+      const config = await loadConfig();
+      const detail = await request(config, `/admin/tickets/${id}`);
+      const ticket = detail?.ticket;
+      if (!ticket?.project_slug) return reply(200, { state: 'none', error: 'no_project' });
+      const projects = await request(config, '/admin/projects');
+      const project = (projects?.projects ?? []).find((p) => p.id === ticket.project_id);
+      const out = await prepareThread({ slug: ticket.project_slug, ticketId: id, repo: project?.repo ?? null });
+      return reply(200, { ...out, title: ticket.title_en || ticket.title || '' });
+    } catch (error) {
+      return reply(200, { state: 'none', error: error?.message ?? String(error) });
+    }
+  }
+
+  async function ticketThreadAction(operation, cwd, reply) {
+    const dir = typeof cwd === 'string' ? cwd.replace(/\/+$/, '') : '';
+    if (!dir.startsWith(`${TICKET_THREADS}/`) || dir.includes('..')) return reply(400, { state: 'none', error: 'not_a_ticket_folder' });
+    const out = operation === 'ticket-pull' ? await pullThread(dir) : { state: await threadState(dir) };
+    return reply(200, out);
+  }
+
   async function ticketWorkspace(operation, sessionId, reply) {
     if (typeof sessionId !== 'string' || !SESSION_ID_RE.test(sessionId) || sessionId.includes('..')) {
       return reply(400, { state: 'unavailable', reason: 'invalid_session' });
@@ -2285,6 +2327,12 @@ export function apply(ctx) {
             if (body?.operation === 'ticket-workspace-status' || body?.operation === 'ticket-workspace-restore') {
               return ticketWorkspace(body.operation, body.sessionId, reply);
             }
+            if (body?.operation === 'ticket-thread') return ticketThread(body.ticketId, reply);
+            if (body?.operation === 'group-now') {
+              await runGrouping.now?.();
+              return reply(200, { ok: true, error: runGrouping.error ?? null });
+            }
+            if (body?.operation === 'ticket-thread-state' || body?.operation === 'ticket-pull') return ticketThreadAction(body.operation, body.cwd, reply);
             const line = body?.line;
             if (typeof line !== 'string' || line.trim().length === 0) return reply(400, { kind: 'error', text: 'Send {"line":"<subcommand> …"}.' });
             if (line.length > BRIDGE_MAX_BODY) return reply(413, { kind: 'error', text: 'Too large.' });
