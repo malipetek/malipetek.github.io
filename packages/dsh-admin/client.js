@@ -93,6 +93,39 @@ var __awPlugin = (() => {
       }
     };
   }
+  var QUOTE_STARTS = [
+    /^On .+ wrote:?\s*$/i,
+    /^.{0,300}<[^<>\s]+@[^<>\s]+>.*\bwrote:?\s*$/i,
+    /^.{0,300}<[^<>\s]+@[^<>\s]+>.*(yaz\u0131ld\u0131|yazd\u0131|yazdi):?\s*$/i,
+    /^\s*-{2,}\s*Original Message\s*-{2,}/i,
+    /^\s*From:\s\S+@\S+\s*$/i,
+    /^_{5,}\s*$/
+  ];
+  var isAttributionLine = (line) => QUOTE_STARTS.some((pattern) => pattern.test(line));
+  var EMAIL_HEADER = /<[^<>\s]+@[^<>\s]+>/;
+  var WRITES = /(wrote|yaz\u0131ld\u0131|yazd\u0131|yazdi):?\s*$/i;
+  function stripQuotedReply(body) {
+    if (typeof body !== "string") return body;
+    const lines = body.split(/\r?\n/);
+    let cut = -1;
+    for (const [index, line] of lines.entries()) {
+      if (isAttributionLine(line)) {
+        cut = index;
+        break;
+      }
+      if (EMAIL_HEADER.test(line) && WRITES.test(lines[index + 1] ?? "")) {
+        cut = index;
+        break;
+      }
+    }
+    let end = cut === -1 ? lines.length : cut;
+    while (end > 0 && lines[end - 1].trim() === "") end -= 1;
+    let quoted = end;
+    while (quoted > 0 && /^\s*>/.test(lines[quoted - 1])) quoted -= 1;
+    if (quoted < end) end = quoted;
+    const kept = lines.slice(0, end).join("\n").replace(/\s+$/, "");
+    return kept === "" ? body.trim() : kept;
+  }
   function ticketActivity(detail) {
     if (!detail) return [];
     const rows = /* @__PURE__ */ new Map();
@@ -110,7 +143,7 @@ var __awPlugin = (() => {
       const label = message.author === "system" ? "Ticket status" : message.internal ? "Private note" : message.author === "client" ? "Client message" : message.author === "runner" ? "Fleet run" : "Team reply";
       const kind = message.author === "system" ? "status" : message.internal ? "note" : message.author === "client" ? "client" : message.author === "runner" ? "run" : "team";
       const author = kind === "client" ? ticket.client_email || "Client" : kind === "team" || kind === "note" ? "You" : void 0;
-      add(`message:${message.id}`, message.created_at, label, message.body, kind, author);
+      add(`message:${message.id}`, message.created_at, label, stripQuotedReply(message.body), kind, author);
     }
     for (const run of detail.runs) {
       if (!Number.isSafeInteger(run?.id)) continue;

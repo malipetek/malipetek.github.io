@@ -78,6 +78,42 @@ export function createTicketDetailReader({ ticketId, sessionId, api, update, thr
   };
 }
 
+// A mail client appends the message it answers, so a one-word reply arrives as
+// "heyo" plus a paragraph of quoted history. The chat shows the reply, not the
+// quote, so cut the quoted tail here; the ticket keeps the body as sent.
+const QUOTE_STARTS = [
+  /^On .+ wrote:?\s*$/i,
+  /^.{0,300}<[^<>\s]+@[^<>\s]+>.*\bwrote:?\s*$/i,
+  /^.{0,300}<[^<>\s]+@[^<>\s]+>.*(yaz\u0131ld\u0131|yazd\u0131|yazdi):?\s*$/i,
+  /^\s*-{2,}\s*Original Message\s*-{2,}/i,
+  /^\s*From:\s\S+@\S+\s*$/i,
+  /^_{5,}\s*$/,
+];
+/** A mail header line, or the "wrote:" / "şunu yazdı:" line that finishes one. */
+const isAttributionLine = (line) => QUOTE_STARTS.some((pattern) => pattern.test(line));
+const EMAIL_HEADER = /<[^<>\s]+@[^<>\s]+>/;
+const WRITES = /(wrote|yaz\u0131ld\u0131|yazd\u0131|yazdi):?\s*$/i;
+
+export function stripQuotedReply(body) {
+  if (typeof body !== 'string') return body;
+  const lines = body.split(/\r?\n/);
+  let cut = -1;
+  for (const [index, line] of lines.entries()) {
+    if (isAttributionLine(line)) { cut = index; break; }
+    // Gmail wraps the attribution over two lines: "name <mail>, 26 Kas 20:50"
+    // then "tarihinde şunu yazdı:". Neither line matches on its own.
+    if (EMAIL_HEADER.test(line) && WRITES.test(lines[index + 1] ?? '')) { cut = index; break; }
+  }
+  let end = cut === -1 ? lines.length : cut;
+  while (end > 0 && lines[end - 1].trim() === '') end -= 1;
+  // A trailing run of "> " lines is quoted text even with no attribution line.
+  let quoted = end;
+  while (quoted > 0 && /^\s*>/.test(lines[quoted - 1])) quoted -= 1;
+  if (quoted < end) end = quoted;
+  const kept = lines.slice(0, end).join('\n').replace(/\s+$/, '');
+  return kept === '' ? body.trim() : kept;
+}
+
 export function ticketActivity(detail) {
   if (!detail) return [];
   const rows = new Map();
@@ -102,7 +138,7 @@ export function ticketActivity(detail) {
     // The client has an identity on the ticket; ours is always us.
     const author = kind === 'client' ? (ticket.client_email || 'Client')
       : kind === 'team' || kind === 'note' ? 'You' : undefined;
-    add(`message:${message.id}`, message.created_at, label, message.body, kind, author);
+    add(`message:${message.id}`, message.created_at, label, stripQuotedReply(message.body), kind, author);
   }
   for (const run of detail.runs) {
     if (!Number.isSafeInteger(run?.id)) continue;
