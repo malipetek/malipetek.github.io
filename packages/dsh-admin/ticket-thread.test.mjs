@@ -76,3 +76,27 @@ test('no repo: an empty folder, still a chat, nothing to lock', async (t) => {
   assert.equal(out.state, 'none');
   assert.ok(existsSync(out.dir));
 });
+
+test('once one ticket of a project is pulled, its other tickets open pulled too', async (t) => {
+  const { repo, root } = remote(t);
+  const first = await prepareThread({ root, slug: 'liftor-co', ticketId: 7, repo });
+  const waiting = await prepareThread({ root, slug: 'liftor-co', ticketId: 8, repo });
+  assert.equal(waiting.state, 'history', 'nothing is pulled yet');
+  await pullThread(first.dir);
+
+  // A ticket opened after the pull starts as a full checkout of its own branch.
+  const fresh = await prepareThread({ root, slug: 'liftor-co', ticketId: 9, repo });
+  assert.equal(fresh.state, 'checkout');
+  assert.equal(fresh.branch, 'preview');
+  assert.ok(existsSync(join(fresh.dir, 'src/pages/index.astro')));
+  assert.ok(!existsSync(join(fresh.dir, '.git/objects/info/alternates')), 'no lasting link to the sibling folder');
+
+  // One opened before the pull catches up when it is opened again.
+  const again = await prepareThread({ root, slug: 'liftor-co', ticketId: 8, repo });
+  assert.equal(again.state, 'checkout');
+  assert.ok(existsSync(join(waiting.dir, 'src/pages/index.astro')));
+
+  // Another project is not affected.
+  const other = await prepareThread({ root, slug: 'other-co', ticketId: 7, repo });
+  assert.equal(other.state, 'history');
+});

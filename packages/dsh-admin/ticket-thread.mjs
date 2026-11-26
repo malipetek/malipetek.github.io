@@ -13,10 +13,15 @@
  * is in that state the conversation's composer stays locked. Pulling turns it
  * into a full checkout of the ticket's branch and unlocks the composer.
  *
+ * Pulling is a decision about the project, not one ticket: once any ticket
+ * folder of a project is a full checkout, its other tickets open as full
+ * checkouts too (a new clone borrows the pulled folder's objects, then drops
+ * the link; a history-only folder is pulled when it is opened again).
+ *
  * @module @malipetek/dsh-admin/ticket-thread
  */
 import { execFile } from 'node:child_process';
-import { mkdir, stat } from 'node:fs/promises';
+import { mkdir, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -67,6 +72,18 @@ export async function threadState(dir, git = runGit) {
   return sparse.stdout.trim() === 'true' ? 'history' : 'checkout';
 }
 
+/** Another ticket folder of the same project that is already a full checkout, or null. */
+export async function pulledSibling(root, slug, dir, git = runGit) {
+  let names = [];
+  try { names = await readdir(root); } catch { return null; }
+  const prefix = `${slug}-ticket-`;
+  for (const name of names.filter((n) => n.startsWith(prefix) && /^\d+$/.test(n.slice(prefix.length))).sort()) {
+    const candidate = join(root, name);
+    if (candidate !== dir && (await threadState(candidate, git)) === 'checkout') return candidate;
+  }
+  return null;
+}
+
 /**
  * Make sure the folder exists. With a repo it becomes a history-only clone on
  * the ticket's branch; without one it is an empty folder, so the ticket still
@@ -78,12 +95,20 @@ export async function prepareThread({ root = TICKET_THREADS, slug, ticketId, rep
   if (!dir) return { dir: null, state: 'none', branch: null, error: 'bad_ticket' };
   await mkdir(root, { recursive: true });
   const state = await threadState(dir, git);
+  const sibling = state === 'checkout' ? null : await pulledSibling(root, slug, dir, git);
+  if (state === 'history' && sibling) {
+    const pulled = await pullThread(dir, git);
+    return { dir, state: pulled.state, branch: null, ...(pulled.error ? { error: pulled.error } : {}) };
+  }
   if (state !== 'none') return { dir, state, branch: null };
   if (typeof repo !== 'string' || !/^(https:\/\/|git@|file:\/\/)/.test(repo)) {
     await mkdir(dir, { recursive: true });
     return { dir, state: 'none', branch: null };
   }
-  const cloned = await git(['clone', '--filter=blob:none', '--sparse', '--quiet', repo, dir], { cwd: root, timeoutMs: 180_000 });
+  const how = sibling
+    ? ['--reference-if-able', sibling, '--dissociate']
+    : ['--filter=blob:none', '--sparse'];
+  const cloned = await git(['clone', ...how, '--quiet', repo, dir], { cwd: root, timeoutMs: 300_000 });
   if (cloned.code !== 0) {
     await mkdir(dir, { recursive: true });
     return { dir, state: 'none', branch: null, error: (cloned.stderr.trim().split('\n').pop() || 'git clone failed').slice(0, 300) };
@@ -93,7 +118,7 @@ export async function prepareThread({ root = TICKET_THREADS, slug, ticketId, rep
     await git(['fetch', '--quiet', 'origin', `${branch}:refs/remotes/origin/${branch}`], { cwd: dir });
     await git(['checkout', '--quiet', '-B', branch, `origin/${branch}`], { cwd: dir });
   }
-  return { dir, state: 'history', branch };
+  return { dir, state: sibling ? 'checkout' : 'history', branch };
 }
 
 /** Turn the history-only clone into a full checkout of its current branch. */

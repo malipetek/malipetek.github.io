@@ -3460,7 +3460,8 @@ function apply(ctx) {
   };
 
   /** One inline chip in the dock row; the full explanation lives in its tooltip. */
-  function TicketWorkspace({ sessionId }) {
+  function TicketWorkspace({ sessionId, ticketId }) {
+    const [opening, setOpening] = useState(false);
     const [result, setResult] = useState({ state: 'pending' });
     const active = useRef(null);
     const request = useCallback(async (action) => {
@@ -3499,6 +3500,13 @@ function apply(ctx) {
         <span role="status">{WORKSPACE_LABEL[result.state] ?? result.state}</span>
       </button>
       {result.state === 'missing' ? <PtaButton onClick={() => void restore()}>Restore</PtaButton> : null}
+      {(result.state === 'unavailable' || result.state === 'unmanaged') && ticketId ? (
+        <PtaButton disabled={opening}
+          title="Open this ticket in its own folder, cloned from the remote: Git Graph shows its branch, and pulling the repo lets an agent work on it again."
+          onClick={() => { setOpening(true); void openTicketThread({ id: ticketId }).finally(() => setOpening(false)); }}>
+          {opening ? 'Opening…' : 'Open from remote'}
+        </PtaButton>
+      ) : null}
     </span>;
   }
 
@@ -3553,8 +3561,11 @@ function apply(ctx) {
         {ticket ? <StatusPill status={ticket.status} /> : null}
         <span className="pta-dock__id">#{ticketId}</span>
         <span className="pta-dock__title" title={title}>{title}</span>
-        {desktop && !thread ? <TicketWorkspace sessionId={sessionId} /> : null}
+        {desktop && !thread ? <TicketWorkspace sessionId={sessionId} ticketId={ticketId} /> : null}
         {ticket ? <span className="pta-dock__actions">
+          {nativeConversation?.selectView ? <button type="button" className="pta-dock__toggle"
+            title="Status, run again, land, reopen and the rest of this ticket's actions"
+            onClick={() => nativeConversation?.selectView?.(sessionId, 'admin-task')}>Ticket actions</button> : null}
           {toggle('note', 'Add private note')}
           {canReply ? toggle('reply', 'Reply by email') : null}
         </span> : null}
@@ -3636,10 +3647,10 @@ function apply(ctx) {
   /** The dock row for a ticket chat folder: why the input is locked, and the pull that unlocks it. */
   function ThreadPull({ thread, ticket }) {
     if (thread.state === 'checkout') return null;
-    const agent = ticket?.worked_by === 'client_agent' ? 'The client’s own agent' : 'Nobody here';
+    const who = ticket?.worked_by === 'client_agent' ? 'The client’s own agent works this ticket over the portal. ' : '';
     const text = thread.state === 'none'
       ? 'This project has no repository to pull, so there is nothing to work on here. Reply or add a note above.'
-      : `${agent} works this ticket over the portal. Git Graph shows the remote’s history; pull the repo to check out the ticket’s branch and chat with an agent here.`;
+      : `${who}Git Graph shows the remote’s history; pull the repo to check out the ticket’s branch and chat with an agent here.`;
     return <div className="pta-dock__row pta-dock__thread">
       <span className="pta-dock__thread-text">{thread.error || text}</span>
       {thread.state === 'none' ? null : (
