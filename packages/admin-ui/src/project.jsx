@@ -599,7 +599,7 @@ function LocalDevelopment({ project, local, host, refresh }) {
                   <input required value={path} onChange={event => setPath(event.target.value)} placeholder="/Users/you/Projects/site" />
                   {host.canPickDirectory ? (
                     <Button onClick={async () => {
-                      try { const picked = await host.pickDirectory(); if (picked) setPath(picked); } catch { /* cancelled or unavailable */ }
+                      try { const picked = await host.pickDirectory(); if (typeof picked === 'string' && picked) setPath(picked); } catch { /* cancelled or unavailable */ }
                     }}>Choose folder…</Button>
                   ) : null}
                 </div>
@@ -622,7 +622,7 @@ function LocalDevelopment({ project, local, host, refresh }) {
                   <input required value={parentPath} onChange={event => setParentPath(event.target.value)} placeholder="/Users/you/Projects" />
                   {host.canPickDirectory ? (
                     <Button onClick={async () => {
-                      try { const picked = await host.pickDirectory(); if (picked) setParentPath(picked); } catch { /* cancelled or unavailable */ }
+                      try { const picked = await host.pickDirectory(); if (typeof picked === 'string' && picked) setParentPath(picked); } catch { /* cancelled or unavailable */ }
                     }}>Choose folder…</Button>
                   ) : null}
                 </div>

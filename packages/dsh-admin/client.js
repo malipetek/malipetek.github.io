@@ -230,6 +230,17 @@ var __awPlugin = (() => {
     return String(sessionId);
   }
 
+  // picked-directory.mjs
+  function pickedDirectory(result) {
+    if (result === null || result === void 0) return null;
+    if (typeof result === "string") return result.trim() === "" ? null : result;
+    if (typeof result === "object" && "ok" in result) {
+      if (!result.ok) throw new Error(`Could not choose a folder: ${result.error?.message ?? "the picker failed"}`);
+      return pickedDirectory(result.value);
+    }
+    return null;
+  }
+
   // host-react:react
   var R = globalThis.__AW_REACT__;
   var { createContext, createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } = R;
@@ -16829,7 +16840,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             host.canPickDirectory ? /* @__PURE__ */ jsx(Button, { onClick: async () => {
               try {
                 const picked = await host.pickDirectory();
-                if (picked) setPath(picked);
+                if (typeof picked === "string" && picked) setPath(picked);
               } catch {
               }
             }, children: "Choose folder\u2026" }) : null
@@ -16846,7 +16857,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             host.canPickDirectory ? /* @__PURE__ */ jsx(Button, { onClick: async () => {
               try {
                 const picked = await host.pickDirectory();
-                if (picked) setParentPath(picked);
+                if (typeof picked === "string" && picked) setParentPath(picked);
               } catch {
               }
             }, children: "Choose folder\u2026" }) : null
@@ -17745,7 +17756,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                 host?.canPickDirectory ? /* @__PURE__ */ jsx(Button, { onClick: async () => {
                   try {
                     const picked = await host.pickDirectory();
-                    if (picked) {
+                    if (typeof picked === "string" && picked) {
                       setLocalPath(picked);
                       detect(picked, false);
                     }
@@ -17790,7 +17801,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                   host?.canPickDirectory ? /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: async () => {
                     try {
                       const picked = await host.pickDirectory();
-                      if (picked) setLocalPath(picked);
+                      if (typeof picked === "string" && picked) setLocalPath(picked);
                     } catch (error) {
                       notify?.(errorText(error), "error");
                     }
@@ -18662,7 +18673,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       pickDirectory: async () => {
         const picker = folderPicker();
         if (typeof picker?.pick !== "function") throw new Error("No native folder picker is available in this host.");
-        return picker.pick();
+        return pickedDirectory(await picker.pick());
       },
       command,
       json,

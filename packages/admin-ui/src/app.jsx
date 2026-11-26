@@ -1063,7 +1063,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
                     <Button onClick={async () => {
                       try {
                         const picked = await host.pickDirectory();
-                        if (picked) { setLocalPath(picked); detect(picked, false); }
+                        if (typeof picked === 'string' && picked) { setLocalPath(picked); detect(picked, false); }
                       } catch (error) { notify?.(errorText(error), 'error'); }
                     }}>Choose folder…</Button>
                   ) : null}
@@ -1107,7 +1107,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
                       <Button disabled={busy} onClick={async () => {
                         try {
                           const picked = await host.pickDirectory();
-                          if (picked) setLocalPath(picked);
+                          if (typeof picked === 'string' && picked) setLocalPath(picked);
                         } catch (error) { notify?.(errorText(error), 'error'); }
                       }}>Choose folder…</Button>
                     ) : null}

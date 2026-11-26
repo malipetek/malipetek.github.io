@@ -13,6 +13,7 @@
  */
 import { createTicketDetailReader, ticketActivity, sendTicketMessage, requestTicketWorkspace, migrateTicketView, adminOperation, startTicketThread } from './ticket-chat.mjs';
 import { startSuperagent } from '../superagent-start.mjs';
+import { pickedDirectory } from '../picked-directory.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ClientPage, ProjectPage, TicketPage } from '../../admin-ui/src/index.js';
 import { TaskModal, ProjectModal } from '../../admin-ui/src/app.jsx';
@@ -439,7 +440,8 @@ function apply(ctx) {
     pickDirectory: async () => {
       const picker = folderPicker();
       if (typeof picker?.pick !== 'function') throw new Error('No native folder picker is available in this host.');
-      return picker.pick();
+      // The remote answers `{ ok, value }`; the dialog wants the path itself.
+      return pickedDirectory(await picker.pick());
     },
     command, json, gitGraph, conversation, openTicket: (target) => openTicketRun({ id: target?.ticketId ?? target }),
     projectLocalInfo: (args) => localProject('info', args),
