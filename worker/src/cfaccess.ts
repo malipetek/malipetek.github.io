@@ -144,15 +144,20 @@ export async function cloudflareAccess(env: Env, connectionId: number): Promise<
 }
 
 /**
- * The grant a deploy target should use: the one it names while it is live,
- * else the newest live grant that still reaches the same account (a client
- * who reconnects gets a new grant and the old one is revoked). Null when no
- * grant reaches the account any more.
+ * The grant a deploy target should use: the one it names while it is the
+ * project owner's and live, else the owner's newest live grant that still
+ * reaches the same account (an owner who reconnects gets a new grant and the
+ * old one is revoked). Only the owner's grants are ever returned — a project
+ * with no owner has no credential to deploy with. Null when none fits.
  */
-export async function connectionForAccount(env: Env, connectionId: number, accountId: string): Promise<number | null> {
+export async function connectionForAccount(env: Env, ownerId: string | null, connectionId: number, accountId: string): Promise<number | null> {
+  if (!ownerId) return null;
   const named = await connectionRow(env, connectionId);
-  if (named && grantedAccounts(named).some((a) => a.id === accountId)) return named.id;
-  const { results } = await env.DB.prepare('SELECT id, accounts FROM cloudflare_connections WHERE revoked_at IS NULL ORDER BY created_at DESC')
+  if (named && named.user_id === ownerId && grantedAccounts(named).some((a) => a.id === accountId)) return named.id;
+  const { results } = await env.DB.prepare(
+    'SELECT id, accounts FROM cloudflare_connections WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC',
+  )
+    .bind(ownerId)
     .all<{ id: number; accounts: string }>();
   return (results ?? []).find((row) => grantedAccounts(row).some((a) => a.id === accountId))?.id ?? null;
 }

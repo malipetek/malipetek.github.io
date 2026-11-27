@@ -47,7 +47,8 @@ function describe(tool, action, args) {
         : `Make project ${text(args.project) ?? ''} deploy to Cloudflare ${args.kind === 'workers' ? 'Worker' : 'Pages project'} ${text(args.target) ?? ''}, production from ${text(args.productionBranch) ?? 'main'}?`;
     case 'admin_directory invite': {
       const projects = Array.isArray(args.projects) ? args.projects.filter((p) => text(p)).join(', ') : '';
-      return `Invite ${text(args.email) ?? 'this address'} to ${projects || 'the project'}? They are emailed a sign-in link.`;
+      const copies = args.copy !== false ? ' They are copied on every request email on those projects.' : '';
+      return `Invite ${text(args.email) ?? 'this address'} to ${projects || 'the project'}? They are emailed a sign-in link.${copies}`;
     }
     case 'admin_project_local configure':
       return `Point project ${text(args.projectId) ?? ''} at ${text(args.path) ?? 'a folder'} on this machine?`;

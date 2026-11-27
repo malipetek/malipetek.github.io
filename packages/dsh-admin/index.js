@@ -29,7 +29,7 @@ import { createLocalProjects } from './local-project.mjs';
 import { readConsent, writeConsent } from './machine-consent.mjs';
 import { createToolbox } from './local-toolbox.mjs';
 import { writeApproval } from './admin-approval.mjs';
-import { inviteMessage } from './client-invite.mjs';
+import { inviteMessage, inviteRequestBody } from './client-invite.mjs';
 import { hostingMessage } from './project-hosting.mjs';
 import { PROJECT_OPERATIONS, projectOperationRequest } from './project-operations.mjs';
 import { createWorkspaceRecovery } from './workspace-recovery.mjs';
@@ -1172,9 +1172,9 @@ const linkProject = (config, userId, projectId) =>
  */
 const inviteClient = (config, invite) => request(config, '/admin/clients', { method: 'POST', body: invite });
 
-/** What the project's own Cloudflare credential can see, read by the portal on our behalf. */
-const projectCloudflare = (config, projectId, connectionId) =>
-  request(config, `/admin/projects/${encodeURIComponent(projectId)}/cloudflare${connectionId ? `?connection=${encodeURIComponent(connectionId)}` : ''}`);
+/** What the project owner's Cloudflare credential can see, read by the portal on our behalf. */
+const projectCloudflare = (config, projectId) =>
+  request(config, `/admin/projects/${encodeURIComponent(projectId)}/cloudflare`);
 
 /** Where the project's work goes live; `null` clears it. */
 const setDeployTarget = (config, projectId, target) =>
@@ -2503,9 +2503,9 @@ export function apply(ctx) {
           'The PTech client portal directory (ptechsolutions.net): clients, projects, and which projects a client may file against.',
           'A project slug is what the local runner maps to a folder on disk, so a ticket is only workable once its project exists and the runner knows the slug.',
           'Action "set_folder" writes that slug → folder mapping into the local runner config; without an entry the runner falls back to <projectsRoot>/<slug>.',
-          'Action "hosting" reads the client\'s Cloudflare through the OAuth grant they connected on the portal (their Workers, the current deploy target, and every client grant with its accounts); use it, never a local token or wrangler login, to find where a client site lives. It picks the project\'s own client\'s grant, or a grant named after the project; pass connection to read another one.',
+          'Action "hosting" reads the client\'s Cloudflare through the project owner\'s OAuth grant (their Workers, the current deploy target, and the owner\'s grants with their accounts); use it, never a local token or wrangler login, to find where a client site lives. Only the owner\'s grant is ever used — never another user\'s — and a project without an owner says so: set the owner first, and the owner connects Cloudflare on the portal\'s Connections page.',
           'Action "set_deploy_target" records which of those the project deploys to (kind pages|workers, name, productionBranch): fleet runs then get the target beside the client\'s Cloudflare credential and deploy previews to their ticket branch and releases to the production branch.',
-          'Action "invite" gives an email address access to one or more projects whether or not that person has an account yet: the portal makes the client account if needed, links the projects and emails a week-long sign-in link. Use it instead of waiting for someone to sign up.',
+          'Action "invite" gives an email address access to one or more projects whether or not that person has an account yet: the portal makes the client account if needed, links the projects and emails a week-long sign-in link. Use it instead of waiting for someone to sign up. Like the UI\'s Add people, they are copied on every client request email on those projects unless copy is false.',
         ].join(' '),
         parameters: {
           type: 'object',
@@ -2519,7 +2519,6 @@ export function apply(ctx) {
             },
             email: { type: 'string', description: 'Email address to invite, for invite.' },
             project: { type: 'string', description: 'Project id or slug, for hosting and set_deploy_target.' },
-            connection: { type: 'number', description: 'A client Cloudflare grant id from hosting\'s list, to read or deploy with that grant instead of the one picked.' },
             kind: { type: 'string', enum: ['pages', 'workers', 'none'], description: 'Cloudflare Pages project or Worker script, for set_deploy_target; "none" clears the target.' },
             target: { type: 'string', description: 'The Pages project or Worker script name, for set_deploy_target.' },
             productionBranch: { type: 'string', description: 'Branch that publishes to production, for set_deploy_target. Defaults to main.' },
@@ -2530,6 +2529,10 @@ export function apply(ctx) {
             },
             locale: { type: 'string', description: 'Language of the invite email (e.g. en-US, tr-TR), for invite. Defaults to en-US.' },
             note: { type: 'string', description: 'A short personal line added to the invite email, for invite.' },
+            copy: {
+              type: 'boolean',
+              description: 'For invite: copy the person on every client request email on those projects. The UI\'s Add people defaults this on, so the default here is true too; pass false to invite without copies.',
+            },
             name: { type: 'string', description: 'Project display name, for create_project.' },
             slug: { type: 'string', description: 'Project slug (lowercase, dashes), for create_project and set_folder.' },
             folder: {
@@ -2614,8 +2617,7 @@ export function apply(ctx) {
               const snapshot = await refresh(config);
               const project = snapshot.projects.find((p) => p.id === key || p.slug === key.toLowerCase());
               if (project === undefined) throw new Error(`No project "${key}". List them with action "projects".`);
-              const connection = Number(args.connection) || null;
-              const hosting = await projectCloudflare(config, project.id, connection);
+              const hosting = await projectCloudflare(config, project.id);
               if (args.action === 'hosting') return { message: hostingMessage(project, hosting) };
               const target = args.kind === 'none'
                 ? null
@@ -2623,7 +2625,7 @@ export function apply(ctx) {
                     kind: args.kind,
                     name: typeof args.target === 'string' ? args.target.trim() : '',
                     productionBranch: typeof args.productionBranch === 'string' ? args.productionBranch.trim() : '',
-                    // Deploy with the client's OAuth grant the hosting read used.
+                    // Deploy with the owner's OAuth grant the hosting read used.
                     ...(hosting?.via === 'oauth' ? { connectionId: hosting.connectionId, accountId: hosting.accountId } : {}),
                   };
               const saved = await setDeployTarget(config, project.id, target);
@@ -2639,13 +2641,7 @@ export function apply(ctx) {
                 if (project === undefined) throw new Error(`No project "${key}". List them with action "projects".`);
                 return project.id;
               });
-              const result = await inviteClient(config, {
-                email: args.email.trim(),
-                projectIds,
-                ...(typeof args.clientName === 'string' && args.clientName.trim() ? { name: args.clientName.trim() } : {}),
-                ...(typeof args.locale === 'string' && args.locale.trim() ? { locale: args.locale.trim() } : {}),
-                ...(typeof args.note === 'string' && args.note.trim() ? { note: args.note.trim() } : {}),
-              });
+              const result = await inviteClient(config, inviteRequestBody(args, projectIds));
               await refresh(config);
               return { message: inviteMessage(result) };
             }

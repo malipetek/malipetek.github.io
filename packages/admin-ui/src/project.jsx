@@ -1147,16 +1147,16 @@ function People({ project, refresh }) {
 }
 
 /**
- * Where the work goes live on the client's own Cloudflare: the portal reads the
- * account with the token the client stored on this project, and the chosen
- * Pages project or Worker becomes the fleet's deploy target.
+ * Where the work goes live on the client's own Cloudflare: the portal reads
+ * the account through the project owner's OAuth connection (they connect it
+ * on the portal's Connections page; no one else's is ever used), and the
+ * chosen Pages project or Worker becomes the fleet's deploy target.
  */
 function Hosting({ project }) {
   const { api } = useAdmin();
-  const [picked, setPicked] = useState(null);
   const load = useCallback(
-    () => api('GET', `/admin/projects/${encodeURIComponent(project.id)}/cloudflare${picked ? `?connection=${picked}` : ''}`),
-    [api, project.id, picked],
+    () => api('GET', `/admin/projects/${encodeURIComponent(project.id)}/cloudflare`),
+    [api, project.id],
   );
   const [state, reload] = useProjectResource(load);
   const [write, run] = useWrite();
@@ -1200,28 +1200,29 @@ function Hosting({ project }) {
         <span className="aw-toolbar__fill" />
         {target ? <Button size="sm" kind="ghost" busy={write.busy} onClick={() => choose(null)}>Clear target</Button> : null}
       </div>
-      {state.loading && !info ? <Skeleton label="Reading the client's Cloudflare…" /> : null}
+      {state.loading && !info ? <Skeleton label="Reading the owner's Cloudflare…" /> : null}
       {state.error ? <ErrorNote error={state.error} /> : null}
-      {connections.length > 1 || (connections.length === 1 && !grant) ? (
-        <Field label="Cloudflare connection">
-          <select value={info?.connectionId ?? ''} onChange={(event) => setPicked(Number(event.target.value) || null)}>
-            {!grant ? <option value="">Choose a client's connection</option> : null}
-            {connections.map((c) => (
-              <option key={c.id} value={c.id}>{c.email}{c.onProject ? ' (on this project)' : ''} · {c.accounts.map((a) => a.name).join(', ')}</option>
-            ))}
-          </select>
-        </Field>
+      {info?.needsOwner ? (
+        <Empty
+          title="Set the project owner first"
+          hint="Hosting reads only the owner's Cloudflare connection, and this project has no owner yet. Set one in Admin → Clients & projects; then their Workers show here."
+          inline
+        />
       ) : null}
-      {info && !info.connected && info.lapsed ? (
-        <p className="aw-warn">{grant?.email ?? 'The client'}'s Cloudflare connection has lapsed. They reconnect it on the portal's Connections page.</p>
+      {info && !info.needsOwner && !info.connected && info.lapsed ? (
+        <p className="aw-warn">{grant?.email ?? 'The owner'}'s Cloudflare connection has lapsed. They reconnect it on the portal's Connections page.</p>
       ) : null}
-      {info && !info.connected && !info.lapsed ? (
-        <p className="aw-muted">No Cloudflare connected. The client connects their account on the portal's Connections page; then its Workers show here.</p>
+      {info && !info.needsOwner && !info.connected && !info.lapsed ? (
+        <Empty
+          title="No Cloudflare connected"
+          hint={`${info.owner ?? 'The project owner'} connects their account on the portal's Connections page; then its Workers show here.`}
+          inline
+        />
       ) : null}
       {info?.connected ? (
         <>
           <p className="aw-muted">
-            {info.via === 'oauth' ? `Through ${grant?.email}'s Cloudflare connection, account ${accountName}${grant && !grant.onProject ? ' (this client is not on the project yet)' : ''}. ` : ''}
+            {info.via === 'oauth' ? `Through the owner's Cloudflare connection (${grant?.email ?? info.owner ?? 'the owner'}), account ${accountName}. ` : ''}
             {target
               ? `Fleet runs deploy previews from ticket branches and production from ${target.productionBranch} to ${target.kind === 'pages' ? 'Pages project' : 'Worker'} ${target.name}.`
               : 'Pick where fleet runs deploy: previews from ticket branches, production from the production branch.'}

@@ -22,13 +22,13 @@ var __awPlugin = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // src/client.jsx
+  // packages/dsh-admin/src/client.jsx
   var client_exports = {};
   __export(client_exports, {
     default: () => client_default
   });
 
-  // src/ticket-chat.mjs
+  // packages/dsh-admin/src/ticket-chat.mjs
   function linkedTicketDetail(detail, ticketId, sessionId, thread = false) {
     if (typeof sessionId !== "string" || sessionId === "" || detail?.ticket?.id !== ticketId) return null;
     if (thread) return detail;
@@ -206,7 +206,22 @@ var __awPlugin = (() => {
     }
   }
 
-  // superagent-start.mjs
+  // packages/dsh-admin/src/confirm-ask.mjs
+  function createConfirmAsk({ host = null, warn = () => {
+  } } = {}) {
+    return function confirmAsk(ask) {
+      return new Promise((resolve) => {
+        if (typeof host?.open !== "function") {
+          warn(`Admin confirm unanswered: no ConfirmHost is mounted, so \u201C${ask?.title ?? "Confirm"}\u201D was answered no.`);
+          resolve(false);
+          return;
+        }
+        host.open({ ...ask, resolve });
+      });
+    };
+  }
+
+  // packages/dsh-admin/superagent-start.mjs
   async function startSuperagent({ sessions, open, brief, title, preset, cwd, remember }) {
     if (typeof sessions?.create !== "function") throw new Error("This host cannot start a conversation.");
     const sessionId = await sessions.create(cwd ? { cwd } : {});
@@ -230,7 +245,7 @@ var __awPlugin = (() => {
     return String(sessionId);
   }
 
-  // picked-directory.mjs
+  // packages/dsh-admin/picked-directory.mjs
   function pickedDirectory(result) {
     if (result === null || result === void 0) return null;
     if (typeof result === "string") return result.trim() === "" ? null : result;
@@ -245,7 +260,7 @@ var __awPlugin = (() => {
   var R = globalThis.__AW_REACT__;
   var { createContext, createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } = R;
 
-  // ../admin-ui/src/run-evidence.js
+  // packages/admin-ui/src/run-evidence.js
   var sortedRuns = (runs = []) => [...runs].sort((a, b) => Number(b.id) - Number(a.id));
   var selectedRun = (runs, id) => id == null ? sortedRuns(runs)[0] ?? null : runs.find((run) => String(run.id) === String(id)) ?? null;
   var recordedPatch = (run) => [run?.diff, run?.diff_stat].find((text) => typeof text === "string" && text.trim()) ?? null;
@@ -261,7 +276,7 @@ var __awPlugin = (() => {
     return null;
   }
 
-  // ../admin-ui/src/request-state.js
+  // packages/admin-ui/src/request-state.js
   function createStepRequest(api, runId, publish) {
     let state = { steps: null, error: null }, after = 0, generation = 0, inflight = null;
     return {
@@ -329,7 +344,7 @@ var __awPlugin = (() => {
     return { access, identity, results: Object.fromEntries(paths.map((path, i) => [path, results[i]])) };
   }
 
-  // ../admin-ui/src/store.js
+  // packages/admin-ui/src/store.js
   var AdminContext = createContext(null);
   var useAdmin = () => useContext(AdminContext);
   var EMPTY = {
@@ -451,7 +466,7 @@ var __awPlugin = (() => {
     return { seconds, running, open };
   }
 
-  // ../../src/lib/pricing.js
+  // src/lib/pricing.js
   var HOURLY_USD = 100;
   var ATTENTION = [
     {
@@ -503,7 +518,7 @@ var __awPlugin = (() => {
     return `${Math.floor(s / 3600)}h ${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}m`;
   }
 
-  // ../admin-ui/src/format.js
+  // packages/admin-ui/src/format.js
   var chargeOf = (t) => billOf({
     humanSeconds: t.human_seconds ?? 0,
     aiMicroUsd: t.ai_micro_usd ?? 0,
@@ -630,7 +645,7 @@ var __awPlugin = (() => {
     };
   }
 
-  // ../admin-ui/src/ui/layer.js
+  // packages/admin-ui/src/ui/layer.js
   var layers = [];
   var isTop = (token) => layers[layers.length - 1] === token;
   function useLayer() {
@@ -662,7 +677,7 @@ var __awPlugin = (() => {
     return R2.createElement(type, key === void 0 ? rest : { ...rest, key }, ...children);
   }
 
-  // ../admin-ui/src/ui/menu.jsx
+  // packages/admin-ui/src/ui/menu.jsx
   var cx = (...parts) => parts.filter(Boolean).join(" ");
   function Menu({ items, at, anchor, onClose, label = "Actions" }) {
     const ref = useRef(null);
@@ -807,7 +822,7 @@ var __awPlugin = (() => {
     );
   }
 
-  // ../admin-ui/src/ui.jsx
+  // packages/admin-ui/src/ui.jsx
   var modalSeq = 0;
   var cx2 = (...parts) => parts.filter(Boolean).join(" ");
   function useMedia(query) {
@@ -1240,7 +1255,7 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: WEIGHT[name] ?? 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", focusable: "false", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] ?? PATHS.list }) });
   }
 
-  // ../admin-ui/src/row-navigation.mjs
+  // packages/admin-ui/src/row-navigation.mjs
   var NEXT_KEYS = /* @__PURE__ */ new Set(["j", "ArrowDown"]);
   var PREV_KEYS = /* @__PURE__ */ new Set(["k", "ArrowUp"]);
   function nextRowIndex(current, count, key) {
@@ -1253,7 +1268,7 @@ var __awPlugin = (() => {
     return null;
   }
 
-  // ../admin-ui/src/ui/tokens.js
+  // packages/admin-ui/src/ui/tokens.js
   var TYPE = Object.freeze({ xs: 11, sm: 12, md: 13, lg: 15, xl: 18 });
   var SPACE = Object.freeze([0, 4, 8, 12, 16, 24, 32]);
   var RADII = Object.freeze({ sm: 4, md: 6, lg: 8 });
@@ -1395,7 +1410,7 @@ ${block(Object.entries(TOKENS))}
 }
 `;
 
-  // ../admin-ui/src/ui/css.js
+  // packages/admin-ui/src/ui/css.js
   var PRIMITIVES_CSS = `
 .ui {
   font-family: var(--ui-font);
@@ -1645,7 +1660,7 @@ ${block(Object.entries(TOKENS))}
 `;
   var UI_CSS = TOKENS_CSS + PRIMITIVES_CSS;
 
-  // ../admin-ui/src/ui/state.js
+  // packages/admin-ui/src/ui/state.js
   var S = (tone2, label, extra = {}) => Object.freeze({ tone: tone2, label, ...extra });
   var STATE_MAP = Object.freeze({
     // tickets
@@ -1693,7 +1708,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // ../admin-ui/src/ui/behavior.js
+  // packages/admin-ui/src/ui/behavior.js
   function tableKeyAction(e, current, count) {
     if (!e || e.metaKey || e.ctrlKey || e.altKey) return null;
     if (e.key === "ContextMenu" || e.shiftKey && e.key === "F10") return { type: "menu" };
@@ -1733,7 +1748,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // ../admin-ui/src/ui/primitives.jsx
+  // packages/admin-ui/src/ui/primitives.jsx
   var storage = () => typeof window === "undefined" ? null : window.localStorage;
   function UiStyles() {
     return /* @__PURE__ */ jsx("style", { "data-ui-styles": "v2", children: UI_CSS });
@@ -2008,7 +2023,7 @@ ${block(Object.entries(TOKENS))}
   }
   var HOST_MODES = Object.freeze(["embedded", "standalone"]);
 
-  // ../admin-ui/src/board.jsx
+  // packages/admin-ui/src/board.jsx
   function useFilters() {
     const { api, boardProject, setBoardProject } = useAdmin();
     const [kind, setKind] = useState("all");
@@ -2627,7 +2642,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/superagent-brief.js
+  // packages/admin-ui/src/superagent-brief.js
   function scopeLine(scope, label) {
     if (!scope || scope === "all") return "";
     if (scope.startsWith("t:")) return `Scope: ticket ${label} (${scope})`;
@@ -2652,7 +2667,7 @@ ${String(text)}` : String(text);
     return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}\u2026`;
   }
 
-  // ../admin-ui/src/superagent.jsx
+  // packages/admin-ui/src/superagent.jsx
   var ABILITIES = [
     { icon: "inbox", title: "Read the work", detail: "Tickets with their threads, the queue, nodes, running runs and cost." },
     { icon: "ticket", title: "Move a ticket", detail: "Approve, decline, set status, reply to the client, write a private note." },
@@ -2859,7 +2874,7 @@ ${String(text)}` : String(text);
     ] });
   }
 
-  // ../../src/lib/attachments.js
+  // src/lib/attachments.js
   var FILE_LIMITS = {
     /** Per file. */
     bytes: 10 * 1024 * 1024,
@@ -2907,7 +2922,7 @@ ${String(text)}` : String(text);
     return null;
   }
 
-  // ../../src/lib/locales.js
+  // src/lib/locales.js
   var LOCALES = [
     { code: "en-US", native: "English (United States)", english: "English (United States)", m2m: "en" },
     { code: "am", native: "\u12A0\u121B\u122D\u129B", english: "Amharic", m2m: "am", beta: true },
@@ -2954,7 +2969,7 @@ ${String(text)}` : String(text);
     return typeof code === "string" && /^en(-|$)/i.test(code);
   }
 
-  // ../admin-ui/src/superagent-ask.jsx
+  // packages/admin-ui/src/superagent-ask.jsx
   function AskSuperagentButton({ scope, label, ask, title }) {
     const { host, notify } = useAdmin();
     const superagent = host?.superagent ?? null;
@@ -2976,7 +2991,7 @@ ${String(text)}` : String(text);
     return /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", busy: asking, title, onClick: () => void run(), children: "Ask the superagent" });
   }
 
-  // ../admin-ui/src/markdown.js
+  // packages/admin-ui/src/markdown.js
   var MAX_INLINE_DEPTH = 4;
   function markdownInline(input, depth = 0) {
     const text = String(input ?? "");
@@ -3059,7 +3074,7 @@ ${String(text)}` : String(text);
     return blocks;
   }
 
-  // ../admin-ui/src/review.jsx
+  // packages/admin-ui/src/review.jsx
   var portalTicketUrl = (id) => `https://ptechsolutions.net/portal/admin#ticket=${id}`;
   function newestDiff(runs) {
     return [...runs ?? []].sort((a, b) => b.id - a.id).find((run) => recordedPatch(run)) ?? null;
@@ -3310,7 +3325,7 @@ ${String(text)}` : String(text);
     });
   }
 
-  // ../admin-ui/src/submit-state.js
+  // packages/admin-ui/src/submit-state.js
   function createSubmission() {
     let busy = false, pending2 = null;
     const queueOnly = async () => {
@@ -3348,7 +3363,7 @@ ${String(text)}` : String(text);
     };
   }
 
-  // ../admin-ui/src/mention-delivery.js
+  // packages/admin-ui/src/mention-delivery.js
   var visibleRecipients = (recipients, internal) => recipients.filter((person) => !internal || person.memberType === "trusted_developer");
   async function deliverMentions({ api, projectId, ticketId, messageId, recipientUserIds, requestId }) {
     if (!recipientUserIds?.length) return { ok: true, deliveries: [] };
@@ -3369,7 +3384,7 @@ ${String(text)}` : String(text);
     };
   }
 
-  // ../admin-ui/src/mention-recipients.jsx
+  // packages/admin-ui/src/mention-recipients.jsx
   function MentionRecipients({ api, projectId, onChange, disabled = false, internal = false }) {
     const [open, setOpen] = useState(false);
     const [state, setState] = useState({ projectId: null, internal: null, recipients: [], loading: true, error: false });
@@ -3428,7 +3443,7 @@ ${String(text)}` : String(text);
     ] });
   }
 
-  // ../admin-ui/src/ticket-assistant.mjs
+  // packages/admin-ui/src/ticket-assistant.mjs
   var ASSISTANT_BADGE_MAX = 24;
   function assistantName(ticket) {
     const value = ticket?.assistant_app;
@@ -3447,7 +3462,7 @@ ${String(text)}` : String(text);
     return name === null ? null : `Filed by the client's assistant (${name}) through PTech's MCP server`;
   }
 
-  // ../admin-ui/src/requeue.mjs
+  // packages/admin-ui/src/requeue.mjs
   var plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   function lastRun(runs = []) {
     let best = null;
@@ -3491,7 +3506,7 @@ ${String(text)}` : String(text);
     };
   }
 
-  // ../admin-ui/src/project-picker-model.mjs
+  // packages/admin-ui/src/project-picker-model.mjs
   var norm = (value) => typeof value === "string" ? value.trim().toLowerCase() : "";
   var clientLabel = (client) => client?.name || client?.email || "Unnamed client";
   function groupProjects(projects = [], { query = "", clientEmail = null } = {}) {
@@ -3522,7 +3537,7 @@ ${String(text)}` : String(text);
   }
   var flatItems = (groups) => groups.flatMap((g) => g.items);
 
-  // ../admin-ui/src/project-picker.jsx
+  // packages/admin-ui/src/project-picker.jsx
   var NONE = { id: null, name: "No project" };
   function ProjectPicker({ projects = [], value = null, clientEmail = null, onChange, disabled = false }) {
     const [open, setOpen] = useState(false);
@@ -3671,7 +3686,7 @@ ${String(text)}` : String(text);
     ] });
   }
 
-  // ../admin-ui/src/ticket.jsx
+  // packages/admin-ui/src/ticket.jsx
   var PRIMARY = {
     new: [
       ["approved", "Approve", "primary"],
@@ -4567,7 +4582,7 @@ ${String(text)}` : String(text);
     );
   }
 
-  // ../admin-ui/src/ui/injected-styles.js
+  // packages/admin-ui/src/ui/injected-styles.js
   function InjectedStyles({ id, css }) {
     useLayoutEffect(() => {
       if (typeof document === "undefined") return void 0;
@@ -4584,7 +4599,7 @@ ${String(text)}` : String(text);
     return null;
   }
 
-  // ../admin-ui/src/projects-model.mjs
+  // packages/admin-ui/src/projects-model.mjs
   function projectRows(projects, clients, { query = "", scope = "all" } = {}) {
     const byProject = /* @__PURE__ */ new Map();
     for (const client of clients ?? []) {
@@ -4606,7 +4621,7 @@ ${String(text)}` : String(text);
     return clients.length === 1 ? first : `${first} +${clients.length - 1}`;
   }
 
-  // ../admin-ui/src/health.jsx
+  // packages/admin-ui/src/health.jsx
   var tone = (status) => status === "ok" ? "ok" : status === "fail" ? "bad" : "warn";
   function CheckRow({ check }) {
     return /* @__PURE__ */ jsxs("li", { className: cx2("aw-health__row", `aw-health__row--${tone(check.status)}`), children: [
@@ -4705,7 +4720,7 @@ ${String(text)}` : String(text);
     ] });
   }
 
-  // ../admin-ui/src/machine.jsx
+  // packages/admin-ui/src/machine.jsx
   var CONSENT_VERSION = 1;
   var LEND = {
     "dsh-go": { label: "Flash", plan: "OpenCode Go \xB7 DeepSeek v4.1 flash", note: "counts against the OpenCode Go plan\u2019s limits" },
@@ -5074,7 +5089,7 @@ ${String(text)}` : String(text);
     ] });
   }
 
-  // ../admin-ui/src/toolbox.jsx
+  // packages/admin-ui/src/toolbox.jsx
   var TARGETS = [
     { value: "claude", label: "Claude Code" },
     { value: "opencode", label: "OpenCode" }
@@ -5262,7 +5277,7 @@ ${String(text)}` : String(text);
     ] });
   }
 
-  // ../admin-ui/src/post-length.js
+  // packages/admin-ui/src/post-length.js
   var POST_MAX = { x: 280, linkedin: 3e3 };
   var LINK = /https?:\/\/\S+/g;
   var postMax = (channel) => POST_MAX[channel] ?? 3e3;
@@ -5282,7 +5297,7 @@ ${SITE_LINK}` : SITE_LINK;
     return postLength(next, channel) <= postMax(channel) ? next : null;
   }
 
-  // ../admin-ui/src/settings-link.js
+  // packages/admin-ui/src/settings-link.js
   var SETTINGS_SECTION_IDS = Object.freeze(["queue", "machine", "portal", "marketing", "seo", "account"]);
   var ALIASES = {
     "work-queue": "queue",
@@ -5327,7 +5342,7 @@ ${SITE_LINK}` : SITE_LINK;
     return () => window.removeEventListener(EVENT, listener);
   }
 
-  // ../admin-ui/src/marketing.jsx
+  // packages/admin-ui/src/marketing.jsx
   var CONTACT_STATUSES = ["new", "queued", "contacted", "replied", "paused", "opted_out", "bounced"];
   var MESSAGE_STATUSES = ["draft", "scheduled", "sending", "sent", "failed", "cancelled"];
   var CHANNELS = [
@@ -8585,7 +8600,7 @@ ${SITE_LINK}` : SITE_LINK;
     );
   }
 
-  // ../admin-ui/src/seo.jsx
+  // packages/admin-ui/src/seo.jsx
   var DAY = 864e5;
   var SEO_INSPECTOR_W = 320;
   var SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
@@ -10586,7 +10601,7 @@ ${SITE_LINK}` : SITE_LINK;
     ] });
   }
 
-  // ../admin-ui/src/fleet.jsx
+  // packages/admin-ui/src/fleet.jsx
   var pct3 = (a, b) => b ? Math.round(a / b * 100) : 0;
   var capabilityLabel = (id, caps) => caps.find((c) => c.id === id)?.label ?? ({
     "os:darwin": "macOS",
@@ -12119,7 +12134,7 @@ ${SITE_LINK}` : SITE_LINK;
     ] });
   }
 
-  // ../admin-ui/src/styles.js
+  // packages/admin-ui/src/styles.js
   var LIGHT2 = PALETTE.light;
   var STYLES = `
 .aw {
@@ -13731,7 +13746,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 
 `;
 
-  // ../admin-ui/src/solutions.js
+  // packages/admin-ui/src/solutions.js
   var SOLUTION_CATALOG = [
     {
       id: "web",
@@ -13951,7 +13966,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }
   ];
 
-  // ../admin-ui/src/project-solutions.jsx
+  // packages/admin-ui/src/project-solutions.jsx
   var pathFor = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
   var CLIENT_PORTAL_URL = "https://ptechsolutions.net/portal";
   var SHORT = {
@@ -14214,7 +14229,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
   }
 
-  // ../admin-ui/src/project-model.js
+  // packages/admin-ui/src/project-model.js
   function briefPayload(raw = {}, kind = "existing") {
     const answer = (value) => typeof value === "string" ? value.trim() : "";
     const what = answer(raw.what), goal = answer(raw.goal);
@@ -14306,7 +14321,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     };
   }
 
-  // ../admin-ui/src/project-world-model.mjs
+  // packages/admin-ui/src/project-world-model.mjs
   var ISO_COS = Math.cos(Math.PI / 6);
   var ISO_SIN = 0.5;
   var DEFAULT_ISO = Object.freeze({
@@ -15242,7 +15257,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return { count: items.length, text: parts.join(" \xB7 "), items: rows.map(({ stamp, ...rest }) => rest) };
   }
 
-  // ../admin-ui/src/project-world.jsx
+  // packages/admin-ui/src/project-world.jsx
   var STATE_SPEC = {
     ok: { state: "ok", tone: "ok", key: "world.state.ok", fallback: "Healthy", live: false },
     active: { state: "running", tone: "info", key: "world.state.active", fallback: "Running", live: true },
@@ -16164,7 +16179,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // ../admin-ui/src/project-styles.js
+  // packages/admin-ui/src/project-styles.js
   var project_styles_default = `
 .aw-project { max-width: var(--aw-measure-table, 1180px); margin: 0 auto; width: 100%; min-width: 0; box-sizing: border-box; }
 /* Allow header meta chips and slug to wrap cleanly on narrow widths without clipping glyphs. */
@@ -16346,7 +16361,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 }
 `;
 
-  // ../admin-ui/src/project.jsx
+  // packages/admin-ui/src/project.jsx
   var errorText2 = (error) => error?.message || String(error || "Request failed");
   var pathFor2 = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
   var TABS = ["Overview", "Work", "Setup"];
@@ -17420,10 +17435,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   }
   function Hosting({ project }) {
     const { api } = useAdmin();
-    const [picked, setPicked] = useState(null);
     const load = useCallback(
-      () => api("GET", `/admin/projects/${encodeURIComponent(project.id)}/cloudflare${picked ? `?connection=${picked}` : ""}`),
-      [api, project.id, picked]
+      () => api("GET", `/admin/projects/${encodeURIComponent(project.id)}/cloudflare`),
+      [api, project.id]
     );
     const [state, reload] = useProjectResource(load);
     const [write, run] = useWrite();
@@ -17460,25 +17474,31 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
         target ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", busy: write.busy, onClick: () => choose(null), children: "Clear target" }) : null
       ] }),
-      state.loading && !info ? /* @__PURE__ */ jsx(Skeleton, { label: "Reading the client's Cloudflare\u2026" }) : null,
+      state.loading && !info ? /* @__PURE__ */ jsx(Skeleton, { label: "Reading the owner's Cloudflare\u2026" }) : null,
       state.error ? /* @__PURE__ */ jsx(ErrorNote, { error: state.error }) : null,
-      connections.length > 1 || connections.length === 1 && !grant ? /* @__PURE__ */ jsx(Field, { label: "Cloudflare connection", children: /* @__PURE__ */ jsxs("select", { value: info?.connectionId ?? "", onChange: (event) => setPicked(Number(event.target.value) || null), children: [
-        !grant ? /* @__PURE__ */ jsx("option", { value: "", children: "Choose a client's connection" }) : null,
-        connections.map((c) => /* @__PURE__ */ jsxs("option", { value: c.id, children: [
-          c.email,
-          c.onProject ? " (on this project)" : "",
-          " \xB7 ",
-          c.accounts.map((a) => a.name).join(", ")
-        ] }, c.id))
-      ] }) }) : null,
-      info && !info.connected && info.lapsed ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
-        grant?.email ?? "The client",
+      info?.needsOwner ? /* @__PURE__ */ jsx(
+        Empty,
+        {
+          title: "Set the project owner first",
+          hint: "Hosting reads only the owner's Cloudflare connection, and this project has no owner yet. Set one in Admin \u2192 Clients & projects; then their Workers show here.",
+          inline: true
+        }
+      ) : null,
+      info && !info.needsOwner && !info.connected && info.lapsed ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        grant?.email ?? "The owner",
         "'s Cloudflare connection has lapsed. They reconnect it on the portal's Connections page."
       ] }) : null,
-      info && !info.connected && !info.lapsed ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No Cloudflare connected. The client connects their account on the portal's Connections page; then its Workers show here." }) : null,
+      info && !info.needsOwner && !info.connected && !info.lapsed ? /* @__PURE__ */ jsx(
+        Empty,
+        {
+          title: "No Cloudflare connected",
+          hint: `${info.owner ?? "The project owner"} connects their account on the portal's Connections page; then its Workers show here.`,
+          inline: true
+        }
+      ) : null,
       info?.connected ? /* @__PURE__ */ jsxs(Fragment2, { children: [
         /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          info.via === "oauth" ? `Through ${grant?.email}'s Cloudflare connection, account ${accountName}${grant && !grant.onProject ? " (this client is not on the project yet)" : ""}. ` : "",
+          info.via === "oauth" ? `Through the owner's Cloudflare connection (${grant?.email ?? info.owner ?? "the owner"}), account ${accountName}. ` : "",
           target ? `Fleet runs deploy previews from ticket branches and production from ${target.productionBranch} to ${target.kind === "pages" ? "Pages project" : "Worker"} ${target.name}.` : "Pick where fleet runs deploy: previews from ticket branches, production from the production branch."
         ] }),
         info.workers ? listing("Worker scripts", "workers", info.workers, (w) => w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : "") : null,
@@ -17607,7 +17627,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // ../admin-ui/src/workbench.js
+  // packages/admin-ui/src/workbench.js
   function projectCreationRequest(input, access) {
     const { name, slug, kind, code, repo, brief } = input;
     if (access?.superAdmin) return { path: "/admin/projects", body: { name, slug, kind, code, repo } };
@@ -17649,7 +17669,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return ["inbox", "board", "list"].includes(key) || key.startsWith("p:") || key.startsWith("t:");
   }
 
-  // ../admin-ui/src/app.jsx
+  // packages/admin-ui/src/app.jsx
   var isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   function useWorkbenchActions({ api, reload, setAsk, onNotify }) {
     const [toast, setToast] = useState(null);
@@ -18155,7 +18175,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // native-project.mjs
+  // packages/dsh-admin/native-project.mjs
   async function openLocalProject({ projectId, mode = "session", appId }, { info, sessions, workspace, remote = {} }) {
     const local = await info({ projectId });
     if (!local.exists || !local.path) throw new Error("Configure an existing local checkout first.");
@@ -18179,7 +18199,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return unwrap(await remote.session.openWorkspacePath({ path: local.path, ...mode === "reveal" ? { action: "reveal" } : appId ? { application: appId } : {} }));
   }
 
-  // src/sidebar-presentation.mjs
+  // packages/dsh-admin/src/sidebar-presentation.mjs
   function sidebarTicketLabel(ticket) {
     return ticket.title?.trim() || ticket.title_en?.trim() || `Ticket #${ticket.id}`;
   }
@@ -18187,7 +18207,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return `Open ${run.kind === "task" ? "my task" : "client ticket"} #${run.ticketId}`;
   }
 
-  // src/conversation-meter.mjs
+  // packages/dsh-admin/src/conversation-meter.mjs
   var LOCK = "ptech-admin:conversation-time";
   var IDLE_MS = 6e4;
   var BATCH = 20;
@@ -18382,7 +18402,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     };
   }
 
-  // src/conversation-git-graph.mjs
+  // packages/dsh-admin/src/conversation-git-graph.mjs
   async function graphEligibility(sessionId, signal, fetcher = globalThis.fetch) {
     try {
       const response = await fetcher("api/admin/command", {
@@ -18436,7 +18456,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return createElement(SessionGraph, { key: sessionId, sessionId });
   }
 
-  // src/panel-transport.mjs
+  // packages/dsh-admin/src/panel-transport.mjs
   function panelTransport(legacy, { desktop = false, fetcher = globalThis.fetch } = {}) {
     async function quiet(line) {
       try {
@@ -18458,7 +18478,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return Object.assign(desktop ? quiet : (line) => legacy(line), { quiet });
   }
 
-  // src/conversation-history.mjs
+  // packages/dsh-admin/src/conversation-history.mjs
   var byNewest = (a, b) => b.at - a.at || (b.kind === "run") - (a.kind === "run") || b.item.id - a.item.id;
   function taskHistoryEvents(messages = [], runs = []) {
     return [
@@ -18492,7 +18512,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return groups;
   }
 
-  // src/conversation-history.jsx
+  // packages/dsh-admin/src/conversation-history.jsx
   var clock2 = (unix) => unix ? new Date(unix * 1e3).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
   function ConversationHistory({ api, ticketId, openTicket }) {
     const [{ ticket, messages, runs, loading, error }] = useTicket(api, ticketId);
@@ -18575,7 +18595,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // src/client.jsx
+  // packages/dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
   var CLIENT_VERSION = "3.9.0";
@@ -20913,15 +20933,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       return /* @__PURE__ */ jsx("span", { className: "pta-pill", style: { color: tint, borderColor: tint }, children: STATUS_LABEL[status] ?? status ?? "unknown" });
     }
     const confirmHost = { open: null };
-    function confirmAsk(ask) {
-      return new Promise((resolve) => {
-        if (!confirmHost.open) {
-          resolve(window.confirm([ask.title, ask.text].filter(Boolean).join("\n\n")));
-          return;
-        }
-        confirmHost.open({ ...ask, resolve });
-      });
-    }
+    const confirmAsk = createConfirmAsk({
+      host: confirmHost,
+      warn: (message) => console.warn(message)
+    });
     function ConfirmHost() {
       const [ask, setAsk] = useState(null);
       const close = useCallback((answer) => {

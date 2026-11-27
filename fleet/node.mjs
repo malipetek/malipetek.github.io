@@ -715,6 +715,9 @@ export async function fetchCredentials(config, claim, ticket, fetchImpl = fetch,
       ? data.integrations.filter((i) => i && typeof i.label === 'string' && Array.isArray(i.names))
       : [];
     if (integrations.length) say(`#${ticket?.id} credentials: ${integrations.map((i) => i.id).join(', ')} (${Object.keys(env).length} vars)`);
+    // A deploy target without the owner's live Cloudflare grant: the run goes
+    // on without the credential, and the log says why.
+    if (typeof data?.cloudflare === 'string' && data.cloudflare) say(`#${ticket?.id} credentials: no Cloudflare (${data.cloudflare})`);
     return { env, integrations };
   } catch (error) {
     say(`#${ticket?.id} credentials: unavailable (${error.message})`);

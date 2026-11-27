@@ -52,15 +52,18 @@ test('hosting: a target can name the client OAuth grant and the account in it', 
   assert.deepEqual(parseDeployTarget({ kind: 'workers', name: 'x', connectionId: -1, accountId: account }), { error: 'bad_connection' });
 });
 
-test('hosting: the grant is the asked one, then the target, then a project client, then one named after the project', () => {
-  const school = { id: 8, email: 'petekkoleji2023@gmail.com', accounts: [{ id: 'a', name: "Petekkoleji2023@gmail.com's Account" }], onProject: false };
-  const other = { id: 1, email: 'altermalipetek@gmail.com', accounts: [{ id: 'b', name: 'x' }], onProject: false };
-  const client = { ...other, id: 3, onProject: true };
-  assert.equal(pickConnection([other, school], { slug: 'petekkoleji' })?.id, 8);
-  assert.equal(pickConnection([other, school, client], { slug: 'petekkoleji' })?.id, 3);
-  assert.equal(pickConnection([other, school], { slug: 'petekkoleji', requested: 1 })?.id, 1);
-  assert.equal(pickConnection([other, school], { slug: 'petekkoleji', target: { provider: 'cloudflare', kind: 'workers', name: 'x', productionBranch: 'main', connectionId: 1, accountId: 'b' } })?.id, 1);
-  assert.equal(pickConnection([other], { slug: 'demo-bakery' }), null);
+test('hosting: the grant is the asked one, then the target, then the owner’s newest — and only the owner’s', () => {
+  const school = { id: 8, email: 'petekkoleji2023@gmail.com', accounts: [{ id: 'a', name: "Petekkoleji2023@gmail.com's Account" }] };
+  const other = { id: 1, email: 'altermalipetek@gmail.com', accounts: [{ id: 'b', name: 'x' }] };
+  // The caller passes only the owner's live grants, so that is all this can
+  // pick: a school-shaped email no longer reaches past the newest grant.
+  assert.equal(pickConnection([other, school], { requested: 8 })?.id, 8);
+  assert.equal(pickConnection([other, school], { target: { provider: 'cloudflare', kind: 'workers', name: 'x', productionBranch: 'main', connectionId: 1, accountId: 'b' } })?.id, 1);
+  assert.equal(pickConnection([other, school], {})?.id, 1);
+  // An id that is not one of the owner's grants (another user's, a revoked
+  // one) is never picked: the owner's newest stands in.
+  assert.equal(pickConnection([school], { requested: 1 })?.id, 8);
+  assert.equal(pickConnection([], { requested: 1 }), null);
 });
 
 test('hosting: the domains say what serves them, a pages.dev CNAME naming the Pages project', async () => {

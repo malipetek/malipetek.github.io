@@ -28,7 +28,11 @@
  *                                   openProjectSecret. Only while the run is
  *                                   the calling node's and still running; every
  *                                   successful fetch is written to
- *                                   credential_access.
+ *                                   credential_access. The deploy target's
+ *                                   Cloudflare credential is the project
+ *                                   owner's OAuth grant; without one the run
+ *                                   gets none and the answer's `cloudflare`
+ *                                   field says why.
  *   POST /node/runs/:runId/result   { ok, summary, branch?, diffStat?, diff?,
  *                                   costUsd?, executor?, model? } → private
  *                                   run note, status → review, Ali gets an email.
@@ -558,9 +562,9 @@ node.get('/node/runs/:runId/credentials', async (c) => {
   // Same identity as /node/runs/:runId/release: the node names itself, and it
   // must match the run's holder while the run is live.
   if (run.status !== 'running' || run.node_id !== nodeId) return c.json({ error: 'forbidden' }, 403);
-  const project = await c.env.DB.prepare('SELECT p.id, p.solutions, p.deploy_target FROM tickets t JOIN projects p ON p.id = t.project_id WHERE t.id = ?')
+  const project = await c.env.DB.prepare('SELECT p.id, p.solutions, p.deploy_target, p.owner_user_id FROM tickets t JOIN projects p ON p.id = t.project_id WHERE t.id = ?')
     .bind(run.ticket_id)
-    .first<{ id: string; solutions: string; deploy_target: string | null }>();
+    .first<{ id: string; solutions: string; deploy_target: string | null; owner_user_id: string | null }>();
   // A ticket without a project has no client accounts to hand out.
   if (!project) return c.json({ error: 'not_found' }, 404);
 
@@ -594,11 +598,15 @@ node.get('/node/runs/:runId/credentials', async (c) => {
     return c.json({ error: 'secrets_unavailable' }, 503);
   }
   // The deploy target only means something next to the credential it deploys
-  // with: the client's OAuth grant when the target names one (a fresh access
-  // token, refreshed if it is about to lapse), else the token on the project.
+  // with: the project owner's OAuth grant when the target names one (a fresh
+  // access token, refreshed if it is about to lapse), else the token on the
+  // project. Rule 2: only the owner's grant is ever used — a project with no
+  // owner, or whose owner's grant no longer reaches the account, deploys with
+  // nothing, and the fetch says why.
   const target = readDeployTarget(project.deploy_target);
+  let cloudflareAbsent: string | null = null;
   if (target?.connectionId && target.accountId) {
-    const grant = await connectionForAccount(c.env, target.connectionId, target.accountId).catch(() => null);
+    const grant = await connectionForAccount(c.env, project.owner_user_id, target.connectionId, target.accountId).catch(() => null);
     const access = grant ? await cloudflareAccess(c.env, grant).catch(() => null) : null;
     if (access) {
       env.CLOUDFLARE_API_TOKEN = access;
@@ -607,13 +615,17 @@ node.get('/node/runs/:runId/credentials', async (c) => {
       integrations.length = 0;
       integrations.push(...others, { id: 'cloudflare', label: "Cloudflare (the client's connected account)", names: ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID'] });
       Object.assign(env, deployTargetEnv(target));
+    } else {
+      cloudflareAbsent = project.owner_user_id
+        ? "the owner's Cloudflare connection is missing or lapsed"
+        : 'the project has no owner';
     }
   } else if (integrations.some((entry) => entry.id === 'cloudflare')) Object.assign(env, deployTargetEnv(target));
   await c.env.DB.prepare('INSERT INTO credential_access (project_id, run_id, node_id, integrations, at) VALUES (?, ?, ?, ?, ?)')
     .bind(project.id, runId, nodeId, JSON.stringify(integrations.map((entry) => entry.id)), now())
     .run();
   c.header('Cache-Control', 'no-store');
-  return c.json({ env, integrations });
+  return c.json({ env, integrations, ...(cloudflareAbsent ? { cloudflare: cloudflareAbsent } : {}) });
 });
 node.get('/node/tickets/:ticketId/files/:fileId', async (c) => {
   const ticketId = Number(c.req.param('ticketId'));

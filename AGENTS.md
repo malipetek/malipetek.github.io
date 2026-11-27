@@ -1,11 +1,15 @@
 # AGENTS.md
 
+## Product rules (read first)
+- Before building anything in the portal, Worker, fleet, admin UI or desktop plugin, read `docs/product/RULES.md`: extend what exists instead of adding a parallel path; credentials come only from the project owner's OAuth connections; deployment is provider-agnostic; every UI method is also a superagent action; reuse the admin UI primitives. Its section 7 lists the known violations and what removes them.
+- The `packages/admin-ui` copy here is what the desktop plugin bundles; it must match `ptechsolutions-site/packages/admin-ui` until the plugin builds from one source.
+
 ## One site, one Worker — plus the portal's home on a third host
 - **malipetek.dev** IS the developer lab: `/kb/*`, `/plugins/*`, `/plugins.json`, `/blog/*`, `/experience/*`, `/projects/*`, `/pdfextractor/*`, and its own KB MCP at `/mcp` (proxied to `/kb-mcp` on the intercom Worker). `www.` folds to the apex.
 - **lab.malipetek.dev** is retired: every path 301s to `malipetek.dev` (`/api/*` excepted — it is the intercom backend, and POSTs must not eat a 301).
 - The retired contracting pages (`/contact`, `/agents`, legal, `/<code>/…`) 301 to `https://ptechsolutions.net/`; `/portal*` and `/.well-known/*` 301 to ptechsolutions.net; `/api/*` stays (the intercom backend this Worker proxies).
 - **ptechsolutions.net** is the portal's public home and lives in a different repo: `github.com/PTechGroup/ptechsolutions` (`~/Documents/Documents/Projects/ptechsolutions-site`). Two Workers deploy from it — `ptechsolutions` (the PTech homepage at `/`, proxies portal paths over a `PORTAL` binding) and `ptech-portal` (the Astro-built portal pages + proxy of `/api`, `/mcp`, OAuth `/.well-known` to `ptechsolutions-intercom` over `INTERCOM`). Portal JS calls `https://ptechsolutions.net/api` same-origin; `ptechsolutions.net` is in the intercom's `ALLOWED_ORIGINS` and the Turnstile sitekey lists it.
-- The portal source was ported out of this repo; the copies under `src/pages/portal`, `src/components/portal`, `packages/admin-ui` and the portal's `src/lib`/`src/i18n`/`src/styles` files are dead code kept only until they are stripped. The i18n catalogs still drift: `i18nSync` commits translations to THIS repo, not to ptechsolutions-site.
+- The portal source was ported out of this repo; the copies under `src/pages/portal`, `src/components/portal` and the portal's `src/lib`/`src/i18n`/`src/styles` files are dead code kept only until they are stripped. The i18n catalogs still drift: `i18nSync` commits translations to THIS repo, not to ptechsolutions-site.
 - The rule set is `src/lib/siteHosts.ts`, called from `src/middleware.ts` for server routes and from `src/worker.ts` before the adapter serves a prerendered page. A prerendered page never reaches Astro middleware, even with `run_worker_first`, so the worker entry exists; the prerendered paths that need a redirect are listed in `run_worker_first` in `wrangler.jsonc`.
 - `llms.txt`, `robots.txt`, `sitemap.xml` and `sitemap-index.xml` are server routes and answer per Host. Do not add a static `public/robots.txt` or `public/llms.txt`; assets are served before the Worker.
 

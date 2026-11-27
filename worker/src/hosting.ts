@@ -10,9 +10,9 @@
  */
 
 /**
- * `connectionId` and `accountId` name the client's Cloudflare OAuth grant
- * (cloudflare_connections) and the account in it the target lives in; without
- * them the target deploys with a token stored on the project.
+ * `connectionId` and `accountId` name the project owner's Cloudflare OAuth
+ * grant (cloudflare_connections) and the account in it the target lives in;
+ * without them the target deploys with a token stored on the project.
  */
 export type DeployTarget = {
   provider: 'cloudflare';
@@ -23,26 +23,22 @@ export type DeployTarget = {
   accountId?: string;
 };
 
-/** A client's Cloudflare grant, as the admin sees it when choosing one for a project. */
-export type ConnectionSummary = { id: number; email: string; accounts: { id: string; name: string }[]; onProject: boolean };
+/** The project owner's Cloudflare grant, as the admin sees it. */
+export type ConnectionSummary = { id: number; email: string; accounts: { id: string; name: string }[] };
 
 /**
- * Which grant a project's hosting is read with: the one asked for, else the
- * one the target already uses, else one of the project's own clients', else
- * one whose owner or account names the project (a school that connected with
- * petekkoleji2023@ for the project petekkoleji). Null when none fits.
+ * Which of the owner's grants a project's hosting is read with: the one asked
+ * for, else the one the target already uses, else the owner's newest. The
+ * caller passes only the owner's live grants (rule 2: credentials come from
+ * the project owner, never another user), so that is all this can pick. Null
+ * when the owner has none.
  */
 export function pickConnection(
   connections: ConnectionSummary[],
-  { requested, target, slug }: { requested?: number | null; target?: DeployTarget | null; slug: string },
+  { requested, target }: { requested?: number | null; target?: DeployTarget | null },
 ): ConnectionSummary | null {
   const byId = (id: number | null | undefined) => (id ? connections.find((c) => c.id === id) ?? null : null);
-  const key = slug.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const names = (c: ConnectionSummary) => [c.email, ...c.accounts.map((a) => a.name)].map((s) => s.toLowerCase().replace(/[^a-z0-9]/g, ''));
-  return byId(requested)
-    ?? byId(target?.connectionId)
-    ?? connections.find((c) => c.onProject)
-    ?? (key.length >= 4 ? connections.find((c) => names(c).some((n) => n.includes(key))) ?? null : null);
+  return byId(requested) ?? byId(target?.connectionId) ?? connections[0] ?? null;
 }
 
 export type Listing<T> = { ok: true; items: T[] } | { ok: false; error: string; permission?: string };

@@ -12,6 +12,7 @@
  * @module @malipetek/dsh-admin
  */
 import { createTicketDetailReader, ticketActivity, sendTicketMessage, requestTicketWorkspace, migrateTicketView, adminOperation, startTicketThread } from './ticket-chat.mjs';
+import { createConfirmAsk } from './confirm-ask.mjs';
 import { startSuperagent } from '../superagent-start.mjs';
 import { pickedDirectory } from '../picked-directory.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -2785,19 +2786,16 @@ function apply(ctx) {
   /**
    * One in-app confirm for every ask that emails a client or restores a
    * workspace: never the browser's `window.confirm`. The dialog lives in the
-   * frame overlay (`ConfirmHost`), so a confirm survives a page switch; a host
-   * without that slot falls back to the browser dialog rather than losing the ask.
+   * frame overlay (`ConfirmHost`), so a confirm survives a page switch. With no
+   * ConfirmHost mounted the ask fails closed — answered no, with a warning —
+   * because Electron can return true from `window.confirm` without showing
+   * anything, which once queued a ticket nobody confirmed.
    */
   const confirmHost = { open: null };
-  function confirmAsk(ask) {
-    return new Promise((resolve) => {
-      if (!confirmHost.open) {
-        resolve(window.confirm([ask.title, ask.text].filter(Boolean).join('\n\n')));
-        return;
-      }
-      confirmHost.open({ ...ask, resolve });
-    });
-  }
+  const confirmAsk = createConfirmAsk({
+    host: confirmHost,
+    warn: (message) => console.warn(message),
+  });
 
   function ConfirmHost() {
     const [ask, setAsk] = useState(null);
