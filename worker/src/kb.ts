@@ -27,7 +27,7 @@
  */
 import { Hono } from 'hono';
 import { clientIp, isRateLimited, type Env, type HonoEnv } from './shared.ts';
-import { agentUser, now, sessionUser } from './portal.ts';
+import { agentUser, now, sessionUser, siteUrl } from './portal.ts';
 import { CLIENT_TOOLS, CLIENT_TOOL_NAMES, OWNER_TOOLS, OWNER_TOOL_NAMES, callClientTool } from './clientTools.ts';
 import { reviewEstimate } from '../../src/lib/pricing.js';
 import { cardStrings } from '../../src/i18n/eager.js';
@@ -741,7 +741,7 @@ const KB_INSTRUCTIONS =
   'For website work done for you, the contracting service is a separate server: https://ptechsolutions.net/mcp.';
 
 const PORTAL_SERVER_INFO = {
-  name: 'malipetek-dev',
+  name: 'ptech-client-portal',
   title: 'PTech client portal',
   version: '1.2.0',
   icons: [
@@ -794,7 +794,9 @@ const UI_TOOLS: Record<string, (value: unknown) => string> = {
  * metadata says, and the connection never shows as authenticated.
  */
 function authChallenge(env: Env) {
-  const site = String(env.SITE_URL ?? 'https://malipetek.dev').replace(/\/+$/, '');
+  // The portal's origin, the same one OAuth discovery advertises: SITE_URL is
+  // malipetek.dev, which now serves only the knowledgebase.
+  const site = siteUrl(env);
   return {
     content: [
       {
@@ -830,7 +832,9 @@ export function fromClaude(ip: string, userAgent: string): boolean {
  * retries the same call with the new token.
  */
 function claudeChallenge(env: Env) {
-  const site = String(env.SITE_URL ?? 'https://malipetek.dev').replace(/\/+$/, '');
+  // The portal's origin, the same one OAuth discovery advertises: SITE_URL is
+  // malipetek.dev, which now serves only the knowledgebase.
+  const site = siteUrl(env);
   const description = 'Sign in with your PTech account to use this tool.';
   return new Response(JSON.stringify({ error: 'invalid_token', error_description: description }), {
     status: 401,
