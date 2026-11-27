@@ -39,3 +39,22 @@ test('a chosen Cloudflare target tells the agent where previews and production g
   assert.equal(deploySection({ PTECH_DEPLOY_NAME: 'x' }), '');
   assert.equal(deploySection({}), '');
 });
+
+test('a provider-built target tells the agent to push the branch, never to run wrangler', () => {
+  // No CLOUDFLARE_API_TOKEN in the env: the provider builds the repo itself.
+  const env = { PTECH_DEPLOY_KIND: 'pages', PTECH_DEPLOY_NAME: 'petekkoleji', PTECH_DEPLOY_PRODUCTION_BRANCH: 'main', PTECH_DEPLOY_BUILDS: 'provider' };
+  const text = deploySection(env);
+  assert.match(text, /Pages project `petekkoleji`.*builds itself from the connected Git repository/);
+  assert.match(text, /push it to origin/);
+  assert.match(text, /<branch-slug>\.petekkoleji\.pages\.dev/);
+  assert.match(text, /Do not merge into or push to main yourself unless the ticket says to publish/);
+  assert.match(text, /Do not run wrangler/);
+  assert.doesNotMatch(text, /wrangler pages deploy|wrangler deploy|CLOUDFLARE_API_TOKEN/);
+  // A Workers target has no pages.dev preview URL to name.
+  const worker = deploySection({ PTECH_DEPLOY_KIND: 'workers', PTECH_DEPLOY_NAME: 'mailer', PTECH_DEPLOY_BUILDS: 'provider' });
+  assert.match(worker, /Cloudflare Worker `mailer`.*builds itself from the connected Git repository/);
+  assert.doesNotMatch(worker, /pages\.dev/);
+  // A stray token must not pull a provider target back to wrangler either.
+  const withToken = deploySection({ ...env, CLOUDFLARE_API_TOKEN: 't' });
+  assert.match(withToken, /Do not run wrangler/);
+});

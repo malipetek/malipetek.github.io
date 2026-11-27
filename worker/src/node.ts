@@ -603,9 +603,18 @@ node.get('/node/runs/:runId/credentials', async (c) => {
   // project. Rule 2: only the owner's grant is ever used — a project with no
   // owner, or whose owner's grant no longer reaches the account, deploys with
   // nothing, and the fetch says why.
+  //
+  // A target the provider builds itself (builds: 'provider', e.g. a Pages
+  // project on the Git integration) deploys by pushing branches, so a run
+  // needs no Cloudflare deploy token at all: it gets the target's env for the
+  // prompt (where previews appear, which branch is production) and nothing
+  // else. No code path here reads Cloudflare during a run, so no token is
+  // minted — not even a read-only one.
   const target = readDeployTarget(project.deploy_target);
   let cloudflareAbsent: string | null = null;
-  if (target?.connectionId && target.accountId) {
+  if (target?.builds === 'provider') {
+    Object.assign(env, deployTargetEnv(target));
+  } else if (target?.connectionId && target.accountId) {
     const grant = await connectionForAccount(c.env, project.owner_user_id, target.connectionId, target.accountId).catch(() => null);
     const access = grant ? await cloudflareAccess(c.env, grant).catch(() => null) : null;
     if (access) {

@@ -13753,7 +13753,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       label: "Website",
       summary: "Design, build, or improve a website that works on phones and desktops.",
       requires: [],
-      integrations: [{ id: "github", optional: true }, { id: "cloudflare", optional: true }],
+      integrations: [],
       deliverables: ["Responsive website", "Review link", "Launch and editing notes"],
       questions: ["Who will visit the site?", "What should visitors do before they leave?", "What pages or information must be ready at launch?", "Who should be able to change the content?"]
     },
@@ -13771,7 +13771,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       label: "iOS app",
       summary: "Build or improve an app for iPhone and iPad.",
       requires: ["os:macos", "xcode"],
-      integrations: [{ id: "app-store-connect", optional: false }, { id: "github", optional: true }],
+      integrations: [{ id: "app-store-connect", optional: false }],
       deliverables: ["iOS app", "TestFlight build", "Handover notes"],
       questions: ["What should people be able to do the first time they open the app?", "Should it work on iPhone, iPad, or both?", "What should still work without internet?", "Who should try it before launch?"]
     },
@@ -13780,7 +13780,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       label: "Android app",
       summary: "Build or improve an app for Android phones and tablets.",
       requires: ["android"],
-      integrations: [{ id: "google-play", optional: false }, { id: "github", optional: true }],
+      integrations: [{ id: "google-play", optional: false }],
       deliverables: ["Android app", "Internal testing build", "Handover notes"],
       questions: ["What should people be able to do in the app?", "Are there specific phones or tablets it must work on?", "Should users get reminders or updates?", "Who should get early access?"]
     },
@@ -13840,27 +13840,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }
   ];
   var INTEGRATION_CATALOG = [
-    {
-      id: "github",
-      label: "GitHub",
-      vendor: "GitHub",
-      fields: [{ name: "GITHUB_REPO", label: "Repository", secret: false, placeholder: "owner/name" }],
-      steps: ["Install our GitHub App on your personal account or organization.", "Give the app access to just the repository for this project.", "Enter the repository owner and name as owner/name. Do not paste a personal access token."],
-      docs: "https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app",
-      scope: "GitHub App access to the selected repository only."
-    },
-    {
-      id: "cloudflare",
-      label: "Cloudflare",
-      vendor: "Cloudflare",
-      fields: [
-        { name: "CLOUDFLARE_ACCOUNT_ID", label: "Account ID", secret: false },
-        { name: "CLOUDFLARE_API_TOKEN", label: "API token", secret: true }
-      ],
-      steps: ["Copy the Account ID from the Cloudflare dashboard for the account that owns the site.", "Open My Profile \u2192 API Tokens and create a custom token.", "Select only the account and zones for this project. Add Cloudflare Pages: Edit and Workers Scripts: Edit so we can find your site and deploy previews and releases to it, plus DNS: Edit if we set up a domain."],
-      docs: "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/",
-      scope: "Limit the token to the relevant accounts, zones, and actions; do not share a Global API Key."
-    },
     {
       id: "shopify",
       label: "Shopify",
@@ -14099,6 +14078,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }
     };
     const chosen = selected.map((sid) => solutionById.get(sid)).filter(Boolean);
+    const needsManual = chosen.some((s) => (s.integrations ?? []).length);
     const requires = [...new Set(chosen.flatMap((s) => s.requires ?? []))];
     const fleetKnown = data?.access?.superAdmin === true;
     const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
@@ -14128,38 +14108,40 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       /* @__PURE__ */ jsx("p", { className: "aw-psol__h", children: "Kind of work" }),
       /* @__PURE__ */ jsx(Chips, { value: selected, options: solutionsCatalog.map((s) => ({ value: s.id, label: s.label, hint: s.summary })), onChange: choose, disabled: busy }),
       fleetNote,
-      /* @__PURE__ */ jsx("p", { className: "aw-psol__h", children: "Connections" }),
-      status.error ? /* @__PURE__ */ jsx(ErrorNote, { error: status.error, onRetry: refreshStatus }) : null,
-      rows === null || rows === void 0 ? /* @__PURE__ */ jsxs("div", { className: "aw-psol__skel", role: "status", "aria-label": "Loading connections\u2026", children: [
-        /* @__PURE__ */ jsx("span", { className: "aw-sr-only", children: "Loading connections\u2026" }),
-        /* @__PURE__ */ jsx("span", { "aria-hidden": "true" }),
-        /* @__PURE__ */ jsx("span", { "aria-hidden": "true" })
-      ] }) : !rows.length && !status.error ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No connections needed for the chosen kinds." }) : /* @__PURE__ */ jsx("ul", { className: "aw-psol__rows", children: rows.map((row) => {
-        const entry = integrationById.get(row.id);
-        const needsAction = !row.connected && row.required;
-        return /* @__PURE__ */ jsxs("li", { className: "aw-psol__row", children: [
-          /* @__PURE__ */ jsx(Dot, { state: dotState(row) }),
-          /* @__PURE__ */ jsxs("div", { className: "aw-psol__rowmain", children: [
-            /* @__PURE__ */ jsx("strong", { children: row.label }),
-            entry?.vendor ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: entry.vendor }) : null,
-            /* @__PURE__ */ jsx(Tag, { tone: row.required ? void 0 : "dash", children: row.required ? "required" : "optional" }),
-            row.missing?.length ? /* @__PURE__ */ jsxs("span", { className: "aw-psol__miss", children: [
-              "needs ",
-              row.missing.join(", ")
-            ] }) : null,
-            row.verifyError ? /* @__PURE__ */ jsx("span", { className: "aw-psol__err", children: verifyText(row.verifyError) }) : row.verifiedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-              "verified ",
-              ago(row.verifiedAt),
-              " ago"
-            ] }) : null
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "aw-psol__rowact", children: [
-            entry ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: needsAction ? "primary" : "default", onClick: () => setEntering(entry), children: "Connect values" }) : null,
-            /* @__PURE__ */ jsx(Button, { size: "sm", disabled: verifying === row.id, onClick: () => verify(row), children: verifying === row.id ? "Verifying\u2026" : "Verify" }),
-            entry ? /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link aw-psol__copy", onClick: () => void copySteps(entry), children: "Copy client steps" }) : null
-          ] })
-        ] }, row.id);
-      }) }),
+      needsManual || rows?.length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx("p", { className: "aw-psol__h", children: "Connections" }),
+        status.error ? /* @__PURE__ */ jsx(ErrorNote, { error: status.error, onRetry: refreshStatus }) : null,
+        rows === null || rows === void 0 ? /* @__PURE__ */ jsxs("div", { className: "aw-psol__skel", role: "status", "aria-label": "Loading connections\u2026", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-sr-only", children: "Loading connections\u2026" }),
+          /* @__PURE__ */ jsx("span", { "aria-hidden": "true" }),
+          /* @__PURE__ */ jsx("span", { "aria-hidden": "true" })
+        ] }) : !rows.length && !status.error ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No connections needed for the chosen kinds." }) : /* @__PURE__ */ jsx("ul", { className: "aw-psol__rows", children: rows.map((row) => {
+          const entry = integrationById.get(row.id);
+          const needsAction = !row.connected && row.required;
+          return /* @__PURE__ */ jsxs("li", { className: "aw-psol__row", children: [
+            /* @__PURE__ */ jsx(Dot, { state: dotState(row) }),
+            /* @__PURE__ */ jsxs("div", { className: "aw-psol__rowmain", children: [
+              /* @__PURE__ */ jsx("strong", { children: row.label }),
+              entry?.vendor ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: entry.vendor }) : null,
+              /* @__PURE__ */ jsx(Tag, { tone: row.required ? void 0 : "dash", children: row.required ? "required" : "optional" }),
+              row.missing?.length ? /* @__PURE__ */ jsxs("span", { className: "aw-psol__miss", children: [
+                "needs ",
+                row.missing.join(", ")
+              ] }) : null,
+              row.verifyError ? /* @__PURE__ */ jsx("span", { className: "aw-psol__err", children: verifyText(row.verifyError) }) : row.verifiedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                "verified ",
+                ago(row.verifiedAt),
+                " ago"
+              ] }) : null
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "aw-psol__rowact", children: [
+              entry ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: needsAction ? "primary" : "default", onClick: () => setEntering(entry), children: "Connect values" }) : null,
+              /* @__PURE__ */ jsx(Button, { size: "sm", disabled: verifying === row.id, onClick: () => verify(row), children: verifying === row.id ? "Verifying\u2026" : "Verify" }),
+              entry ? /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link aw-psol__copy", onClick: () => void copySteps(entry), children: "Copy client steps" }) : null
+            ] })
+          ] }, row.id);
+        }) })
+      ] }) : null,
       chosen.length ? /* @__PURE__ */ jsxs("details", { className: "aw-psol__brief", children: [
         /* @__PURE__ */ jsx("summary", { children: "What we deliver / ask the client" }),
         chosen.map((s) => /* @__PURE__ */ jsxs("div", { className: "aw-psol__briefitem", children: [
@@ -14246,6 +14228,18 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       const url = new URL(normalized);
       if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) return null;
       return url.href.replace(/\.git\/?$/, "");
+    } catch {
+      return null;
+    }
+  }
+  function repoRef(value) {
+    const url = resourceUrl(value);
+    if (!url) return null;
+    try {
+      const { hostname, pathname } = new URL(url);
+      const segments = pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+      if (segments.length < 2) return null;
+      return { host: hostname, slug: segments.slice(0, 2).join("/") };
     } catch {
       return null;
     }
@@ -16772,10 +16766,54 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   function Setup({ project, refresh, host }) {
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsx(ProjectSolutions, { project }) }),
-      /* @__PURE__ */ jsx(Resources, { project, refresh, host }),
-      /* @__PURE__ */ jsx(Hosting, { project }),
       /* @__PURE__ */ jsx(People, { project, refresh }),
+      /* @__PURE__ */ jsx(Code, { project, refresh }),
+      /* @__PURE__ */ jsx(Hosting, { project }),
+      /* @__PURE__ */ jsx(Resources, { project, refresh, host }),
       /* @__PURE__ */ jsx(Secrets, { project })
+    ] });
+  }
+  function Code({ project, refresh }) {
+    const { api, setModal: setModal2 } = useAdmin();
+    const [state, write] = useWrite();
+    const repo = repoRef(project.repo);
+    const href = resourceUrl(project.repo);
+    const mutate = (operation, message) => void write(async () => {
+      await operation();
+      void refresh();
+    }, message);
+    return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-repo", children: [
+      /* @__PURE__ */ jsx("h3", { children: "Code" }),
+      repo ? /* @__PURE__ */ jsxs("p", { children: [
+        href ? /* @__PURE__ */ jsxs("a", { href, target: "_blank", rel: "noreferrer", children: [
+          repo.host,
+          "/",
+          repo.slug
+        ] }) : `${repo.host}/${repo.slug}`,
+        project.githubAccount ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+          " \xB7 through @",
+          project.githubAccount,
+          "\u2019s GitHub"
+        ] }) : repo.host === "github.com" ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: " \xB7 through the owner\u2019s GitHub" }) : null
+      ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: href ? /* @__PURE__ */ jsx("a", { href, target: "_blank", rel: "noreferrer", children: href }) : project.repo ? "Repository configured for Git access." : "No repository yet \u2014 the project owner connects GitHub on the portal\u2019s Connections page, and the repository shows here." }),
+      project.repo_error ? /* @__PURE__ */ jsx("p", { role: "alert", className: "aw-project__error", children: project.repo_error }) : null,
+      project.repoStatus?.label ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: project.repoStatus.label }) : null,
+      !project.repo ? /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
+        /* @__PURE__ */ jsx(Button, { size: "sm", disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/repo/create`, {}), "Repository creation requested."), children: "Create repository" }),
+        project.githubInstallationId ? /* @__PURE__ */ jsxs(Button, { size: "sm", disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/repo/github`, {}), "GitHub repository creation requested."), children: [
+          "Create in @",
+          project.githubAccount || "connected GitHub"
+        ] }) : null
+      ] }) : null,
+      /* @__PURE__ */ jsxs("details", { children: [
+        /* @__PURE__ */ jsx("summary", { children: "More" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Link an existing repository by its URL, or change the one above." }),
+        /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
+          close();
+          void refresh();
+        } }) }), children: project.repo ? "Change repository" : "Link repository" }) })
+      ] }),
+      /* @__PURE__ */ jsx(Feedback, { state })
     ] });
   }
   function Resources({ project, refresh, host }) {
@@ -16826,31 +16864,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           } }) }), children: "Link a repository" }) })
         ] })
       ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-repo", children: [
-        /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
-          /* @__PURE__ */ jsx("h3", { children: "Repository & integrations" }),
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
-            close();
-            void refresh();
-          } }) }), children: project.repo ? "Change repository" : "Link repository" })
-        ] }),
-        /* @__PURE__ */ jsx("p", { children: resourceUrl(project.repo) ? /* @__PURE__ */ jsx("a", { href: resourceUrl(project.repo), target: "_blank", rel: "noreferrer", children: resourceUrl(project.repo) }) : project.repo ? "Repository configured for Git access." : "Link existing code or create a repository for this project." }),
-        project.repo_error ? /* @__PURE__ */ jsx("p", { role: "alert", className: "aw-project__error", children: project.repo_error }) : null,
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          project.githubAccount ? `GitHub connected: @${project.githubAccount}` : "No GitHub account linked to this project.",
-          project.repoStatus?.label ? ` \xB7 ${project.repoStatus.label}` : ""
-        ] }),
-        !project.repo ? /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
-          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/repo/create`, {}), "Repository creation requested."), children: "Create repository" }),
-          project.githubInstallationId ? /* @__PURE__ */ jsxs(Button, { size: "sm", disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/repo/github`, {}), "GitHub repository creation requested."), children: [
-            "Create in @",
-            project.githubAccount || "connected GitHub"
-          ] }) : null
-        ] }) : null,
-        /* @__PURE__ */ jsx(Feedback, { state })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-hosting", children: [
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-sites", children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
           /* @__PURE__ */ jsx("h3", { children: "Hosted destinations" }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
@@ -17459,7 +17473,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
   function Hosting({ project }) {
-    const { api } = useAdmin();
+    const { api, ask } = useAdmin();
     const load = useCallback(
       () => api("GET", `/admin/projects/${encodeURIComponent(project.id)}/cloudflare`),
       [api, project.id]
@@ -17470,39 +17484,76 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const target = info?.target ?? null;
     const connections = info?.connections ?? [];
     const grant = connections.find((c) => c.id === info?.connectionId) ?? null;
-    const choose = (next) => void run(async () => {
+    const accountName = grant?.accounts.find((a) => a.id === info?.accountId)?.name ?? info?.accountId;
+    const detected = info?.detected ?? null;
+    const projectRepo = info?.projectRepo ?? repoRef(project.repo)?.slug ?? null;
+    const isTarget = (kind, name) => target?.kind === kind && target?.name === name;
+    const choose = (next, success) => run(async () => {
       await api("PUT", `/admin/projects/${encodeURIComponent(project.id)}/deploy-target`, {
         target: next && info?.via === "oauth" ? { ...next, connectionId: info.connectionId, accountId: info.accountId } : next
       });
       await reload();
-    }, next ? `Deploys to ${next.name} now.` : "Deploy target cleared.");
-    const isTarget = (kind, name) => target?.kind === kind && target?.name === name;
-    const listing = (label, kind, section, describe) => /* @__PURE__ */ jsxs("div", { className: "aw-project__hosting-list", children: [
-      /* @__PURE__ */ jsx("h4", { children: label }),
-      !section.ok ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
-        section.error,
-        section.permission ? ` It needs ${section.permission}.` : "",
-        section.permission && info?.via === "oauth" ? " The client reconnects Cloudflare on the portal's Connections page to grant it." : ""
-      ] }) : section.items.length === 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "None in this account." }) : /* @__PURE__ */ jsx("ul", { className: "aw-project__hosting-items", children: section.items.map((item) => /* @__PURE__ */ jsxs("li", { children: [
-        /* @__PURE__ */ jsxs("span", { children: [
-          /* @__PURE__ */ jsx("strong", { children: item.name }),
-          " ",
-          /* @__PURE__ */ jsx("span", { className: "ui-note", children: describe(item) })
-        ] }),
-        isTarget(kind, item.name) ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "Deploy target" }) : /* @__PURE__ */ jsx(Button, { size: "sm", busy: write.busy, onClick: () => choose({ kind, name: item.name, productionBranch: item.productionBranch || "main" }), children: "Deploy here" })
-      ] }, item.name)) })
-    ] });
-    const accountName = grant?.accounts.find((a) => a.id === info?.accountId)?.name ?? info?.accountId;
+    }, success);
+    const fleetPick = (item) => ask({
+      title: `Fleet deploys to ${item.name}?`,
+      text: `Previews go up from each ticket branch; production from ${item.productionBranch || "main"} goes live to the ${item.kind === "pages" ? "Pages project" : "Worker"} ${item.name}.`,
+      confirm: "Fleet deploys here",
+      run: () => choose({ provider: "cloudflare", kind: item.kind, name: item.name, productionBranch: item.productionBranch || "main", builds: "fleet" }, `Deploys to ${item.name} now.`)
+    });
+    const useDetected = () => ask({
+      title: `Use Cloudflare's builds for ${detected.name}?`,
+      text: `Cloudflare already builds it from ${projectRepo ?? "this project\u2019s repo"}: each ticket branch gets a preview, ${detected.productionBranch || "main"} goes live.`,
+      confirm: "Use it",
+      run: () => choose({ provider: detected.provider ?? "cloudflare", kind: detected.kind, name: detected.name, productionBranch: detected.productionBranch || "main", builds: "provider" }, `Cloudflare builds ${detected.name} now.`)
+    });
+    const clearTarget = () => ask({
+      title: `Clear the deploy target for ${project.name}?`,
+      text: "Nothing deploys anywhere until a target is chosen again.",
+      confirm: "Clear target",
+      run: () => choose(null, "Deploy target cleared.")
+    });
+    const servedBy = (info?.domains?.ok ? info.domains.items : []).filter((d) => d.kind === "pages" || d.kind === "workers");
+    const servedHosts = (kind, name) => servedBy.filter((d) => d.kind === kind && d.name === name).map((d) => d.host);
+    const relevant = [];
+    const seen = /* @__PURE__ */ new Set();
+    const push = (kind, name, productionBranch, note) => {
+      const key = `${kind}:${name}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      relevant.push({ kind, name, productionBranch, note });
+    };
+    for (const p of info?.pages?.ok ? info.pages.items : []) {
+      const hosts = servedHosts("pages", p.name);
+      const repoBuilt = Boolean(projectRepo) && p.source?.repo === projectRepo;
+      if (!hosts.length && !repoBuilt) continue;
+      push(
+        "pages",
+        p.name,
+        p.productionBranch || p.source?.productionBranch || "main",
+        [repoBuilt ? `builds from ${p.source.repo}` : null, hosts.length ? `serves ${hosts.join(", ")}` : (p.domains ?? []).length ? `serves ${p.domains.join(", ")}` : null, p.productionBranch && !repoBuilt ? `production ${p.productionBranch}` : null].filter(Boolean).join(" \xB7 ")
+      );
+    }
+    for (const w of info?.workers?.ok ? info.workers.items : []) {
+      const hosts = servedHosts("workers", w.name);
+      if (!hosts.length) continue;
+      push("workers", w.name, "main", [`serves ${hosts.join(", ")}`, w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : null].filter(Boolean).join(" \xB7 "));
+    }
+    for (const d of servedBy) push(d.kind, d.name, "main", `serves ${servedHosts(d.kind, d.name).join(", ")}`);
     const attachedClients = Array.isArray(project.clients) ? project.clients : [];
     const goToPeople = () => {
       if (typeof document === "undefined") return;
       document.getElementById("project-people")?.scrollIntoView({ block: "start", behavior: "auto" });
     };
+    const listError = (section) => !section || section.ok ? null : /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+      section.error,
+      section.permission ? ` It needs ${section.permission}.` : "",
+      section.permission && info?.via === "oauth" ? " The client reconnects Cloudflare on the portal's Connections page to grant it." : ""
+    ] });
     return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-hosting", children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
         /* @__PURE__ */ jsx("h3", { children: "Where it goes live" }),
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        target ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", busy: write.busy, onClick: () => choose(null), children: "Clear target" }) : null
+        target ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", busy: write.busy, onClick: clearTarget, children: "Clear target" }) : null
       ] }),
       state.loading && !info ? /* @__PURE__ */ jsx(Skeleton, { label: "Reading the owner's Cloudflare\u2026" }) : null,
       state.error ? /* @__PURE__ */ jsx(ErrorNote, { error: state.error }) : null,
@@ -17510,7 +17561,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         Empty,
         {
           title: "Set the project owner first",
-          hint: attachedClients.length ? "Hosting reads only the owner's Cloudflare connection, and this project has no owner yet. Make one of the people below the owner in People & access; then their Workers show here." : "Hosting reads only the owner's Cloudflare connection, and this project has no one attached yet. An owner must first be added to the project in People & access below.",
+          hint: attachedClients.length ? "Hosting reads only the owner's Cloudflare connection, and this project has no owner yet. Make one of its people the owner in People & access; then their Cloudflare shows here." : "Hosting reads only the owner's Cloudflare connection, and this project has no one attached yet. An owner must first be added to the project in People & access above.",
           action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: goToPeople, children: "Go to People & access" }),
           inline: true
         }
@@ -17528,14 +17579,58 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         }
       ) : null,
       info?.connected ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          info.via === "oauth" ? `Through the owner's Cloudflare connection (${grant?.email ?? info.owner ?? "the owner"}), account ${accountName}. ` : "",
-          target ? `Fleet runs deploy previews from ticket branches and production from ${target.productionBranch} to ${target.kind === "pages" ? "Pages project" : "Worker"} ${target.name}.` : "Pick where fleet runs deploy: previews from ticket branches, production from the production branch."
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: info.via === "oauth" ? `Through the owner's Cloudflare connection (${grant?.email ?? info.owner ?? "the owner"}), account ${accountName}.` : "Through the Cloudflare credentials stored on this project." }),
+        target?.builds === "provider" ? /* @__PURE__ */ jsxs("div", { className: "aw-project__hosting-list", children: [
+          /* @__PURE__ */ jsxs("p", { children: [
+            /* @__PURE__ */ jsx("strong", { children: target.name }),
+            " ",
+            /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "Deploy target" })
+          ] }),
+          /* @__PURE__ */ jsxs("p", { children: [
+            "Cloudflare builds ",
+            target.name,
+            " from ",
+            projectRepo ?? "its repo",
+            ": each ticket branch gets a preview, ",
+            target.productionBranch,
+            " goes live."
+          ] })
+        ] }) : detected ? /* @__PURE__ */ jsxs("div", { className: "aw-project__connect", children: [
+          /* @__PURE__ */ jsx("p", { children: /* @__PURE__ */ jsxs("strong", { children: [
+            "Cloudflare already builds this project from its repo (",
+            detected.name,
+            ")."
+          ] }) }),
+          /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+            "Each ticket branch gets a preview; ",
+            detected.productionBranch || "main",
+            " goes live."
+          ] }),
+          target ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+            "Fleet currently deploys to ",
+            target.name,
+            " instead."
+          ] }) : null,
+          /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", busy: write.busy, onClick: useDetected, children: "Use it" }) })
+        ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("p", { className: "aw-muted", children: target ? `Fleet deploys previews from ticket branches and production from ${target.productionBranch} to the ${target.kind === "pages" ? "Pages project" : "Worker"} ${target.name}.` : "Pick where fleet runs deploy: previews from ticket branches, production from the production branch." }),
+          listError(info.pages),
+          listError(info.workers),
+          relevant.length ? /* @__PURE__ */ jsx("ul", { className: "aw-project__hosting-items", children: relevant.map((item) => /* @__PURE__ */ jsxs("li", { children: [
+            /* @__PURE__ */ jsxs("span", { children: [
+              /* @__PURE__ */ jsx("strong", { children: item.name }),
+              " ",
+              /* @__PURE__ */ jsxs("span", { className: "ui-note", children: [
+                item.kind === "pages" ? "Pages project" : "Worker",
+                item.note ? ` \xB7 ${item.note}` : ""
+              ] })
+            ] }),
+            isTarget(item.kind, item.name) ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "Deploy target" }) : /* @__PURE__ */ jsx(Button, { size: "sm", busy: write.busy, onClick: () => fleetPick(item), children: "Fleet deploys here" })
+          ] }, `${item.kind}:${item.name}`)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No Pages project or Worker in this account serves one of its domains yet." })
         ] }),
-        info.workers ? listing("Worker scripts", "workers", info.workers, (w) => w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : "") : null,
-        info.domains?.ok && info.domains.items.length ? /* @__PURE__ */ jsxs("div", { className: "aw-project__hosting-list", children: [
-          /* @__PURE__ */ jsx("h4", { children: "What serves each domain" }),
-          /* @__PURE__ */ jsx("ul", { className: "aw-project__hosting-items", children: info.domains.items.map((d) => /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsxs("details", { className: "aw-project__hosting-list", children: [
+          /* @__PURE__ */ jsx("summary", { children: "Domains" }),
+          info.domains?.ok && info.domains.items.length ? /* @__PURE__ */ jsx("ul", { className: "aw-project__hosting-items", children: info.domains.items.map((d) => /* @__PURE__ */ jsxs("li", { children: [
             /* @__PURE__ */ jsxs("span", { children: [
               /* @__PURE__ */ jsx("strong", { children: d.host }),
               " ",
@@ -17545,10 +17640,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                 d.via
               ] })
             ] }),
-            d.kind === "dns" ? null : isTarget(d.kind, d.name) ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "Deploy target" }) : /* @__PURE__ */ jsx(Button, { size: "sm", busy: write.busy, onClick: () => choose({ kind: d.kind, name: d.name, productionBranch: "main" }), children: "Deploy here" })
-          ] }, `${d.host} ${d.kind} ${d.name}`)) })
-        ] }) : null,
-        info.pages ? listing("Pages projects", "pages", info.pages, (p) => [p.productionBranch ? `production ${p.productionBranch}` : null, ...p.domains ?? []].filter(Boolean).join(" \xB7 ")) : null
+            d.kind !== "dns" && isTarget(d.kind, d.name) ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "Deploy target" }) : null
+          ] }, `${d.host} ${d.kind} ${d.name}`)) }) : info.domains && !info.domains.ok ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: info.domains.error }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No domains in this account." })
+        ] })
       ] }) : null,
       write.error ? /* @__PURE__ */ jsx(ErrorNote, { error: write.error }) : null,
       write.success ? /* @__PURE__ */ jsx("p", { className: "ui-note", role: "status", children: write.success }) : null

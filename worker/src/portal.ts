@@ -138,7 +138,7 @@ import { ensureRepo, useClientRepo, installationToken } from './ghapp.ts';
 import { accessFor, authorizeWorkbenchRoute, canWorkProject, isSuperAdmin, ownsProject, projectScope, sealProjectSecret, openProjectSecret } from './projectAccess.ts';
 import { moveSite, moveTicket, promotePrimary } from './move.ts';
 import { runIntake } from './intake.ts';
-import { listDomains, listPages, listWorkers, parseDeployTarget, pickConnection, readDeployTarget, type ConnectionSummary } from './hosting.ts';
+import { detectProviderBuild, listDomains, listPages, listWorkers, normalizeRepo, parseDeployTarget, pickConnection, readDeployTarget, type ConnectionSummary } from './hosting.ts';
 import { isAudioType, transcribe } from './transcribe.ts';
 import { checkUploads, fileCount, fileResponse, FILE_LIMITS, sizeText, storeFiles, withFiles, type FileMeta, type Upload } from './files.ts';
 
@@ -3724,16 +3724,17 @@ portal.get('/admin/projects/:id', async (c) => {
 portal.get('/admin/projects/:id/cloudflare', async (c) => {
   const id = c.req.param('id');
   const project = await c.env.DB.prepare(
-    'SELECT p.id, p.owner_user_id, p.deploy_target, u.email AS owner_email FROM projects p LEFT JOIN users u ON u.id = p.owner_user_id WHERE p.id = ?',
+    'SELECT p.id, p.owner_user_id, p.deploy_target, p.repo, u.email AS owner_email FROM projects p LEFT JOIN users u ON u.id = p.owner_user_id WHERE p.id = ?',
   )
     .bind(id)
-    .first<{ id: string; owner_user_id: string | null; deploy_target: string | null; owner_email: string | null }>();
+    .first<{ id: string; owner_user_id: string | null; deploy_target: string | null; repo: string | null; owner_email: string | null }>();
   if (!project) return reply(c, { error: 'not_found' }, 404);
   const target = readDeployTarget(project.deploy_target);
+  const projectRepo = normalizeRepo(project.repo);
   c.header('Cache-Control', 'no-store');
   // Without an owner there is no client credential to read with, and no
   // grant of another user may stand in (rule 2).
-  if (!project.owner_user_id) return reply(c, { connected: false, needsOwner: true, connections: [], owner: null, target });
+  if (!project.owner_user_id) return reply(c, { connected: false, needsOwner: true, connections: [], owner: null, projectRepo, detected: null, target });
   const grants = (await c.env.DB.prepare(
     'SELECT cc.id, cc.accounts FROM cloudflare_connections cc WHERE cc.user_id = ? AND cc.revoked_at IS NULL ORDER BY cc.created_at DESC',
   )
@@ -3745,15 +3746,19 @@ portal.get('/admin/projects/:id/cloudflare', async (c) => {
   const chosen = pickConnection(connections, { requested, target });
   if (chosen) {
     const token = await cloudflareAccess(c.env, chosen.id).catch(() => null);
-    if (!token) return reply(c, { connected: false, via: 'oauth', lapsed: true, connectionId: chosen.id, connections, owner: project.owner_email, target });
+    if (!token) return reply(c, { connected: false, via: 'oauth', lapsed: true, connectionId: chosen.id, connections, owner: project.owner_email, projectRepo, detected: null, target });
     const accountId = (requested ? null : target?.connectionId === chosen.id ? target.accountId : null) ?? chosen.accounts[0]?.id ?? '';
     // A grant from before Pages was asked for answers "not allowed": the client reconnects.
     const [pages, workers, domains] = await Promise.all([listPages(accountId, token), listWorkers(accountId, token), listDomains(accountId, token)]);
-    return reply(c, { connected: true, via: 'oauth', connectionId: chosen.id, accountId, connections, owner: project.owner_email, pages, workers, domains, target });
+    // When the account's Pages list names exactly one project the provider
+    // itself builds from this project's repo, say so: such a site deploys by
+    // pushing branches, not by handing a run a deploy token.
+    const detected = detectProviderBuild(pages.ok ? pages.items : null, projectRepo);
+    return reply(c, { connected: true, via: 'oauth', connectionId: chosen.id, accountId, connections, owner: project.owner_email, projectRepo, detected, pages, workers, domains, target });
   }
   const rows = (await c.env.DB.prepare(`SELECT name, value_enc FROM project_secrets WHERE project_id=? AND name IN ('CLOUDFLARE_ACCOUNT_ID','CLOUDFLARE_API_TOKEN')`)
     .bind(id).all<{ name: string; value_enc: string }>()).results ?? [];
-  if (rows.length < 2) return reply(c, { connected: false, connections, owner: project.owner_email, target });
+  if (rows.length < 2) return reply(c, { connected: false, connections, owner: project.owner_email, projectRepo, detected: null, target });
   if (!c.env.SESSION_SECRET) return reply(c, { error: 'secrets_unavailable' }, 503);
   let accountId = '';
   let token = '';
@@ -3767,7 +3772,8 @@ portal.get('/admin/projects/:id/cloudflare', async (c) => {
     return reply(c, { error: 'secrets_unavailable' }, 503);
   }
   const [pages, workers, domains] = await Promise.all([listPages(accountId, token), listWorkers(accountId, token), listDomains(accountId, token)]);
-  return reply(c, { connected: true, via: 'token', accountId, connections, owner: project.owner_email, pages, workers, domains, target });
+  const detected = detectProviderBuild(pages.ok ? pages.items : null, projectRepo);
+  return reply(c, { connected: true, via: 'token', accountId, connections, owner: project.owner_email, projectRepo, detected, pages, workers, domains, target });
 });
 
 /** Choose (or clear, with `null`) where this project's work goes live. */

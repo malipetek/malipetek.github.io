@@ -116,7 +116,46 @@ test('a project with no owner is told to set one, and no one’s grants are list
   const res = await request('GET', '/admin/projects/b/cloudflare');
   assert.equal(res.status, 200);
   const body = await res.json() as any;
-  assert.deepEqual(body, { connected: false, needsOwner: true, connections: [], owner: null, target: null });
+  assert.deepEqual(body, { connected: false, needsOwner: true, connections: [], owner: null, projectRepo: null, detected: null, target: null });
+});
+
+test('the hosting read names the project repo and the one Pages project the provider builds from it', async () => {
+  const f = await fixture();
+  const request = await adminRequest(f);
+  f.sql.exec("UPDATE projects SET repo='https://github.com/PetekKoleji/petekkoleji.com' WHERE id='a'");
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    const body = (result: unknown) => new Response(JSON.stringify({ success: true, result }), { status: 200 });
+    if (String(url).includes('/pages/projects')) return body([
+      { name: 'petekkoleji', production_branch: 'main', domains: ['petekkoleji.com'],
+        source: { type: 'github', config: { owner: 'petekkoleji', repo_name: 'petekkoleji.com', production_branch: 'main', preview_deployment_setting: 'all' } } },
+      { name: 'uploads', production_branch: 'main', domains: [] },
+    ]);
+    return body([]);
+  }) as typeof fetch;
+  try {
+    const res = await request('GET', '/admin/projects/a/cloudflare');
+    assert.equal(res.status, 200);
+    const body = await res.json() as any;
+    assert.equal(body.projectRepo, 'petekkoleji/petekkoleji.com');
+    assert.deepEqual(body.detected, { provider: 'cloudflare', kind: 'pages', name: 'petekkoleji', productionBranch: 'main', builds: 'provider' });
+    assert.deepEqual(body.pages.items[1].source, { type: null, repo: null, productionBranch: null, previews: false });
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+test('the deploy-target write validates who builds the deploys', async () => {
+  const f = await fixture();
+  const request = await adminRequest(f);
+  const bad = await request('PUT', '/admin/projects/a/deploy-target', { target: { kind: 'pages', name: 'petekkoleji', builds: 'nobody' } });
+  assert.equal(bad.status, 400);
+  assert.equal(((await bad.json()) as any).error, 'bad_builds');
+  const provider = await request('PUT', '/admin/projects/a/deploy-target', { target: { kind: 'pages', name: 'petekkoleji', builds: 'provider' } });
+  assert.equal(provider.status, 200);
+  assert.equal(((await provider.json()) as any).target.builds, 'provider');
+  const stored = f.sql.prepare("SELECT deploy_target FROM projects WHERE id='a'").get() as any;
+  assert.equal(JSON.parse(stored.deploy_target).builds, 'provider');
 });
 
 test('the deploy-target write accepts the owner’s grant and refuses anyone else’s', async () => {

@@ -261,3 +261,12 @@ test('every admin UI write has a superagent action or a baseline entry (rule 5)'
     ...problems.map((line) => `  ${line}`),
   ].join('\n'));
 });
+
+test('a JSX closing tag before a template on the same line does not hide later writes', () => {
+  const source = [
+    "const a = <p>{href ? <a href={href}>{repo.host}/{repo.slug}</a> : `${repo.host}/${repo.slug}`}</p>;",
+    "const b = () => api('POST', `/admin/projects/${id}/repo/create`, {});",
+  ].join('\n');
+  const { writes } = extractUiWrites([{ path: 'view.jsx', source }]);
+  assert.deepEqual(writes, ['POST /admin/projects/:param/repo/create']);
+});

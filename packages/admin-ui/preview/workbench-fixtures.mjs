@@ -1009,15 +1009,13 @@ const CATALOG = {
     { id: 'devin', label: 'Devin CLI', hint: 'outside the Harness; pinned tickets only' },
   ],
   solutions: [
-    { id: 'web', label: 'Website', summary: 'Design, build, or improve a website that works on phones and desktops.', requires: [], integrations: [{ id: 'github', optional: true }, { id: 'cloudflare', optional: true }], deliverables: ['Responsive website', 'Review link', 'Launch and editing notes'], questions: ['Who will visit the site?'] },
-    { id: 'mobile-ios', label: 'iOS app', summary: 'Build or improve an app for iPhone and iPad.', requires: ['os:macos', 'xcode'], integrations: [{ id: 'app-store-connect', optional: false }, { id: 'github', optional: true }], deliverables: ['iOS app', 'TestFlight build', 'Handover notes'], questions: ['What should people be able to do the first time they open the app?'] },
+    { id: 'web', label: 'Website', summary: 'Design, build, or improve a website that works on phones and desktops.', requires: [], integrations: [], deliverables: ['Responsive website', 'Review link', 'Launch and editing notes'], questions: ['Who will visit the site?'] },
+    { id: 'mobile-ios', label: 'iOS app', summary: 'Build or improve an app for iPhone and iPad.', requires: ['os:macos', 'xcode'], integrations: [{ id: 'app-store-connect', optional: false }], deliverables: ['iOS app', 'TestFlight build', 'Handover notes'], questions: ['What should people be able to do the first time they open the app?'] },
     { id: 'app-release', label: 'App Store and Play submissions', summary: 'Prepare an existing app for store review, testing, and release.', requires: ['os:macos'], integrations: [{ id: 'app-store-connect', optional: false }, { id: 'google-play', optional: false }], deliverables: ['Store listing and submission checklist', 'Test releases', 'Review and rollout notes'], questions: ['Is this the first release or an update?'] },
     { id: 'ai-workspace', label: 'AI workspace', summary: 'Give your team reusable AI instructions and safe access to its everyday tools.', requires: [], integrations: [], deliverables: ['Reusable skills and workflows', 'Tool connections agreed with your team', 'Examples and handover notes'], questions: ['Which repeated tasks take your team the most time?'] },
     { id: 'server', label: 'Server or container', summary: 'Set up or improve the hosting that keeps your service running.', requires: ['docker'], integrations: [{ id: 'hetzner', optional: true }], deliverables: ['Repeatable service setup', 'Monitoring and recovery notes', 'Operating and cost notes'], questions: ['What service needs to stay online?'] },
   ],
   integrations: [
-    { id: 'github', label: 'GitHub', vendor: 'GitHub', fields: [{ name: 'GITHUB_REPO', label: 'Repository', secret: false, placeholder: 'owner/name' }], steps: ['Install our GitHub App on your personal account or organization.', 'Give the app access to just the repository for this project.'], docs: 'https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app', scope: 'GitHub App access to the selected repository only.' },
-    { id: 'cloudflare', label: 'Cloudflare', vendor: 'Cloudflare', fields: [{ name: 'CLOUDFLARE_ACCOUNT_ID', label: 'Account ID', secret: false }, { name: 'CLOUDFLARE_API_TOKEN', label: 'API token', secret: true }], steps: ['Copy the Account ID from the Cloudflare dashboard.', 'Create a custom token limited to this project.'], docs: 'https://developers.cloudflare.com/fundamentals/api/get-started/create-token/', scope: 'Limit the token to the relevant accounts and zones.' },
     { id: 'app-store-connect', label: 'App Store Connect', vendor: 'Apple', fields: [{ name: 'ASC_ISSUER_ID', label: 'Issuer ID', secret: false }, { name: 'ASC_KEY_ID', label: 'Key ID', secret: false }, { name: 'ASC_PRIVATE_KEY', label: 'Private key (.p8)', secret: true, multiline: true }], steps: ['Open Users and Access → Integrations → App Store Connect API.', 'Create a key with the App Manager role and copy the Issuer ID and Key ID.'], docs: 'https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api', scope: 'App Manager can manage releases.' },
     { id: 'google-play', label: 'Google Play Console', vendor: 'Google', fields: [{ name: 'PLAY_SERVICE_ACCOUNT_JSON', label: 'Service account JSON', secret: true, multiline: true }], steps: ['Create a service account in Google Cloud and link it in Play Console.'], docs: 'https://developers.google.com/android-publisher', scope: 'Release manager on this app only.' },
   ],
@@ -1673,23 +1671,58 @@ const SECRETS = {
 };
 
 const INTEGRATIONS = {
-  'p-acme': { solutions: ['web'], integrations: [
-    { id: 'github', label: 'GitHub', required: false, connected: true, missing: [], verifiedAt: NOW - 6 * D, verifyError: null },
-    { id: 'cloudflare', label: 'Cloudflare', required: false, connected: false, missing: ['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN'], verifiedAt: null, verifyError: null },
-  ] },
+  'p-acme': { solutions: ['web'], integrations: [] },
   'p-iron': { solutions: ['mobile-ios', 'app-release'], integrations: [
     { id: 'app-store-connect', label: 'App Store Connect', required: true, connected: false, missing: ['ASC_ISSUER_ID', 'ASC_KEY_ID', 'ASC_PRIVATE_KEY'], verifiedAt: NOW - 10 * D, verifyError: '401 Unauthorized: the key id does not exist on this issuer' },
     { id: 'google-play', label: 'Google Play Console', required: true, connected: false, missing: ['PLAY_SERVICE_ACCOUNT_JSON'], verifiedAt: null, verifyError: null },
-    { id: 'github', label: 'GitHub', required: false, connected: false, missing: ['GITHUB_REPO'], verifiedAt: null, verifyError: null },
   ] },
-  'p-ptech': { solutions: ['web', 'ai-workspace'], integrations: [
-    { id: 'github', label: 'GitHub', required: false, connected: true, missing: [], verifiedAt: NOW - 2 * D, verifyError: null },
-    { id: 'cloudflare', label: 'Cloudflare', required: false, connected: true, missing: [], verifiedAt: NOW - 12 * D, verifyError: null },
-  ] },
-  'p-mali': { solutions: ['web'], integrations: [
-    { id: 'github', label: 'GitHub', required: false, connected: true, missing: [], verifiedAt: NOW - 8 * D, verifyError: null },
-    { id: 'cloudflare', label: 'Cloudflare', required: false, connected: true, missing: [], verifiedAt: NOW - 8 * D, verifyError: null },
-  ] },
+  'p-ptech': { solutions: ['web', 'ai-workspace'], integrations: [] },
+  'p-mali': { solutions: ['web'], integrations: [] },
+};
+
+/* —— Where it goes live (GET /admin/projects/:id/cloudflare) —— */
+
+const CLOUDFLARE = {
+  'p-acme': {
+    connected: true, via: 'oauth', connectionId: 7, accountId: 'ac1acme00000000000000000000000aa',
+    connections: [{ id: 7, email: 'dana@acmebakery.com', accounts: [{ id: 'ac1acme00000000000000000000000aa', name: "Dana's account" }] }],
+    owner: 'dana@acmebakery.com',
+    projectRepo: 'PTechGroup/acme-bakery',
+    detected: null,
+    pages: { ok: true, items: [{ name: 'acme-bakery', subdomain: 'acme-bakery.pages.dev', productionBranch: 'main', domains: ['acmebakery.com'], source: null }] },
+    workers: { ok: true, items: [{ name: 'acme-mailer', modifiedOn: '2026-11-18T09:12:00Z' }, { name: 'petekkoleji-mailer', modifiedOn: '2026-11-20T10:00:00Z' }] },
+    domains: { ok: true, items: [
+      { host: 'acmebakery.com', kind: 'pages', name: 'acme-bakery', via: 'CNAME acme-bakery.pages.dev' },
+      { host: 'www.acmebakery.com', kind: 'dns', name: 'acme-bakery.pages.dev', via: 'CNAME acme-bakery.pages.dev (proxied)' },
+    ] },
+    target: { provider: 'cloudflare', kind: 'pages', name: 'acme-bakery', productionBranch: 'main', builds: 'fleet', connectionId: 7, accountId: 'ac1acme00000000000000000000000aa' },
+  },
+  'p-ptech': {
+    connected: true, via: 'oauth', connectionId: 3, accountId: 'cf0ptech00000000000000000000000bb',
+    connections: [{ id: 3, email: 'ali@malipetek.dev', accounts: [{ id: 'cf0ptech00000000000000000000000bb', name: 'PTech' }] }],
+    owner: 'ali@malipetek.dev',
+    projectRepo: 'PTechGroup/ptechsolutions',
+    detected: { provider: 'cloudflare', kind: 'pages', name: 'ptechsolutions', productionBranch: 'main', builds: 'provider' },
+    pages: { ok: true, items: [{ name: 'ptechsolutions', subdomain: 'ptechsolutions.pages.dev', productionBranch: 'main', domains: ['ptechsolutions.net'], source: { type: 'github', repo: 'PTechGroup/ptechsolutions', productionBranch: 'main', previews: true } }] },
+    workers: { ok: true, items: [{ name: 'ptech-portal', modifiedOn: '2026-11-24T14:30:00Z' }] },
+    domains: { ok: true, items: [
+      { host: 'ptechsolutions.net', kind: 'pages', name: 'ptechsolutions', via: 'CNAME ptechsolutions.pages.dev' },
+      { host: 'portal.ptechsolutions.net', kind: 'workers', name: 'ptech-portal', via: 'route portal.ptechsolutions.net/*' },
+    ] },
+    target: { provider: 'cloudflare', kind: 'workers', name: 'ptech-portal', productionBranch: 'main', builds: 'fleet', connectionId: 3, accountId: 'cf0ptech00000000000000000000000bb' },
+  },
+  'p-mali': {
+    connected: true, via: 'oauth', connectionId: 3, accountId: 'cf0ptech00000000000000000000000bb',
+    connections: [{ id: 3, email: 'ali@malipetek.dev', accounts: [{ id: 'cf0ptech00000000000000000000000bb', name: 'PTech' }] }],
+    owner: 'ali@malipetek.dev',
+    projectRepo: 'malipetek/malipetek.github.io',
+    detected: { provider: 'cloudflare', kind: 'pages', name: 'malipetek-dev', productionBranch: 'master', builds: 'provider' },
+    pages: { ok: true, items: [{ name: 'malipetek-dev', subdomain: 'malipetek-dev.pages.dev', productionBranch: 'master', domains: ['malipetek.dev'], source: { type: 'github', repo: 'malipetek/malipetek.github.io', productionBranch: 'master', previews: true } }] },
+    workers: { ok: true, items: [] },
+    domains: { ok: true, items: [{ host: 'malipetek.dev', kind: 'pages', name: 'malipetek-dev', via: 'CNAME malipetek-dev.pages.dev' }] },
+    target: { provider: 'cloudflare', kind: 'pages', name: 'malipetek-dev', productionBranch: 'master', builds: 'provider', connectionId: 3, accountId: 'cf0ptech00000000000000000000000bb' },
+  },
+  'p-iron': { connected: false, needsOwner: false, lapsed: false, connections: [], owner: 'vic@ironwoodautorepair.com', pages: null, workers: null, domains: null, target: null },
 };
 
 const CREDENTIAL_ACCESS = {
@@ -1763,6 +1796,7 @@ export const api = async (method, url, body) => {
     if (sub === '/memberships') return MEMBERSHIPS[id] ?? { ownerUserId: 'u-ali', memberships: [], clients: [] };
     if (sub === '/secrets') return { secrets: SECRETS[id] ?? [] };
     if (sub === '/integrations') return INTEGRATIONS[id] ?? { solutions: [], integrations: [] };
+    if (sub === '/cloudflare') return CLOUDFLARE[id] ?? { connected: false, connections: [], owner: null, target: null };
     if (sub === '/credential-access') return { access: CREDENTIAL_ACCESS[id] ?? [] };
     if (sub === '/site/deploys') {
       const siteId = q.get('siteId');

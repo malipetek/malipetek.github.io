@@ -19,6 +19,14 @@ export type DeployTarget = {
   kind: 'pages' | 'workers';
   name: string;
   productionBranch: string;
+  /**
+   * Who builds a pushed branch into a deployment: 'provider' when the host
+   * itself builds the connected Git repo (Cloudflare Pages Git integration,
+   * Workers Builds — push a branch for a preview, merge to publish), 'fleet'
+   * when our runners deploy with the client's credential. Old rows have no
+   * `builds`; they read as 'fleet'.
+   */
+  builds?: 'provider' | 'fleet';
   connectionId?: number;
   accountId?: string;
 };
@@ -43,7 +51,15 @@ export function pickConnection(
 
 export type Listing<T> = { ok: true; items: T[] } | { ok: false; error: string; permission?: string };
 
-export type PagesProject = { name: string; subdomain: string | null; productionBranch: string | null; domains: string[] };
+/**
+ * Whether the provider builds this Pages project itself from a connected Git
+ * repository. `repo` is `owner/name` as the provider reports it, null for a
+ * direct-upload project; `previews` is whether branch pushes get preview
+ * builds (`preview_deployment_setting` — 'all', 'none', or 'preview_branches'
+ * gated on `preview_branch_includes`).
+ */
+export type PagesSource = { type: 'github' | 'gitlab' | null; repo: string | null; productionBranch: string | null; previews: boolean };
+export type PagesProject = { name: string; subdomain: string | null; productionBranch: string | null; domains: string[]; source: PagesSource };
 export type WorkerScript = { name: string; modifiedOn: string | null };
 
 type Fetch = typeof fetch;
@@ -74,7 +90,24 @@ function failure(status: number, body: any, permission: string): { ok: false; er
   return { ok: false, error: `Cloudflare answered ${status}.` };
 }
 
-/** The account's Pages projects, with each one's production branch and domains. */
+/** A Pages project's `source`, as Cloudflare's API reports it (null-ish fields when it is not git-connected). */
+function pagesSource(p: any): PagesSource {
+  const type = p?.source?.type === 'github' || p?.source?.type === 'gitlab' ? p.source.type : null;
+  const config = p?.source?.config;
+  const owner = typeof config?.owner === 'string' ? config.owner : '';
+  const repo = typeof config?.repo_name === 'string' ? config.repo_name : '';
+  const setting = config?.preview_deployment_setting;
+  return {
+    type,
+    repo: type && owner && repo ? `${owner}/${repo}` : null,
+    productionBranch: typeof config?.production_branch === 'string' ? config.production_branch : null,
+    previews: type !== null && (setting === 'preview_branches'
+      ? (Array.isArray(config?.preview_branch_includes) ? config.preview_branch_includes.length > 0 : false)
+      : setting !== 'none'),
+  };
+}
+
+/** The account's Pages projects, each with its production branch, domains and whether the provider builds it from Git. */
 export async function listPages(accountId: string, token: string, fetchImpl: Fetch = fetch): Promise<Listing<PagesProject>> {
   const { status, body } = await call(fetchImpl, token, `/accounts/${encodeURIComponent(accountId)}/pages/projects`);
   if (status !== 200 || body?.success !== true) return failure(status, body, NEEDS.pages);
@@ -83,6 +116,7 @@ export async function listPages(accountId: string, token: string, fetchImpl: Fet
     subdomain: typeof p?.subdomain === 'string' ? p.subdomain : null,
     productionBranch: typeof p?.production_branch === 'string' ? p.production_branch : null,
     domains: Array.isArray(p?.domains) ? p.domains.filter((d: unknown) => typeof d === 'string') : [],
+    source: pagesSource(p),
   })).filter((p: PagesProject) => p.name);
   return { ok: true, items };
 }
@@ -142,6 +176,34 @@ export async function listDomains(accountId: string, token: string, fetchImpl: F
   return { ok: true, items };
 }
 
+/**
+ * `owner/name` (lowercased) from a stored `projects.repo` GitHub URL —
+ * `https://github.com/o/n(.git)` or `git@github.com:o/n(.git)` — or null for
+ * anything else. Compared case-insensitively: GitHub names are.
+ */
+export function normalizeRepo(repo: string | null | undefined): string | null {
+  const text = (repo ?? '').trim();
+  const match =
+    /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i.exec(text) ??
+    /^git@github\.com:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/i.exec(text);
+  return match ? `${match[1]}/${match[2]}`.toLowerCase() : null;
+}
+
+/**
+ * The Pages project the provider itself builds from the project's repo, said
+ * the way the fleet and the superagent need it. Only an unambiguous answer
+ * counts: exactly one git-connected Pages project whose repo is the project's.
+ */
+export type ProviderBuilt = { provider: 'cloudflare'; kind: 'pages'; name: string; productionBranch: string | null; builds: 'provider' };
+
+export function detectProviderBuild(pages: PagesProject[] | null | undefined, projectRepo: string | null): ProviderBuilt | null {
+  if (!projectRepo || !pages?.length) return null;
+  const matches = pages.filter((p) => typeof p.source.repo === 'string' && p.source.repo.toLowerCase() === projectRepo);
+  if (matches.length !== 1) return null;
+  const only = matches[0];
+  return { provider: 'cloudflare', kind: 'pages', name: only.name, productionBranch: only.source.productionBranch ?? only.productionBranch, builds: 'provider' };
+}
+
 const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const BRANCH = /^[A-Za-z0-9._/-]{1,100}$/;
 
@@ -159,7 +221,8 @@ export function parseDeployTarget(raw: unknown): DeployTarget | null | { error: 
   if (!NAME.test(name)) return { error: 'bad_name' };
   const branch = body.productionBranch === undefined || body.productionBranch === '' ? 'main' : body.productionBranch;
   if (typeof branch !== 'string' || !BRANCH.test(branch)) return { error: 'bad_branch' };
-  const target: DeployTarget = { provider: 'cloudflare', kind, name, productionBranch: branch };
+  if (body.builds !== undefined && body.builds !== 'provider' && body.builds !== 'fleet') return { error: 'bad_builds' };
+  const target: DeployTarget = { provider: 'cloudflare', kind, name, productionBranch: branch, builds: body.builds === 'provider' ? 'provider' : 'fleet' };
   if (body.connectionId !== undefined && body.connectionId !== null) {
     const connectionId = Number(body.connectionId);
     const accountId = typeof body.accountId === 'string' ? body.accountId.trim() : '';
@@ -193,5 +256,6 @@ export function deployTargetEnv(target: DeployTarget | null): Record<string, str
     PTECH_DEPLOY_KIND: target.kind,
     PTECH_DEPLOY_NAME: target.name,
     PTECH_DEPLOY_PRODUCTION_BRANCH: target.productionBranch,
+    PTECH_DEPLOY_BUILDS: target.builds ?? 'fleet',
   };
 }

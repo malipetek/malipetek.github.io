@@ -20,6 +20,18 @@ export function resourceUrl(value) {
   } catch { return null; }
 }
 
+/** The repo's host and 'owner/name' for display and source matching; null without a usable URL. */
+export function repoRef(value) {
+  const url = resourceUrl(value);
+  if (!url) return null;
+  try {
+    const { hostname, pathname } = new URL(url);
+    const segments = pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+    if (segments.length < 2) return null;
+    return { host: hostname, slug: segments.slice(0, 2).join('/') };
+  } catch { return null; }
+}
+
 export function projectTopology(project = {}, local, git) {
   const exists = local?.exists ?? local?.found;
   const isGit = local?.isGit ?? git?.isGit ?? (git ? Boolean(git.head || git.branch) : null);

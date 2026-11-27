@@ -130,9 +130,21 @@ export function buildFollowUp(ticket, messages, previousRuns = [], checkout = {}
  */
 export function deploySection(env = {}) {
   const name = env.PTECH_DEPLOY_NAME;
-  if (!name || !env.CLOUDFLARE_API_TOKEN) return '';
+  if (!name) return '';
   const production = env.PTECH_DEPLOY_PRODUCTION_BRANCH || 'main';
   const pages = env.PTECH_DEPLOY_KIND !== 'workers';
+  // The provider builds the connected Git repo itself: a run gets the target's
+  // env but no deploy token, and a branch push is the deploy.
+  if (env.PTECH_DEPLOY_BUILDS === 'provider') {
+    return [
+      '## Where this project goes live',
+      `The site is the ${pages ? 'Cloudflare Pages project' : 'Cloudflare Worker'} \`${name}\`, which the provider builds itself from the connected Git repository — no deploy token is provided and none is needed.`,
+      `- Preview: commit your work on this ticket's branch and push it to origin. The provider builds a preview for the branch automatically${pages ? ` — it appears at \`<branch-slug>.${name}.pages.dev\`` : ''}. Put the preview URL in your result.`,
+      `- Production: the work goes live when it lands on \`${production}\`. Do not merge into or push to ${production} yourself unless the ticket says to publish.`,
+      '- Do not run wrangler or any other deploy command: pushing the branch is the deploy.',
+    ].join('\n');
+  }
+  if (!env.CLOUDFLARE_API_TOKEN) return '';
   return [
     '## Where this project goes live',
     pages

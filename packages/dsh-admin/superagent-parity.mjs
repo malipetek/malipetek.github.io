@@ -28,10 +28,14 @@ const OPENERS = { '(': ')', '[': ']', '{': '}' };
 const isIdentStart = (ch) => /[A-Za-z_$]/.test(ch ?? '');
 const isIdentChar = (ch) => /[A-Za-z0-9_$]/.test(ch ?? '');
 
-/** Can a `/` at this point start a regex? Division follows a value (`)`, `]`, a name, a number). */
+/**
+ * Can a `/` at this point start a regex? Division follows a value (`)`, `]`,
+ * a name, a number). After `<` it is a JSX closing tag (`</a>`), never a regex:
+ * reading it as one let `</a> : \`${a}/${b}\`` swallow the rest of a file.
+ */
 function regexAllowedAfter(last) {
   if (last === '') return true;
-  return '([{,;=:!&|?+-*%<>~^'.includes(last);
+  return '([{,;=:!&|?+-*%>~^'.includes(last);
 }
 
 /**

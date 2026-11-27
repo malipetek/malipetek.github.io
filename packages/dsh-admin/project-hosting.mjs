@@ -29,7 +29,7 @@ function grants(connections = [], chosen) {
  */
 export function hostingMessage(project, result) {
   const target = result?.target
-    ? `Deploy target: Cloudflare ${result.target.kind === 'pages' ? 'Pages project' : 'Worker'} ${result.target.name}, production from ${result.target.productionBranch}${result.target.connectionId ? `, through connection #${result.target.connectionId}` : ''}.`
+    ? `Deploy target: Cloudflare ${result.target.kind === 'pages' ? 'Pages project' : 'Worker'} ${result.target.name}, production from ${result.target.productionBranch}${result.target.connectionId ? `, through connection #${result.target.connectionId}` : ''}${result.target.builds === 'provider' ? ' — the provider builds it from the connected Git repository' : ''}.`
     : 'Deploy target: not set.';
   if (result?.needsOwner) {
     return [
@@ -49,6 +49,9 @@ export function hostingMessage(project, result) {
     result.via === 'oauth'
       ? `${project.name}: read through the owner's Cloudflare connection #${result.connectionId} (${grant?.email ?? result.owner ?? 'the owner'}), account ${result.accountId}.`
       : `${project.name}: read with the Cloudflare token stored on the project, account ${result.accountId}.`,
+    result.detected
+      ? `Detected: Cloudflare builds this from ${result.projectRepo ?? 'the connected repository'} (Pages project ${result.detected.name}, production branch ${result.detected.productionBranch ?? 'unknown'}) — pushing a branch makes a preview, landing on the production branch publishes. Set the deploy target's builds to "provider" so runs push branches instead of deploying.`
+      : null,
     result.workers ? section('Worker scripts', result.workers, (w) => `${w.name}${w.modifiedOn ? ` (changed ${w.modifiedOn.slice(0, 10)})` : ''}`) : null,
     result.pages ? section('Pages projects', result.pages, (p) => `${p.name}${p.productionBranch ? ` (production branch ${p.productionBranch})` : ''}${p.domains?.length ? ` · ${p.domains.join(', ')}` : ''}`) : null,
     result.domains ? section('What serves each domain', result.domains, (d) => `${d.host}: ${d.kind === 'workers' ? `Worker ${d.name}` : d.kind === 'pages' ? `Pages project ${d.name}` : d.name} (${d.via})`) : null,

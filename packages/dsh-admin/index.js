@@ -2504,7 +2504,7 @@ export function apply(ctx) {
           'A project slug is what the local runner maps to a folder on disk, so a ticket is only workable once its project exists and the runner knows the slug.',
           'Action "set_folder" writes that slug → folder mapping into the local runner config; without an entry the runner falls back to <projectsRoot>/<slug>.',
           'Action "hosting" reads the client\'s Cloudflare through the project owner\'s OAuth grant (their Workers, the current deploy target, and the owner\'s grants with their accounts); use it, never a local token or wrangler login, to find where a client site lives. Only the owner\'s grant is ever used — never another user\'s — and a project without an owner says so: set the owner first, and the owner connects Cloudflare on the portal\'s Connections page.',
-          'Action "set_deploy_target" records which of those the project deploys to (kind pages|workers, name, productionBranch): fleet runs then get the target beside the client\'s Cloudflare credential and deploy previews to their ticket branch and releases to the production branch.',
+          'Action "set_deploy_target" records which of those the project deploys to (kind pages|workers, name, productionBranch, builds): fleet runs then get the target beside the client\'s Cloudflare credential and deploy previews to their ticket branch and releases to the production branch — or, when the provider builds the connected Git repo itself (builds "provider"), runs just push the ticket branch and the provider builds the preview.',
           'Action "invite" gives an email address access to one or more projects whether or not that person has an account yet: the portal makes the client account if needed, links the projects and emails a week-long sign-in link. Use it instead of waiting for someone to sign up. Like the UI\'s Add people, they are copied on every client request email on those projects unless copy is false.',
         ].join(' '),
         parameters: {
@@ -2522,6 +2522,11 @@ export function apply(ctx) {
             kind: { type: 'string', enum: ['pages', 'workers', 'none'], description: 'Cloudflare Pages project or Worker script, for set_deploy_target; "none" clears the target.' },
             target: { type: 'string', description: 'The Pages project or Worker script name, for set_deploy_target.' },
             productionBranch: { type: 'string', description: 'Branch that publishes to production, for set_deploy_target. Defaults to main.' },
+            builds: {
+              type: 'string',
+              enum: ['provider', 'fleet'],
+              description: 'Who builds and deploys, for set_deploy_target: "provider" when the host builds the connected Git repo itself (push a branch for a preview, merge to publish); "fleet" when our runners deploy with the client credential. Defaults to "provider" when the hosting read detects it, else "fleet".',
+            },
             projects: {
               type: 'array',
               items: { type: 'string' },
@@ -2621,17 +2626,27 @@ export function apply(ctx) {
               if (project === undefined) throw new Error(`No project "${key}". List them with action "projects".`);
               const hosting = await projectCloudflare(config, project.id);
               if (args.action === 'hosting') return { message: hostingMessage(project, hosting) };
+              const name = typeof args.target === 'string' ? args.target.trim() : '';
+              // Who builds the deploys: asked for explicitly, else the hosting
+              // read's own detection when it names this same project.
+              const builds = args.builds === 'provider' || args.builds === 'fleet'
+                ? args.builds
+                : hosting?.detected?.builds === 'provider' && hosting.detected.name === name ? 'provider' : undefined;
               const target = args.kind === 'none'
                 ? null
                 : {
                     kind: args.kind,
-                    name: typeof args.target === 'string' ? args.target.trim() : '',
+                    name,
                     productionBranch: typeof args.productionBranch === 'string' ? args.productionBranch.trim() : '',
                     // Deploy with the owner's OAuth grant the hosting read used.
                     ...(hosting?.via === 'oauth' ? { connectionId: hosting.connectionId, accountId: hosting.accountId } : {}),
+                    ...(builds ? { builds } : {}),
                   };
               const saved = await setDeployTarget(config, project.id, target);
-              return { message: saved.target ? `${project.name} now deploys to Cloudflare ${saved.target.kind === 'pages' ? 'Pages project' : 'Worker'} ${saved.target.name}: previews from ticket branches, production from ${saved.target.productionBranch}.` : `${project.name} has no deploy target now.` };
+              const how = saved.target?.builds === 'provider'
+                ? 'the provider builds it from the connected Git repository: pushing a ticket branch makes the preview, and the work goes live when it lands on the production branch'
+                : 'previews from ticket branches, production from ' + saved.target?.productionBranch;
+              return { message: saved.target ? `${project.name} now deploys to Cloudflare ${saved.target.kind === 'pages' ? 'Pages project' : 'Worker'} ${saved.target.name}: ${how}.` : `${project.name} has no deploy target now.` };
             }
             case 'invite': {
               if (typeof args.email !== 'string' || args.email.trim() === '') throw new Error('email is required.');

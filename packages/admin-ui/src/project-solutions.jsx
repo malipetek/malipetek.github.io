@@ -176,6 +176,9 @@ export function ProjectSolutions({ project }) {
   };
 
   const chosen = selected.map((sid) => solutionById.get(sid)).filter(Boolean);
+  // OAuth-covered vendors (GitHub, Cloudflare) never appear here; only a
+  // chosen kind of work that still needs a pasted credential shows a block.
+  const needsManual = chosen.some((s) => (s.integrations ?? []).length);
   const requires = [...new Set(chosen.flatMap((s) => s.requires ?? []))];
   const fleetKnown = data?.access?.superAdmin === true;
   const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
@@ -194,15 +197,17 @@ export function ProjectSolutions({ project }) {
     <p className="aw-psol__h">Kind of work</p>
     <Chips value={selected} options={solutionsCatalog.map((s) => ({ value: s.id, label: s.label, hint: s.summary }))} onChange={choose} disabled={busy} />
     {fleetNote}
-    <p className="aw-psol__h">Connections</p>
-    {status.error
-      ? <ErrorNote error={status.error} onRetry={refreshStatus} />
-      : null}
-    {rows === null || rows === undefined
-      ? <div className="aw-psol__skel" role="status" aria-label="Loading connections…"><span className="aw-sr-only">Loading connections…</span><span aria-hidden="true" /><span aria-hidden="true" /></div>
-      : !rows.length && !status.error
-        ? <p className="aw-muted">No connections needed for the chosen kinds.</p>
-        : <ul className="aw-psol__rows">
+    {needsManual || rows?.length ? (
+      <>
+        <p className="aw-psol__h">Connections</p>
+        {status.error
+          ? <ErrorNote error={status.error} onRetry={refreshStatus} />
+          : null}
+        {rows === null || rows === undefined
+          ? <div className="aw-psol__skel" role="status" aria-label="Loading connections…"><span className="aw-sr-only">Loading connections…</span><span aria-hidden="true" /><span aria-hidden="true" /></div>
+          : !rows.length && !status.error
+            ? <p className="aw-muted">No connections needed for the chosen kinds.</p>
+            : <ul className="aw-psol__rows">
             {rows.map((row) => {
               const entry = integrationById.get(row.id);
               const needsAction = !row.connected && row.required;
@@ -225,6 +230,8 @@ export function ProjectSolutions({ project }) {
               </li>;
             })}
           </ul>}
+      </>
+    ) : null}
     {chosen.length ? (
       <details className="aw-psol__brief">
         <summary>What we deliver / ask the client</summary>

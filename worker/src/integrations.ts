@@ -652,37 +652,6 @@ async function verifyFly(fields: Fields, fetchImpl: Fetch): Promise<VerifyResult
   return httpFailure('fly', fallback.status, await readJson(fallback), fields);
 }
 
-async function verifyCloudflare(fields: Fields, fetchImpl: Fetch): Promise<VerifyResult> {
-  const absent = missing(fields, 'CLOUDFLARE_API_TOKEN');
-  if (absent) return { ok: false, error: absent };
-  const res = await send(fetchImpl, 'https://api.cloudflare.com/client/v4/user/tokens/verify', {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${value(fields, 'CLOUDFLARE_API_TOKEN')}`, Accept: 'application/json' },
-  });
-  const body = await readJson(res);
-  if (!res.ok || body?.success !== true) return httpFailure('cloudflare', res.status, body, fields);
-  const status = typeof body?.result?.status === 'string' && body.result.status ? body.result.status : 'active';
-  return { ok: true, detail: `Cloudflare token: ${status}` };
-}
-
-async function verifyGithub(fields: Fields, fetchImpl: Fetch): Promise<VerifyResult> {
-  const absent = missing(fields, 'GITHUB_REPO');
-  if (absent) return { ok: false, error: absent };
-  const repo = value(fields, 'GITHUB_REPO').replace(/^\/+|\/+$/g, '');
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) return { ok: false, error: 'invalid GITHUB_REPO' };
-  const res = await send(fetchImpl, `https://api.github.com/repos/${repo}`, {
-    method: 'GET',
-    headers: { 'User-Agent': 'ptech-verify', Accept: 'application/vnd.github+json' },
-  });
-  const body = await readJson(res);
-  if (res.status === 404) return { ok: false, error: 'GITHUB_REPO not found or private' };
-  if (!res.ok) return httpFailure('github', res.status, body, fields);
-  const fullName = typeof body?.full_name === 'string' && body.full_name ? body.full_name : repo;
-  const visibility =
-    typeof body?.visibility === 'string' && body.visibility ? body.visibility : body?.private === true ? 'private' : 'public';
-  return { ok: true, detail: `Repo: ${fullName} (${visibility})` };
-}
-
 /* ------------------------------------------------------------------ router */
 
 type Handler = (fields: Fields, fetchImpl: Fetch) => Promise<VerifyResult>;
@@ -697,8 +666,6 @@ const HANDLERS: Record<string, Handler> = {
   hetzner: verifyHetzner,
   digitalocean: verifyDigitalOcean,
   fly: verifyFly,
-  cloudflare: verifyCloudflare,
-  github: verifyGithub,
 };
 
 function errorText(error: unknown): string {

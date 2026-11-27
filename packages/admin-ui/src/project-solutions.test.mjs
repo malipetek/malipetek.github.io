@@ -118,6 +118,17 @@ test('a verified connection is ok and says when; a failed check is warn with the
   assert.match(opt, /<span class="aw-tag aw-tag--dash">optional<\/span>/);
 });
 
+test('a kind covered by the OAuth connections asks for nothing — no Connections block', () => {
+  const html = view.seeded([], ['web']);
+  assert.match(html, /Kind of work/);
+  assert.doesNotMatch(html, />Connections</);
+  assert.doesNotMatch(html, /No connections needed/);
+  // A stale server row still renders — the block hides only when nothing needs it.
+  const stale = view.seeded([{ id: 'github', label: 'GitHub', required: false, connected: true, missing: [], verifiedAt: null, verifyError: null }], ['web']);
+  assert.match(stale, />Connections</);
+  assert.match(stale, /GitHub/);
+});
+
 test('what we deliver and ask collapses behind one line per chosen kind', () => {
   const html = view.psol({ solutions: ['shopify'] }, { data: { nodes: [] } });
   assert.match(html, /<details class="aw-psol__brief">/);

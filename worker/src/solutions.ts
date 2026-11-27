@@ -7,7 +7,7 @@ export type Verifier = (id: string, fields: Record<string, string>, fetchImpl?: 
 export const SOLUTION_CATALOG: Solution[] = [
   {
     id: 'web', label: 'Website', summary: 'Design, build, or improve a website that works on phones and desktops.',
-    requires: [], integrations: [{ id: 'github', optional: true }, { id: 'cloudflare', optional: true }],
+    requires: [], integrations: [],
     deliverables: ['Responsive website', 'Review link', 'Launch and editing notes'],
     questions: ['Who will visit the site?', 'What should visitors do before they leave?', 'What pages or information must be ready at launch?', 'Who should be able to change the content?'],
   },
@@ -19,13 +19,13 @@ export const SOLUTION_CATALOG: Solution[] = [
   },
   {
     id: 'mobile-ios', label: 'iOS app', summary: 'Build or improve an app for iPhone and iPad.',
-    requires: ['os:macos', 'xcode'], integrations: [{ id: 'app-store-connect', optional: false }, { id: 'github', optional: true }],
+    requires: ['os:macos', 'xcode'], integrations: [{ id: 'app-store-connect', optional: false }],
     deliverables: ['iOS app', 'TestFlight build', 'Handover notes'],
     questions: ['What should people be able to do the first time they open the app?', 'Should it work on iPhone, iPad, or both?', 'What should still work without internet?', 'Who should try it before launch?'],
   },
   {
     id: 'mobile-android', label: 'Android app', summary: 'Build or improve an app for Android phones and tablets.',
-    requires: ['android'], integrations: [{ id: 'google-play', optional: false }, { id: 'github', optional: true }],
+    requires: ['android'], integrations: [{ id: 'google-play', optional: false }],
     deliverables: ['Android app', 'Internal testing build', 'Handover notes'],
     questions: ['What should people be able to do in the app?', 'Are there specific phones or tablets it must work on?', 'Should users get reminders or updates?', 'Who should get early access?'],
   },
@@ -68,21 +68,6 @@ export const SOLUTION_CATALOG: Solution[] = [
 ];
 
 export const INTEGRATION_CATALOG: Integration[] = [
-  {
-    id: 'github', label: 'GitHub', vendor: 'GitHub',
-    fields: [{ name: 'GITHUB_REPO', label: 'Repository', secret: false, placeholder: 'owner/name' }],
-    steps: ['Install our GitHub App on your personal account or organization.', 'Give the app access to just the repository for this project.', 'Enter the repository owner and name as owner/name. Do not paste a personal access token.'],
-    docs: 'https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app', scope: 'GitHub App access to the selected repository only.',
-  },
-  {
-    id: 'cloudflare', label: 'Cloudflare', vendor: 'Cloudflare',
-    fields: [
-      { name: 'CLOUDFLARE_ACCOUNT_ID', label: 'Account ID', secret: false },
-      { name: 'CLOUDFLARE_API_TOKEN', label: 'API token', secret: true },
-    ],
-    steps: ['Copy the Account ID from the Cloudflare dashboard for the account that owns the site.', 'Open My Profile → API Tokens and create a custom token.', 'Select only the account and zones for this project. Add Cloudflare Pages: Edit and Workers Scripts: Edit so we can find your site and deploy previews and releases to it, plus DNS: Edit if we set up a domain.'],
-    docs: 'https://developers.cloudflare.com/fundamentals/api/get-started/create-token/', scope: 'Limit the token to the relevant accounts, zones, and actions; do not share a Global API Key.',
-  },
   {
     id: 'shopify', label: 'Shopify', vendor: 'Shopify',
     fields: [

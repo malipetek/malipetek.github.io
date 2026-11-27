@@ -107,3 +107,28 @@ test('a target naming another user’s grant deploys with nothing, and the fetch
   assert.equal(noOwner.env.CLOUDFLARE_API_TOKEN, undefined);
   assert.match(noOwner.cloudflare, /the project has no owner/);
 });
+
+test('a provider-built target hands the run the target but no deploy token', async () => {
+  const { sql, env } = await fixture();
+  const ownerId = await grant(sql, env, 'owner', 'cf-owner-token');
+  // The Pages project is built by Cloudflare from the connected repo: a run
+  // deploys by pushing its branch, so it needs no Cloudflare credential at
+  // all — only the target's env for the prompt.
+  sql.exec(`UPDATE projects SET owner_user_id='owner', deploy_target='${JSON.stringify({ provider: 'cloudflare', kind: 'pages', name: 'petekkoleji', productionBranch: 'main', connectionId: ownerId, accountId: ACCOUNT, builds: 'provider' })}' WHERE id='a'`);
+  const res = await get(env, '/node/runs/1/credentials?nodeId=mac');
+  assert.equal(res.status, 200);
+  const body = await res.json() as any;
+  assert.equal(body.env.CLOUDFLARE_API_TOKEN, undefined);
+  assert.equal(body.env.CLOUDFLARE_ACCOUNT_ID, undefined);
+  assert.equal(body.env.PTECH_DEPLOY_PROVIDER, 'cloudflare');
+  assert.equal(body.env.PTECH_DEPLOY_KIND, 'pages');
+  assert.equal(body.env.PTECH_DEPLOY_NAME, 'petekkoleji');
+  assert.equal(body.env.PTECH_DEPLOY_PRODUCTION_BRANCH, 'main');
+  assert.equal(body.env.PTECH_DEPLOY_BUILDS, 'provider');
+  assert.deepEqual(body.integrations.map((i: any) => i.id), ['shopify']);
+  assert.equal(body.cloudflare, undefined);
+  // The audit names only the credentials actually handed out — Cloudflare is
+  // not one of them here.
+  const audit = sql.prepare('SELECT integrations FROM credential_access').all() as any[];
+  assert.deepEqual(JSON.parse(audit[0].integrations), ['shopify']);
+});

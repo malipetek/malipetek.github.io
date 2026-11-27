@@ -29,6 +29,31 @@ test('an OAuth grant lists its Workers and says it is the owner’s grant', () =
   assert.doesNotMatch(text, /Pages projects/);
 });
 
+test('a provider-built Pages project is detected and the target says who builds', () => {
+  const text = hostingMessage(project, {
+    connected: true,
+    via: 'oauth',
+    connectionId: 8,
+    accountId: '3b10da48',
+    connections: [school],
+    owner,
+    projectRepo: 'petekkoleji/petekkoleji.com',
+    detected: { provider: 'cloudflare', kind: 'pages', name: 'petekkoleji', productionBranch: 'main', builds: 'provider' },
+    pages: { ok: true, items: [{ name: 'petekkoleji', productionBranch: 'main', domains: [], source: { type: 'github', repo: 'petekkoleji/petekkoleji.com', productionBranch: 'main', previews: true } }] },
+    target: { kind: 'pages', name: 'petekkoleji', productionBranch: 'main', connectionId: 8, builds: 'provider' },
+  });
+  assert.match(text, /Cloudflare builds this from petekkoleji\/petekkoleji\.com/);
+  assert.match(text, /Set the deploy target's builds to "provider"/);
+  assert.match(text, /Deploy target: Cloudflare Pages project petekkoleji, production from main, through connection #8 — the provider builds it from the connected Git repository\./);
+  // A fleet-built target says nothing extra.
+  const fleet = hostingMessage(project, {
+    connected: true, via: 'oauth', connectionId: 8, accountId: 'a', connections: [school], owner,
+    target: { kind: 'pages', name: 'petekkoleji', productionBranch: 'main' },
+  });
+  assert.match(fleet, /Deploy target: Cloudflare Pages project petekkoleji, production from main\./);
+  assert.doesNotMatch(fleet, /provider builds/);
+});
+
 test('a refused section names the permission', () => {
   const text = hostingMessage(project, {
     connected: true,

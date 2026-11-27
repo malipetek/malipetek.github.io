@@ -13,7 +13,7 @@ test('solutions and integrations match the UI catalog and refer to known capabil
   const capabilityIds = new Set(CAPABILITY_CATALOG.map(c => c.id));
   const integrationIds = new Set(INTEGRATION_CATALOG.map(i => i.id));
   assert.equal(SOLUTION_CATALOG.length, 10);
-  assert.equal(integrationIds.size, 11);
+  assert.equal(integrationIds.size, 9);
   for (const solution of SOLUTION_CATALOG) {
     assert.ok(solution.requires.every(id => capabilityIds.has(id)));
     assert.ok(solution.integrations.every(i => integrationIds.has(i.id)));

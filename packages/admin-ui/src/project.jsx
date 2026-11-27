@@ -8,7 +8,7 @@ import { ProjectSolutions, SolutionTags } from './project-solutions.jsx';
 import { SitePanel } from './ticket.jsx';
 import { AskSuperagentButton } from './superagent-ask.jsx';
 import { ago } from './format.js';
-import { briefPayload, createProjectResource, projectTickets, projectWork, projectTopology, resourceUrl, singleFlight } from './project-model.js';
+import { briefPayload, createProjectResource, projectTickets, projectWork, projectTopology, repoRef, resourceUrl, singleFlight } from './project-model.js';
 import { operatorTicketCounts, stationsFor, unshippedPreview } from './project-world-model.mjs';
 import { PipelineStrip, ProjectMap } from './project-world.jsx';
 import projectStyles from './project-styles.js';
@@ -414,16 +414,73 @@ function Topology({ project, local, git }) {
   );
 }
 
-/** Everything that makes the project work: kinds of work, connections, code, hosting, people, secrets. */
+/** Everything that makes the project work: kinds of work, owner, code, hosting, secrets. */
 function Setup({ project, refresh, host }) {
   return (
     <>
       <section className="aw-project__section"><ProjectSolutions project={project} /></section>
-      <Resources project={project} refresh={refresh} host={host} />
-      <Hosting project={project} />
       <People project={project} refresh={refresh} />
+      <Code project={project} refresh={refresh} />
+      <Hosting project={project} />
+      <Resources project={project} refresh={refresh} host={host} />
       <Secrets project={project} />
     </>
+  );
+}
+
+/**
+ * The code: the repository the work happens in, reached through the project
+ * owner's own GitHub — the GitHub App installation, never a pasted token or a
+ * typed repo name (rule 3). The repo-URL editor stays, folded behind More.
+ */
+function Code({ project, refresh }) {
+  const { api, setModal } = useAdmin();
+  const [state, write] = useWrite();
+  const repo = repoRef(project.repo);
+  const href = resourceUrl(project.repo);
+  const mutate = (operation, message) => void write(async () => { await operation(); void refresh(); }, message);
+  return (
+    <section className="aw-project__section" id="project-repo">
+      <h3>Code</h3>
+      {repo ? (
+        <p>
+          {href ? <a href={href} target="_blank" rel="noreferrer">{repo.host}/{repo.slug}</a> : `${repo.host}/${repo.slug}`}
+          {project.githubAccount
+            ? <span className="aw-muted"> · through @{project.githubAccount}’s GitHub</span>
+            : repo.host === 'github.com' ? <span className="aw-muted"> · through the owner’s GitHub</span> : null}
+        </p>
+      ) : (
+        <p className="aw-muted">
+          {href
+            ? <a href={href} target="_blank" rel="noreferrer">{href}</a>
+            : project.repo
+              ? 'Repository configured for Git access.'
+              : 'No repository yet — the project owner connects GitHub on the portal’s Connections page, and the repository shows here.'}
+        </p>
+      )}
+      {project.repo_error ? <p role="alert" className="aw-project__error">{project.repo_error}</p> : null}
+      {project.repoStatus?.label ? <p className="aw-muted">{project.repoStatus.label}</p> : null}
+      {!project.repo ? (
+        <div className="aw-project__actions">
+          <Button size="sm" disabled={state.busy} onClick={() => mutate(() => api('POST', `${pathFor(project)}/repo/create`, {}), 'Repository creation requested.')}>Create repository</Button>
+          {project.githubInstallationId ? (
+            <Button size="sm" disabled={state.busy} onClick={() => mutate(() => api('POST', `${pathFor(project)}/repo/github`, {}), 'GitHub repository creation requested.')}>
+              Create in @{project.githubAccount || 'connected GitHub'}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      <details>
+        <summary>More</summary>
+        <p className="aw-muted">Link an existing repository by its URL, or change the one above.</p>
+        <div className="aw-project__actions">
+          <Button size="sm" onClick={() => setModal({ kind: 'custom', render: close => <RepoModal project={project} onClose={() => { close(); void refresh(); }} /> })}>
+            {project.repo ? 'Change repository' : 'Link repository'}
+          </Button>
+        </div>
+      </details>
+      <Feedback state={state} />
+    </section>
   );
 }
 
@@ -473,30 +530,7 @@ function Resources({ project, refresh, host }) {
           </div>
         )}
       </section>
-      <section className="aw-project__section" id="project-repo">
-        <div className="aw-row-h">
-          <h3>Repository & integrations</h3>
-          <span className="aw-toolbar__fill" />
-          <Button size="sm" onClick={() => setModal({ kind: 'custom', render: close => <RepoModal project={project} onClose={() => { close(); void refresh(); }} /> })}>
-            {project.repo ? 'Change repository' : 'Link repository'}
-          </Button>
-        </div>
-        <p>{resourceUrl(project.repo) ? <a href={resourceUrl(project.repo)} target="_blank" rel="noreferrer">{resourceUrl(project.repo)}</a> : project.repo ? 'Repository configured for Git access.' : 'Link existing code or create a repository for this project.'}</p>
-        {project.repo_error ? <p role="alert" className="aw-project__error">{project.repo_error}</p> : null}
-        <p className="aw-muted">{project.githubAccount ? `GitHub connected: @${project.githubAccount}` : 'No GitHub account linked to this project.'}{project.repoStatus?.label ? ` · ${project.repoStatus.label}` : ''}</p>
-        {!project.repo ? (
-          <div className="aw-project__actions">
-            <Button size="sm" disabled={state.busy} onClick={() => mutate(() => api('POST', `${pathFor(project)}/repo/create`, {}), 'Repository creation requested.')}>Create repository</Button>
-            {project.githubInstallationId ? (
-              <Button size="sm" disabled={state.busy} onClick={() => mutate(() => api('POST', `${pathFor(project)}/repo/github`, {}), 'GitHub repository creation requested.')}>
-                Create in @{project.githubAccount || 'connected GitHub'}
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-        <Feedback state={state} />
-      </section>
-      <section className="aw-project__section" id="project-hosting">
+      <section className="aw-project__section" id="project-sites">
         <div className="aw-row-h">
           <h3>Hosted destinations</h3>
           <span className="aw-toolbar__fill" />
@@ -1186,7 +1220,7 @@ function People({ project, refresh }) {
  * chosen Pages project or Worker becomes the fleet's deploy target.
  */
 function Hosting({ project }) {
-  const { api } = useAdmin();
+  const { api, ask } = useAdmin();
   const load = useCallback(
     () => api('GET', `/admin/projects/${encodeURIComponent(project.id)}/cloudflare`),
     [api, project.id],
@@ -1197,47 +1231,79 @@ function Hosting({ project }) {
   const target = info?.target ?? null;
   const connections = info?.connections ?? [];
   const grant = connections.find((c) => c.id === info?.connectionId) ?? null;
-  const choose = (next) => void run(async () => {
+  const accountName = grant?.accounts.find((a) => a.id === info?.accountId)?.name ?? info?.accountId;
+  // What the account already builds from this project's repo, and what the
+  // repo is called there — newer reads only; both stay null on old servers.
+  const detected = info?.detected ?? null;
+  const projectRepo = info?.projectRepo ?? repoRef(project.repo)?.slug ?? null;
+  const isTarget = (kind, name) => target?.kind === kind && target?.name === name;
+  const choose = (next, success) => run(async () => {
     await api('PUT', `/admin/projects/${encodeURIComponent(project.id)}/deploy-target`, {
       target: next && info?.via === 'oauth' ? { ...next, connectionId: info.connectionId, accountId: info.accountId } : next,
     });
     await reload();
-  }, next ? `Deploys to ${next.name} now.` : 'Deploy target cleared.');
-  const isTarget = (kind, name) => target?.kind === kind && target?.name === name;
-  const listing = (label, kind, section, describe) => (
-    <div className="aw-project__hosting-list">
-      <h4>{label}</h4>
-      {!section.ok ? (
-        <p className="aw-warn">{section.error}{section.permission ? ` It needs ${section.permission}.` : ''}{section.permission && info?.via === 'oauth' ? " The client reconnects Cloudflare on the portal's Connections page to grant it." : ''}</p>
-      ) : section.items.length === 0 ? (
-        <p className="aw-muted">None in this account.</p>
-      ) : (
-        <ul className="aw-project__hosting-items">
-          {section.items.map((item) => (
-            <li key={item.name}>
-              <span><strong>{item.name}</strong> <span className="ui-note">{describe(item)}</span></span>
-              {isTarget(kind, item.name)
-                ? <Tag tone="ok">Deploy target</Tag>
-                : <Button size="sm" busy={write.busy} onClick={() => choose({ kind, name: item.name, productionBranch: item.productionBranch || 'main' })}>Deploy here</Button>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-  const accountName = grant?.accounts.find((a) => a.id === info?.accountId)?.name ?? info?.accountId;
+  }, success);
+  const fleetPick = (item) => ask({
+    title: `Fleet deploys to ${item.name}?`,
+    text: `Previews go up from each ticket branch; production from ${item.productionBranch || 'main'} goes live to the ${item.kind === 'pages' ? 'Pages project' : 'Worker'} ${item.name}.`,
+    confirm: 'Fleet deploys here',
+    run: () => choose({ provider: 'cloudflare', kind: item.kind, name: item.name, productionBranch: item.productionBranch || 'main', builds: 'fleet' }, `Deploys to ${item.name} now.`),
+  });
+  const useDetected = () => ask({
+    title: `Use Cloudflare's builds for ${detected.name}?`,
+    text: `Cloudflare already builds it from ${projectRepo ?? 'this project’s repo'}: each ticket branch gets a preview, ${detected.productionBranch || 'main'} goes live.`,
+    confirm: 'Use it',
+    run: () => choose({ provider: detected.provider ?? 'cloudflare', kind: detected.kind, name: detected.name, productionBranch: detected.productionBranch || 'main', builds: 'provider' }, `Cloudflare builds ${detected.name} now.`),
+  });
+  const clearTarget = () => ask({
+    title: `Clear the deploy target for ${project.name}?`,
+    text: 'Nothing deploys anywhere until a target is chosen again.',
+    confirm: 'Clear target',
+    run: () => choose(null, 'Deploy target cleared.'),
+  });
+  // Resources that can plausibly be this project's home: whatever already
+  // answers one of the account's domains, plus a Pages project built from the
+  // project's repo. Anything else — another site's script, a mail worker —
+  // never gets a deploy button, so a click cannot retarget deploys onto it.
+  const servedBy = (info?.domains?.ok ? info.domains.items : []).filter((d) => d.kind === 'pages' || d.kind === 'workers');
+  const servedHosts = (kind, name) => servedBy.filter((d) => d.kind === kind && d.name === name).map((d) => d.host);
+  const relevant = [];
+  const seen = new Set();
+  const push = (kind, name, productionBranch, note) => {
+    const key = `${kind}:${name}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    relevant.push({ kind, name, productionBranch, note });
+  };
+  for (const p of info?.pages?.ok ? info.pages.items : []) {
+    const hosts = servedHosts('pages', p.name);
+    const repoBuilt = Boolean(projectRepo) && p.source?.repo === projectRepo;
+    if (!hosts.length && !repoBuilt) continue;
+    push('pages', p.name, p.productionBranch || p.source?.productionBranch || 'main',
+      [repoBuilt ? `builds from ${p.source.repo}` : null, hosts.length ? `serves ${hosts.join(', ')}` : (p.domains ?? []).length ? `serves ${p.domains.join(', ')}` : null, p.productionBranch && !repoBuilt ? `production ${p.productionBranch}` : null].filter(Boolean).join(' · '));
+  }
+  for (const w of info?.workers?.ok ? info.workers.items : []) {
+    const hosts = servedHosts('workers', w.name);
+    if (!hosts.length) continue;
+    push('workers', w.name, 'main', [`serves ${hosts.join(', ')}`, w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : null].filter(Boolean).join(' · '));
+  }
+  // A resource the listings could not read still names itself in served-by.
+  for (const d of servedBy) push(d.kind, d.name, 'main', `serves ${servedHosts(d.kind, d.name).join(', ')}`);
   const attachedClients = Array.isArray(project.clients) ? project.clients : [];
-  // The owner is made in People & access, one section down on this tab.
+  // The owner is made in People & access, one section up on this tab.
   const goToPeople = () => {
     if (typeof document === 'undefined') return;
     document.getElementById('project-people')?.scrollIntoView({ block: 'start', behavior: 'auto' });
   };
+  const listError = (section) => !section || section.ok ? null : (
+    <p className="aw-warn">{section.error}{section.permission ? ` It needs ${section.permission}.` : ''}{section.permission && info?.via === 'oauth' ? " The client reconnects Cloudflare on the portal's Connections page to grant it." : ''}</p>
+  );
   return (
     <section className="aw-project__section" id="project-hosting">
       <div className="aw-row-h">
         <h3>Where it goes live</h3>
         <span className="aw-toolbar__fill" />
-        {target ? <Button size="sm" kind="ghost" busy={write.busy} onClick={() => choose(null)}>Clear target</Button> : null}
+        {target ? <Button size="sm" kind="ghost" busy={write.busy} onClick={clearTarget}>Clear target</Button> : null}
       </div>
       {state.loading && !info ? <Skeleton label="Reading the owner's Cloudflare…" /> : null}
       {state.error ? <ErrorNote error={state.error} /> : null}
@@ -1245,8 +1311,8 @@ function Hosting({ project }) {
         <Empty
           title="Set the project owner first"
           hint={attachedClients.length
-            ? "Hosting reads only the owner's Cloudflare connection, and this project has no owner yet. Make one of the people below the owner in People & access; then their Workers show here."
-            : "Hosting reads only the owner's Cloudflare connection, and this project has no one attached yet. An owner must first be added to the project in People & access below."}
+            ? "Hosting reads only the owner's Cloudflare connection, and this project has no owner yet. Make one of its people the owner in People & access; then their Cloudflare shows here."
+            : "Hosting reads only the owner's Cloudflare connection, and this project has no one attached yet. An owner must first be added to the project in People & access above."}
           action={<Button size="sm" onClick={goToPeople}>Go to People & access</Button>}
           inline
         />
@@ -1264,28 +1330,67 @@ function Hosting({ project }) {
       {info?.connected ? (
         <>
           <p className="aw-muted">
-            {info.via === 'oauth' ? `Through the owner's Cloudflare connection (${grant?.email ?? info.owner ?? 'the owner'}), account ${accountName}. ` : ''}
-            {target
-              ? `Fleet runs deploy previews from ticket branches and production from ${target.productionBranch} to ${target.kind === 'pages' ? 'Pages project' : 'Worker'} ${target.name}.`
-              : 'Pick where fleet runs deploy: previews from ticket branches, production from the production branch.'}
+            {info.via === 'oauth' ? `Through the owner's Cloudflare connection (${grant?.email ?? info.owner ?? 'the owner'}), account ${accountName}.` : 'Through the Cloudflare credentials stored on this project.'}
           </p>
-          {info.workers ? listing('Worker scripts', 'workers', info.workers, (w) => (w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : '')) : null}
-          {info.domains?.ok && info.domains.items.length ? (
+          {target?.builds === 'provider' ? (
             <div className="aw-project__hosting-list">
-              <h4>What serves each domain</h4>
+              <p>
+                <strong>{target.name}</strong>{' '}
+                <Tag tone="ok">Deploy target</Tag>
+              </p>
+              <p>Cloudflare builds {target.name} from {projectRepo ?? 'its repo'}: each ticket branch gets a preview, {target.productionBranch} goes live.</p>
+            </div>
+          ) : detected ? (
+            <div className="aw-project__connect">
+              <p><strong>Cloudflare already builds this project from its repo ({detected.name}).</strong></p>
+              <p className="aw-muted">Each ticket branch gets a preview; {detected.productionBranch || 'main'} goes live.</p>
+              {target ? <p className="aw-muted">Fleet currently deploys to {target.name} instead.</p> : null}
+              <div className="aw-project__actions">
+                <Button size="sm" kind="primary" busy={write.busy} onClick={useDetected}>Use it</Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="aw-muted">
+                {target
+                  ? `Fleet deploys previews from ticket branches and production from ${target.productionBranch} to the ${target.kind === 'pages' ? 'Pages project' : 'Worker'} ${target.name}.`
+                  : 'Pick where fleet runs deploy: previews from ticket branches, production from the production branch.'}
+              </p>
+              {listError(info.pages)}
+              {listError(info.workers)}
+              {relevant.length ? (
+                <ul className="aw-project__hosting-items">
+                  {relevant.map((item) => (
+                    <li key={`${item.kind}:${item.name}`}>
+                      <span><strong>{item.name}</strong> <span className="ui-note">{item.kind === 'pages' ? 'Pages project' : 'Worker'}{item.note ? ` · ${item.note}` : ''}</span></span>
+                      {isTarget(item.kind, item.name)
+                        ? <Tag tone="ok">Deploy target</Tag>
+                        : <Button size="sm" busy={write.busy} onClick={() => fleetPick(item)}>Fleet deploys here</Button>}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="aw-muted">No Pages project or Worker in this account serves one of its domains yet.</p>
+              )}
+            </>
+          )}
+          <details className="aw-project__hosting-list">
+            <summary>Domains</summary>
+            {info.domains?.ok && info.domains.items.length ? (
               <ul className="aw-project__hosting-items">
                 {info.domains.items.map((d) => (
                   <li key={`${d.host} ${d.kind} ${d.name}`}>
                     <span><strong>{d.host}</strong> <span className="ui-note">{d.kind === 'workers' ? `Worker ${d.name}` : d.kind === 'pages' ? `Pages project ${d.name}` : d.name} · {d.via}</span></span>
-                    {d.kind === 'dns' ? null : isTarget(d.kind, d.name)
-                      ? <Tag tone="ok">Deploy target</Tag>
-                      : <Button size="sm" busy={write.busy} onClick={() => choose({ kind: d.kind, name: d.name, productionBranch: 'main' })}>Deploy here</Button>}
+                    {d.kind !== 'dns' && isTarget(d.kind, d.name) ? <Tag tone="ok">Deploy target</Tag> : null}
                   </li>
                 ))}
               </ul>
-            </div>
-          ) : null}
-          {info.pages ? listing('Pages projects', 'pages', info.pages, (p) => [p.productionBranch ? `production ${p.productionBranch}` : null, ...(p.domains ?? [])].filter(Boolean).join(' · ')) : null}
+            ) : info.domains && !info.domains.ok ? (
+              <p className="aw-muted">{info.domains.error}</p>
+            ) : (
+              <p className="aw-muted">No domains in this account.</p>
+            )}
+          </details>
         </>
       ) : null}
       {write.error ? <ErrorNote error={write.error} /> : null}
