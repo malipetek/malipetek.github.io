@@ -17660,8 +17660,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 
   // packages/admin-ui/src/workbench.js
   function projectCreationRequest(input, access) {
-    const { name, slug, kind, code, repo, brief } = input;
-    if (access?.superAdmin) return { path: "/admin/projects", body: { name, slug, kind, code, repo } };
+    const { name, slug, kind, code, repo, brief, ownerUserId } = input;
+    if (access?.superAdmin) return { path: "/admin/projects", body: { name, slug, kind, code, repo, ...ownerUserId ? { ownerUserId } : {} } };
     return { path: "/portal/projects", body: { name, kind, brief, repoMode: code === "folder" ? "none" : code, ...code === "repo" ? { repo } : {} } };
   }
   function createTaskSubmission(send) {
@@ -17882,6 +17882,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [busy, setBusy] = useState(false);
     const [setupError, setSetupError] = useState(null);
     const [clientIds, setClientIds] = useState(() => [...initialClients]);
+    const [ownerId, setOwnerId] = useState(null);
+    const owner = clientIds.includes(ownerId) ? ownerId : clientIds[0] ?? null;
     const [clientQuery, setClientQuery] = useState("");
     const submission = useRef(null);
     const busyRef = useRef(false);
@@ -17928,7 +17930,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       setBusy(true);
       setSetupError(null);
       try {
-        const project = await submission.current({ name, slug, kind, code: code === "node" ? "folder" : code, repo: code === "repo" ? repo.trim() : void 0, brief: { what: what.trim(), goal: goal.trim() }, localPath: code === "folder" ? localPath.trim() : "" });
+        const project = await submission.current({ name, slug, kind, code: code === "node" ? "folder" : code, repo: code === "repo" ? repo.trim() : void 0, brief: { what: what.trim(), goal: goal.trim() }, localPath: code === "folder" ? localPath.trim() : "", ownerUserId: owner });
         if (!project) return;
         for (const id of clientIds) {
           await api("PUT", `/admin/clients/${id}/projects/${project.id}`).catch(() => notify?.("Project created, but assigning a client failed.", "error"));
@@ -18047,7 +18049,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                   /* @__PURE__ */ jsx("input", { type: "checkbox", checked, onChange: () => setClientIds((current) => checked ? current.filter((id) => id !== c.id) : [...current, c.id]) }),
                   /* @__PURE__ */ jsx("span", { className: "aw-assign__name", children: c.name || c.email }),
                   c.name ? /* @__PURE__ */ jsx("span", { className: "aw-assign__slug", children: c.email }) : null,
-                  checked ? /* @__PURE__ */ jsx("span", { className: "aw-assign__state", children: "Assigned" }) : null
+                  checked && c.id === owner ? /* @__PURE__ */ jsx("span", { className: "aw-assign__state", children: "Owner" }) : null,
+                  checked && c.id !== owner ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", onClick: (e) => {
+                    e.preventDefault();
+                    setOwnerId(c.id);
+                  }, children: "Make owner" }) : null
                 ] }, c.id);
               }) }),
               /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
@@ -18055,7 +18061,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                 " of ",
                 clients.length,
                 " clients selected. You can change this later on either side."
-              ] })
+              ] }),
+              clientIds.length ? /* @__PURE__ */ jsxs("p", { className: "ui-note", children: [
+                clients.find((c) => c.id === owner)?.name || clients.find((c) => c.id === owner)?.email,
+                " is the owner: their Cloudflare and GitHub connections carry this project's deploys and repo access."
+              ] }) : /* @__PURE__ */ jsx("p", { className: "ui-note", children: "No clients selected \u2014 an internal project, with no owner and no client credentials." })
             ] }) : null,
             step === reviewStep ? /* @__PURE__ */ jsxs("dl", { className: "ui-props", children: [
               /* @__PURE__ */ jsx("dt", { children: "Name" }),
@@ -18071,6 +18081,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               ] }),
               /* @__PURE__ */ jsx("dt", { children: "Clients" }),
               /* @__PURE__ */ jsx("dd", { children: clientIds.length ? clientIds.map((id) => clients.find((c) => c.id === id)?.name || clients.find((c) => c.id === id)?.email).join(", ") : "None yet" }),
+              /* @__PURE__ */ jsx("dt", { children: "Owner" }),
+              /* @__PURE__ */ jsx("dd", { children: owner ? clients.find((c) => c.id === owner)?.name || clients.find((c) => c.id === owner)?.email : "None \u2014 internal project" }),
               !data.access?.superAdmin ? /* @__PURE__ */ jsxs(Fragment2, { children: [
                 /* @__PURE__ */ jsx("dt", { children: "Brief" }),
                 /* @__PURE__ */ jsx("dd", { children: what })

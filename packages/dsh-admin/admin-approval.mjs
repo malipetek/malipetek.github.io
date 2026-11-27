@@ -34,7 +34,11 @@ function describe(tool, action, args) {
     case 'admin_tickets note':
       return `Write a private note on ticket ${ref('', args.ticketId)}?`;
     case 'admin_directory create_project':
-      return `Create the project “${text(args.name) ?? text(args.title) ?? 'untitled'}”?`;
+      // An owner is a credential decision (rule 2): name the person whose
+      // Cloudflare and GitHub connections the project will use.
+      return text(args.owner)
+        ? `Create the project “${text(args.name) ?? text(args.title) ?? 'untitled'}” owned by ${text(args.owner)}? Deploys and repo access on it will use that person's own Cloudflare and GitHub connections.`
+        : `Create the project “${text(args.name) ?? text(args.title) ?? 'untitled'}”?`;
     case 'admin_directory set_folder':
       return `Point project ${text(args.slug) ?? text(args.projectId) ?? ''} at ${text(args.folder) ?? text(args.path) ?? 'a folder'}?`;
     case 'admin_directory link':

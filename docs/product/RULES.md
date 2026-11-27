@@ -77,10 +77,10 @@ A change that breaks a rule is not done, even if its tests pass.
 Each item names what removes it. Work on an area removes its items; nothing
 new is added to this list without the product manager's agreement.
 
-- Projects with no owner (`owner_user_id` NULL), e.g. admin- and intake-
-  created ones (`portal.ts` `POST /admin/projects`, `intake.ts`), cannot use
-  client credentials. Removed by: every creation path sets an owner, and an
-  admin way to set one (rule 2).
+- Existing projects with clients but no owner (today: demo-bakery, three
+  clients) cannot use client credentials. Every creation path now sets an
+  owner and the project page has Make owner. Removed by: an admin choosing
+  the owner on each such project (rule 2).
 - Portal integrations catalog asks for a Cloudflare API token and a GitHub
   repo name (`solutions.js` catalog, `Connections.jsx`); `kind='token'`
   Cloudflare grants still read. Removed by: OAuth only (rule 3).

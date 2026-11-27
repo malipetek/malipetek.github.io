@@ -32,7 +32,10 @@ test('project setup retry never recreates a successfully created project', async
 test('developers create owned projects via self-service without global administration or queue approval',()=>{
   const input={name:'Owned',slug:'owned',kind:'existing',code:'repo',repo:'https://github.com/o/r',brief:{what:'System',goal:'Improve'}};
   assert.deepEqual(projectCreationRequest(input,{superAdmin:false}),{path:'/portal/projects',body:{name:'Owned',kind:'existing',brief:input.brief,repoMode:'repo',repo:input.repo}});
-  assert.equal(projectCreationRequest(input,{superAdmin:true}).path,'/admin/projects');
+  const admin=projectCreationRequest({...input,ownerUserId:'client-1'},{superAdmin:true});
+  assert.equal(admin.path,'/admin/projects');
+  assert.equal(admin.body.ownerUserId,'client-1');
+  assert.ok(!('ownerUserId' in projectCreationRequest(input,{superAdmin:true}).body),'no owner is sent without one picked');
 });
 
 test('self-service project names do not require an administrator slug', async()=>{

@@ -1,6 +1,6 @@
 export function projectCreationRequest(input, access) {
-  const { name, slug, kind, code, repo, brief } = input;
-  if (access?.superAdmin) return { path: '/admin/projects', body: { name, slug, kind, code, repo } };
+  const { name, slug, kind, code, repo, brief, ownerUserId } = input;
+  if (access?.superAdmin) return { path: '/admin/projects', body: { name, slug, kind, code, repo, ...(ownerUserId ? { ownerUserId } : {}) } };
   return { path: '/portal/projects', body: { name, kind, brief, repoMode: code === 'folder' ? 'none' : code, ...(code === 'repo' ? { repo } : {}) } };
 }
 

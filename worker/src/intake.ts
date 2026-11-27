@@ -301,7 +301,7 @@ interface ToolContext {
   filed: boolean;
 }
 
-async function tool(ctx: ToolContext, name: string, args: Record<string, unknown>): Promise<{ result: unknown; note?: string }> {
+export async function tool(ctx: ToolContext, name: string, args: Record<string, unknown>): Promise<{ result: unknown; note?: string }> {
   const { env, userId } = ctx;
   const links = portalLinks(env);
 
@@ -322,9 +322,9 @@ async function tool(ctx: ToolContext, name: string, args: Record<string, unknown
       const t = now();
       await env.DB.batch([
         env.DB.prepare(
-          `INSERT INTO projects (id, slug, name, kind, brief, repo_kind, repo_wanted, created_by, onboarded_at, created_at)
-           VALUES (?, ?, ?, ?, ?, 'none', 1, ?, ?, ?)`,
-        ).bind(id, slug, projectName, kind, JSON.stringify(brief), userId, t, t),
+          `INSERT INTO projects (id, slug, name, kind, brief, repo_kind, repo_wanted, created_by, owner_user_id, onboarded_at, created_at)
+           VALUES (?, ?, ?, ?, ?, 'none', 1, ?, ?, ?, ?)`,
+        ).bind(id, slug, projectName, kind, JSON.stringify(brief), userId, userId, t, t),
         env.DB.prepare('INSERT INTO user_projects (user_id, project_id) VALUES (?, ?)').bind(userId, id),
       ]);
       return {

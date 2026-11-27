@@ -31,7 +31,7 @@
  *   POST  /admin/clients                  { email, name?, locale?, projectIds[], note? } → invite
  *   POST  /admin/clients/:userId/invite   send a fresh link, killing the unused ones
  *   DELETE /admin/clients/:userId/invite  revoke the unused links
- *   GET   /admin/projects   POST /admin/projects { name, slug }   PATCH /admin/projects/:id { name?, kind?, ownerUserId? }
+ *   GET   /admin/projects   POST /admin/projects { name, slug, ownerUserId? }   PATCH /admin/projects/:id { name?, kind?, ownerUserId? }
  *   PUT   /admin/clients/:userId/projects/:projectId { copy? }   (copy: mail them every request on it)
  *   DELETE /admin/clients/:userId/projects/:projectId
  *
@@ -3653,14 +3653,22 @@ portal.post('/admin/projects/:id/site/rollback', async (c) => {
   });
 });
 
+/** An account id, or the address of one — the owner lookup create and PATCH share. */
+const userRef = (env: Env, identifier: string) =>
+  env.DB.prepare('SELECT id FROM users WHERE id = ? OR email = ?').bind(identifier, identifier).first<{ id: string }>();
+
 /**
  * Where a project's code comes from, as the admin form asks it:
  *   create  a node makes a private repo (the default — work needs something to clone)
  *   repo    this URL
  *   folder  a folder that already exists on a node; that node shares its origin
+ * `ownerUserId` (an account id or the address of one, like PATCH takes) names
+ * the owner in the same request: they are attached through `user_projects`
+ * and `owner_user_id` is set, so their connections carry deploys from the
+ * start (rule 2). No owner is allowed — an internal project.
  */
 portal.post('/admin/projects', async (c) => {
-  const body = await readJson<{ name?: unknown; slug?: unknown; code?: unknown; repo?: unknown; kind?: unknown; solutions?: unknown }>(c);
+  const body = await readJson<{ name?: unknown; slug?: unknown; code?: unknown; repo?: unknown; kind?: unknown; solutions?: unknown; ownerUserId?: unknown }>(c);
   if (body?.solutions !== undefined && !Array.isArray(body.solutions)) return reply(c, { error: 'bad_solutions' }, 400);
   const solutions = cleanSolutions(body?.solutions);
   const name = cleanText(body?.name, MAX_NAME_CHARS);
@@ -3671,17 +3679,26 @@ portal.post('/admin/projects', async (c) => {
   const repo = code === 'repo' ? cleanRepo(body?.repo) : null;
   if (code === 'repo' && !repo) return reply(c, { error: 'bad_repo' }, 400);
   const kind = body?.kind === 'new' ? 'new' : 'existing';
+  let ownerId: string | null = null;
+  if (body?.ownerUserId !== undefined && body.ownerUserId !== null) {
+    if (typeof body.ownerUserId !== 'string' || !body.ownerUserId.trim()) return reply(c, { error: 'bad_owner' }, 400);
+    const owner = await userRef(c.env, body.ownerUserId.trim());
+    if (!owner) return reply(c, { error: 'owner_not_found' }, 400);
+    ownerId = owner.id;
+  }
   const id = crypto.randomUUID();
   try {
-    await c.env.DB.prepare(
-      `INSERT INTO projects (id, slug, name, kind, repo, repo_kind, repo_wanted, created_at, solutions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(id, slug, name, kind, repo, repo ? 'repo' : 'none', code === 'create' ? 1 : 0, now(), JSON.stringify(solutions))
-      .run();
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO projects (id, slug, name, kind, repo, repo_kind, repo_wanted, owner_user_id, created_at, solutions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(id, slug, name, kind, repo, repo ? 'repo' : 'none', code === 'create' ? 1 : 0, ownerId, now(), JSON.stringify(solutions)),
+      ...(ownerId ? [c.env.DB.prepare('INSERT INTO user_projects (user_id, project_id) VALUES (?, ?)').bind(ownerId, id)] : []),
+    ]);
   } catch {
     return reply(c, { error: 'slug_taken' }, 409);
   }
-  return reply(c, { id, slug, name, solutions }, 201);
+  return reply(c, { id, slug, name, solutions, ownerUserId: ownerId }, 201);
 });
 
 /**
@@ -3905,9 +3922,7 @@ portal.patch('/admin/projects/:id', async (c) => {
     if (body.ownerUserId === null) {
       sets.push(['owner_user_id', null]);
     } else if (typeof body.ownerUserId === 'string' && body.ownerUserId.trim()) {
-      const identifier = body.ownerUserId.trim();
-      // The same lookup memberships use: an account id, or the address of one.
-      const owner = await c.env.DB.prepare('SELECT id FROM users WHERE id = ? OR email = ?').bind(identifier, identifier).first<{id:string}>();
+      const owner = await userRef(c.env, body.ownerUserId.trim());
       if (!owner) return reply(c, { error: 'owner_not_found' }, 400);
       const attached = await c.env.DB.prepare('SELECT 1 FROM user_projects WHERE user_id = ? AND project_id = ?')
         .bind(owner.id, c.req.param('id')).first();

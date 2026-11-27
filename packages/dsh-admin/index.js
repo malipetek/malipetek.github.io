@@ -1143,8 +1143,8 @@ const postMessage = (config, ticketId, body, internal) =>
     return out;
   });
 
-const createProject = (config, name, slug) =>
-  request(config, '/admin/projects', { method: 'POST', body: { name, slug } });
+const createProject = (config, name, slug, owner) =>
+  request(config, '/admin/projects', { method: 'POST', body: { name, slug, ...(owner ? { ownerUserId: owner } : {}) } });
 
 /** Take a ticket for a named executor: flips it to in_progress and opens a run. */
 const claimTicket = (config, ticketId, executor, model) =>
@@ -2535,6 +2535,7 @@ export function apply(ctx) {
             },
             name: { type: 'string', description: 'Project display name, for create_project.' },
             slug: { type: 'string', description: 'Project slug (lowercase, dashes), for create_project and set_folder.' },
+            owner: { type: 'string', description: 'For create_project: the project owner — a client account id or email. Their Cloudflare and GitHub connections carry the project\'s deploys and repo access; leave empty for an internal project.' },
             folder: {
               type: 'string',
               description: 'Absolute or ~/… path to the project folder, for set_folder. Empty clears it and falls back to the projects root.',
@@ -2579,9 +2580,10 @@ export function apply(ctx) {
               if (typeof args.name !== 'string' || typeof args.slug !== 'string') {
                 throw new Error('name and slug are required.');
               }
-              const created = await createProject(config, args.name, args.slug.toLowerCase());
+              const owner = typeof args.owner === 'string' && args.owner.trim() ? args.owner.trim() : undefined;
+              const created = await createProject(config, args.name, args.slug.toLowerCase(), owner);
               await refresh(config);
-              return { message: `Created project ${created.name} (${created.slug}).` };
+              return { message: owner ? `Created project ${created.name} (${created.slug}), owned by ${owner}.` : `Created project ${created.name} (${created.slug}).` };
             }
             case 'set_folder': {
               if (typeof args.slug !== 'string' || args.slug.length === 0) throw new Error('slug is required.');

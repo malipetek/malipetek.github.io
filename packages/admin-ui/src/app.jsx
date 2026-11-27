@@ -964,6 +964,10 @@ export function ProjectModal({ onClose, initialClients = [] }) {
   const [busy, setBusy] = useState(false);
   const [setupError, setSetupError] = useState(null);
   const [clientIds, setClientIds] = useState(() => [...initialClients]);
+  const [ownerId, setOwnerId] = useState(null);
+  // Radio semantics: the owner is one of the selected clients — the first by
+  // default; unchecking the owner hands it to the next one in line.
+  const owner = clientIds.includes(ownerId) ? ownerId : clientIds[0] ?? null;
   const [clientQuery, setClientQuery] = useState('');
   const submission = useRef(null);
   const busyRef = useRef(false);
@@ -1005,7 +1009,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
     if (busyRef.current || !ready) return;
     busyRef.current = true; setBusy(true); setSetupError(null);
     try {
-      const project = await submission.current({ name, slug, kind, code: code === 'node' ? 'folder' : code, repo: code === 'repo' ? repo.trim() : undefined, brief: { what: what.trim(), goal: goal.trim() }, localPath: code === 'folder' ? localPath.trim() : '' });
+      const project = await submission.current({ name, slug, kind, code: code === 'node' ? 'folder' : code, repo: code === 'repo' ? repo.trim() : undefined, brief: { what: what.trim(), goal: goal.trim() }, localPath: code === 'folder' ? localPath.trim() : '', ownerUserId: owner });
       if (!project) return;
       for (const id of clientIds) {
         await api('PUT', `/admin/clients/${id}/projects/${project.id}`).catch(() => notify?.('Project created, but assigning a client failed.', 'error'));
@@ -1133,12 +1137,18 @@ export function ProjectModal({ onClose, initialClients = [] }) {
                     <input type="checkbox" checked={checked} onChange={() => setClientIds((current) => checked ? current.filter((id) => id !== c.id) : [...current, c.id])} />
                     <span className="aw-assign__name">{c.name || c.email}</span>
                     {c.name ? <span className="aw-assign__slug">{c.email}</span> : null}
-                    {checked ? <span className="aw-assign__state">Assigned</span> : null}
+                    {checked && c.id === owner ? <span className="aw-assign__state">Owner</span> : null}
+                    {checked && c.id !== owner ? <Button kind="ghost" size="sm" onClick={(e) => { e.preventDefault(); setOwnerId(c.id); }}>Make owner</Button> : null}
                   </label>
                 );
               })}
             </div>
             <p className="aw-muted">{clientIds.length} of {clients.length} clients selected. You can change this later on either side.</p>
+            {clientIds.length ? (
+              <p className="ui-note">{clients.find((c) => c.id === owner)?.name || clients.find((c) => c.id === owner)?.email} is the owner: their Cloudflare and GitHub connections carry this project's deploys and repo access.</p>
+            ) : (
+              <p className="ui-note">No clients selected — an internal project, with no owner and no client credentials.</p>
+            )}
           </>
         ) : null}
 
@@ -1148,6 +1158,7 @@ export function ProjectModal({ onClose, initialClients = [] }) {
             <dt>Slug</dt><dd className="aw-mono">{slug || '—'}</dd>
             {existing ? <><dt>Source</dt><dd className="aw-mono">{code === 'folder' ? localPath : code === 'node' ? 'Folder on a node (named after the slug)' : repo}</dd></> : <><dt>Code</dt><dd>{code === 'create' ? 'New repo from the site template' : code === 'repo' ? repo : 'Folder on a node'}</dd></>}
             <dt>Clients</dt><dd>{clientIds.length ? clientIds.map((id) => clients.find((c) => c.id === id)?.name || clients.find((c) => c.id === id)?.email).join(', ') : 'None yet'}</dd>
+            <dt>Owner</dt><dd>{owner ? clients.find((c) => c.id === owner)?.name || clients.find((c) => c.id === owner)?.email : 'None — internal project'}</dd>
             {!data.access?.superAdmin ? <><dt>Brief</dt><dd>{what}</dd></> : null}
           </dl>
         ) : null}

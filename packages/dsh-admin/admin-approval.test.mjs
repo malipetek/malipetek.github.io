@@ -22,6 +22,7 @@ test('every operator-facing write asks, and names the object', () => {
     ['admin_tickets', { action: 'reply', ticketId: 212 }, /Reply to ticket #212/],
     ['admin_tickets', { action: 'note', ticketId: 212 }, /private note on ticket #212/],
     ['admin_directory', { action: 'create_project', name: 'Bakery' }, /Create the project “Bakery”/],
+    ['admin_directory', { action: 'create_project', name: 'Bakery', slug: 'bakery', owner: 'it@petekkoleji.com' }, /Create the project “Bakery” owned by it@petekkoleji\.com\? Deploys and repo access on it will use that person's own Cloudflare and GitHub connections\./],
     ['admin_directory', { action: 'set_folder', slug: 'p2', folder: '/tmp/x' }, /p2 at \/tmp\/x/],
     ['admin_directory', { action: 'link', clientId: 'c1', projectId: 'p2' }, /Give client c1 access to project p2/],
     ['admin_directory', { action: 'unlink', clientId: 'c1', projectId: 'p2' }, /Remove client c1 from project p2/],
