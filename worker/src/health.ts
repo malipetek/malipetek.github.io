@@ -17,6 +17,7 @@
  * it (the mail itself lives in portal.ts, with the other mail).
  */
 import { now, oauthCallbackBase, type Env } from './shared.ts';
+import { CLOUDFLARE_SCOPES } from './cfconnect.ts';
 import { getSettings, nodesView, queueView } from './queue.ts';
 
 export type HealthStatus = 'ok' | 'fail' | 'skip';
@@ -326,11 +327,15 @@ async function cloudflareOauthCheck(env: Env) {
         response_type: 'code',
         client_id: env.CLOUDFLARE_OAUTH_CLIENT_ID,
         redirect_uri: redirect,
-        scope: 'user-details.read',
+        // Every scope Connect asks for: one the client lacks fails every Connect.
+        scope: CLOUDFLARE_SCOPES.join(' '),
         state: 'health',
       })}`,
     );
-    const text = await bodyText(res, 6000);
+    const text = `${res.headers.get('location') ?? ''}\n${await bodyText(res, 6000)}`;
+    if (/invalid_scope/i.test(text)) {
+      return { status: 'fail', detail: 'Cloudflare refuses a scope Connect asks for — add it to the OAuth client' };
+    }
     if (/invalid_redirect_uri|redirect_uri[^.]{0,80}(match|registered)/i.test(text)) {
       return { status: 'fail', detail: `Cloudflare refuses ${redirect} — add it to the OAuth client` };
     }
