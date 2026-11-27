@@ -142,3 +142,17 @@ export async function cloudflareAccess(env: Env, connectionId: number): Promise<
     .run();
   return fresh.access_token;
 }
+
+/**
+ * The grant a deploy target should use: the one it names while it is live,
+ * else the newest live grant that still reaches the same account (a client
+ * who reconnects gets a new grant and the old one is revoked). Null when no
+ * grant reaches the account any more.
+ */
+export async function connectionForAccount(env: Env, connectionId: number, accountId: string): Promise<number | null> {
+  const named = await connectionRow(env, connectionId);
+  if (named && grantedAccounts(named).some((a) => a.id === accountId)) return named.id;
+  const { results } = await env.DB.prepare('SELECT id, accounts FROM cloudflare_connections WHERE revoked_at IS NULL ORDER BY created_at DESC')
+    .all<{ id: number; accounts: string }>();
+  return (results ?? []).find((row) => grantedAccounts(row).some((a) => a.id === accountId))?.id ?? null;
+}

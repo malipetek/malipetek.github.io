@@ -62,7 +62,7 @@ import { cleanRepo, parseBrief } from './setup.ts';
 import { INTEGRATION_CATALOG, integrationsFor, parseSolutions } from './solutions.ts';
 import { openProjectSecret } from './projectAccess.ts';
 import { deployTargetEnv, readDeployTarget } from './hosting.ts';
-import { cloudflareAccess } from './cfaccess.ts';
+import { cloudflareAccess, connectionForAccount } from './cfaccess.ts';
 
 /** A node creating a repo holds the job this long before another may take it. */
 const REPO_CLAIM_SECONDS = 15 * 60;
@@ -598,7 +598,8 @@ node.get('/node/runs/:runId/credentials', async (c) => {
   // token, refreshed if it is about to lapse), else the token on the project.
   const target = readDeployTarget(project.deploy_target);
   if (target?.connectionId && target.accountId) {
-    const access = await cloudflareAccess(c.env, target.connectionId).catch(() => null);
+    const grant = await connectionForAccount(c.env, target.connectionId, target.accountId).catch(() => null);
+    const access = grant ? await cloudflareAccess(c.env, grant).catch(() => null) : null;
     if (access) {
       env.CLOUDFLARE_API_TOKEN = access;
       env.CLOUDFLARE_ACCOUNT_ID = target.accountId;
