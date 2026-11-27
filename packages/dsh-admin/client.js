@@ -17481,6 +17481,21 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           target ? `Fleet runs deploy previews from ticket branches and production from ${target.productionBranch} to ${target.kind === "pages" ? "Pages project" : "Worker"} ${target.name}.` : "Pick where fleet runs deploy: previews from ticket branches, production from the production branch."
         ] }),
         info.workers ? listing("Worker scripts", "workers", info.workers, (w) => w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : "") : null,
+        info.domains?.ok && info.domains.items.length ? /* @__PURE__ */ jsxs("div", { className: "aw-project__hosting-list", children: [
+          /* @__PURE__ */ jsx("h4", { children: "What serves each domain" }),
+          /* @__PURE__ */ jsx("ul", { className: "aw-project__hosting-items", children: info.domains.items.map((d) => /* @__PURE__ */ jsxs("li", { children: [
+            /* @__PURE__ */ jsxs("span", { children: [
+              /* @__PURE__ */ jsx("strong", { children: d.host }),
+              " ",
+              /* @__PURE__ */ jsxs("span", { className: "ui-note", children: [
+                d.kind === "workers" ? `Worker ${d.name}` : d.kind === "pages" ? `Pages project ${d.name}` : d.name,
+                " \xB7 ",
+                d.via
+              ] })
+            ] }),
+            d.kind === "dns" ? null : isTarget(d.kind, d.name) ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "Deploy target" }) : /* @__PURE__ */ jsx(Button, { size: "sm", busy: write.busy, onClick: () => choose({ kind: d.kind, name: d.name, productionBranch: "main" }), children: "Deploy here" })
+          ] }, `${d.host} ${d.kind} ${d.name}`)) })
+        ] }) : null,
         info.pages ? listing("Pages projects", "pages", info.pages, (p) => [p.productionBranch ? `production ${p.productionBranch}` : null, ...p.domains ?? []].filter(Boolean).join(" \xB7 ")) : null
       ] }) : null,
       write.error ? /* @__PURE__ */ jsx(ErrorNote, { error: write.error }) : null,

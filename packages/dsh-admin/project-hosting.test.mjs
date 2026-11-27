@@ -15,8 +15,10 @@ test('an OAuth grant lists its Workers and says whose grant it is', () => {
     connections: [school],
     pages: null,
     workers: { ok: true, items: [{ name: 'petekkoleji', modifiedOn: '2026-11-20T10:00:00Z' }, { name: 'petekkoleji-mailer', modifiedOn: '2025-01-02T10:00:00Z' }] },
+    domains: { ok: true, items: [{ host: 'petekkoleji.com', kind: 'pages', name: 'petekkoleji-site', via: 'CNAME petekkoleji-site.pages.dev' }] },
     target: null,
   });
+  assert.match(text, /petekkoleji\.com: Pages project petekkoleji-site \(CNAME/);
   assert.match(text, /petekkoleji2023@gmail\.com's Cloudflare connection #8/);
   assert.match(text, /not on this project/);
   assert.match(text, /petekkoleji \(changed 2026-11-20\)/);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { deployTargetEnv, listPages, listWorkers, parseDeployTarget, pickConnection, readDeployTarget } from '../src/hosting.ts';
+import { deployTargetEnv, listDomains, listPages, listWorkers, parseDeployTarget, pickConnection, readDeployTarget } from '../src/hosting.ts';
 
 const answer = (status: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status })) as typeof fetch;
 
@@ -61,4 +61,26 @@ test('hosting: the grant is the asked one, then the target, then a project clien
   assert.equal(pickConnection([other, school], { slug: 'petekkoleji', requested: 1 })?.id, 1);
   assert.equal(pickConnection([other, school], { slug: 'petekkoleji', target: { provider: 'cloudflare', kind: 'workers', name: 'x', productionBranch: 'main', connectionId: 1, accountId: 'b' } })?.id, 1);
   assert.equal(pickConnection([other], { slug: 'demo-bakery' }), null);
+});
+
+test('hosting: the domains say what serves them, a pages.dev CNAME naming the Pages project', async () => {
+  const fetchImpl = (async (url: string) => {
+    const body = (result: unknown) => new Response(JSON.stringify({ success: true, result }), { status: 200 });
+    if (url.includes('/zones?account.id=')) return body([{ id: 'z1', name: 'petekkoleji.com' }]);
+    if (url.endsWith('/workers/domains')) return body([]);
+    if (url.includes('/workers/routes')) return body([{ pattern: 'petekkoleji.com/api/mail*', script: 'petekkoleji-mailer' }]);
+    if (url.includes('/dns_records')) return body([
+      { type: 'CNAME', name: 'petekkoleji.com', content: 'petekkoleji-site.pages.dev', proxied: true },
+      { type: 'CNAME', name: 'cms.petekkoleji.com', content: 'directus.example.net', proxied: true },
+      { type: 'MX', name: 'petekkoleji.com', content: 'mx.example.net' },
+    ]);
+    return new Response('{}', { status: 404 });
+  }) as typeof fetch;
+  const domains = await listDomains('acc', 'tok', fetchImpl);
+  assert.ok(domains.ok);
+  assert.deepEqual(domains.ok && domains.items.map((d) => `${d.host} ${d.kind} ${d.name}`), [
+    'petekkoleji.com/api/mail* workers petekkoleji-mailer',
+    'petekkoleji.com pages petekkoleji-site',
+    'cms.petekkoleji.com dns directus.example.net',
+  ]);
 });

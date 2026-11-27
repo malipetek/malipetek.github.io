@@ -102,6 +102,50 @@ export async function listWorkers(accountId: string, token: string, fetchImpl: F
   return { ok: true, items };
 }
 
+/**
+ * What answers each of the account's domains: a Worker route or custom
+ * domain names its script, a CNAME to `<name>.pages.dev` names a Pages
+ * project, anything else is named by its DNS target. This is how a Pages site
+ * is found with a grant that may not list Pages.
+ */
+export type ServedBy = { host: string; kind: 'workers' | 'pages' | 'dns'; name: string; via: string };
+
+export async function listDomains(accountId: string, token: string, fetchImpl: Fetch = fetch): Promise<Listing<ServedBy>> {
+  const zones = await call(fetchImpl, token, `/zones?account.id=${encodeURIComponent(accountId)}&per_page=50`);
+  if (zones.status !== 200 || zones.body?.success !== true) return failure(zones.status, zones.body, 'Zone: Read');
+  const items: ServedBy[] = [];
+  const seen = new Set<string>();
+  const add = (entry: ServedBy) => {
+    const key = `${entry.host} ${entry.kind} ${entry.name}`;
+    if (!seen.has(key)) { seen.add(key); items.push(entry); }
+  };
+  const custom = await call(fetchImpl, token, `/accounts/${encodeURIComponent(accountId)}/workers/domains`);
+  if (custom.status === 200 && Array.isArray(custom.body?.result)) {
+    for (const d of custom.body.result) if (d?.hostname && d?.service) add({ host: String(d.hostname), kind: 'workers', name: String(d.service), via: 'Worker custom domain' });
+  }
+  for (const zone of (Array.isArray(zones.body.result) ? zones.body.result : []).slice(0, 20)) {
+    const zoneId = encodeURIComponent(String(zone?.id ?? ''));
+    if (!zoneId) continue;
+    const [routes, dns] = await Promise.all([
+      call(fetchImpl, token, `/zones/${zoneId}/workers/routes`),
+      call(fetchImpl, token, `/zones/${zoneId}/dns_records?per_page=100`),
+    ]);
+    if (routes.status === 200 && Array.isArray(routes.body?.result)) {
+      for (const r of routes.body.result) if (r?.pattern && r?.script) add({ host: String(r.pattern), kind: 'workers', name: String(r.script), via: 'Worker route' });
+    }
+    if (dns.status === 200 && Array.isArray(dns.body?.result)) {
+      for (const r of dns.body.result) {
+        if (!r?.name || !['CNAME', 'A', 'AAAA'].includes(r?.type)) continue;
+        const content = String(r.content ?? '');
+        const pages = /^([a-z0-9-]+)\.pages\.dev\.?$/i.exec(content);
+        if (pages) add({ host: String(r.name), kind: 'pages', name: pages[1].toLowerCase(), via: `CNAME ${content}` });
+        else if (r.type === 'CNAME' || String(r.name) === String(zone?.name)) add({ host: String(r.name), kind: 'dns', name: content, via: `${r.type} ${content}${r.proxied ? ' (proxied)' : ''}` });
+      }
+    }
+  }
+  return { ok: true, items };
+}
+
 const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const BRANCH = /^[A-Za-z0-9._/-]{1,100}$/;
 

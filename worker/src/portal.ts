@@ -138,7 +138,7 @@ import { ensureRepo, useClientRepo, installationToken } from './ghapp.ts';
 import { accessFor, authorizeWorkbenchRoute, canWorkProject, isSuperAdmin, ownsProject, projectScope, sealProjectSecret, openProjectSecret } from './projectAccess.ts';
 import { moveSite, moveTicket, promotePrimary } from './move.ts';
 import { runIntake } from './intake.ts';
-import { listPages, listWorkers, parseDeployTarget, pickConnection, readDeployTarget, type ConnectionSummary } from './hosting.ts';
+import { listDomains, listPages, listWorkers, parseDeployTarget, pickConnection, readDeployTarget, type ConnectionSummary } from './hosting.ts';
 import { isAudioType, transcribe } from './transcribe.ts';
 import { checkUploads, fileCount, fileResponse, FILE_LIMITS, sizeText, storeFiles, withFiles, type FileMeta, type Upload } from './files.ts';
 
@@ -3723,8 +3723,8 @@ portal.get('/admin/projects/:id/cloudflare', async (c) => {
     if (!token) return reply(c, { connected: false, via: 'oauth', lapsed: true, connectionId: chosen.id, connections, target });
     const accountId = (requested ? null : target?.connectionId === chosen.id ? target.accountId : null) ?? chosen.accounts[0]?.id ?? '';
     // Our OAuth client asks for Workers, not Pages: listing Pages would only say "not allowed".
-    const workers = await listWorkers(accountId, token);
-    return reply(c, { connected: true, via: 'oauth', connectionId: chosen.id, accountId, connections, pages: null, workers, target });
+    const [workers, domains] = await Promise.all([listWorkers(accountId, token), listDomains(accountId, token)]);
+    return reply(c, { connected: true, via: 'oauth', connectionId: chosen.id, accountId, connections, pages: null, workers, domains, target });
   }
   const rows = (await c.env.DB.prepare(`SELECT name, value_enc FROM project_secrets WHERE project_id=? AND name IN ('CLOUDFLARE_ACCOUNT_ID','CLOUDFLARE_API_TOKEN')`)
     .bind(id).all<{ name: string; value_enc: string }>()).results ?? [];
@@ -3741,8 +3741,8 @@ portal.get('/admin/projects/:id/cloudflare', async (c) => {
   } catch {
     return reply(c, { error: 'secrets_unavailable' }, 503);
   }
-  const [pages, workers] = await Promise.all([listPages(accountId, token), listWorkers(accountId, token)]);
-  return reply(c, { connected: true, via: 'token', accountId, connections, pages, workers, target });
+  const [pages, workers, domains] = await Promise.all([listPages(accountId, token), listWorkers(accountId, token), listDomains(accountId, token)]);
+  return reply(c, { connected: true, via: 'token', accountId, connections, pages, workers, domains, target });
 });
 
 /** Choose (or clear, with `null`) where this project's work goes live. */

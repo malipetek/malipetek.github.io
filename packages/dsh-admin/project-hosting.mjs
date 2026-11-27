@@ -43,6 +43,7 @@ export function hostingMessage(project, result) {
       : `${project.name}: read with the Cloudflare token stored on the project, account ${result.accountId}.`,
     result.workers ? section('Worker scripts', result.workers, (w) => `${w.name}${w.modifiedOn ? ` (changed ${w.modifiedOn.slice(0, 10)})` : ''}`) : null,
     result.pages ? section('Pages projects', result.pages, (p) => `${p.name}${p.productionBranch ? ` (production branch ${p.productionBranch})` : ''}${p.domains?.length ? ` · ${p.domains.join(', ')}` : ''}`) : null,
+    result.domains ? section('What serves each domain', result.domains, (d) => `${d.host}: ${d.kind === 'workers' ? `Worker ${d.name}` : d.kind === 'pages' ? `Pages project ${d.name}` : d.name} (${d.via})`) : null,
     list,
     target,
   ].filter(Boolean).join('\n');

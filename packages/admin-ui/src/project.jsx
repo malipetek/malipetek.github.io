@@ -1227,6 +1227,21 @@ function Hosting({ project }) {
               : 'Pick where fleet runs deploy: previews from ticket branches, production from the production branch.'}
           </p>
           {info.workers ? listing('Worker scripts', 'workers', info.workers, (w) => (w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : '')) : null}
+          {info.domains?.ok && info.domains.items.length ? (
+            <div className="aw-project__hosting-list">
+              <h4>What serves each domain</h4>
+              <ul className="aw-project__hosting-items">
+                {info.domains.items.map((d) => (
+                  <li key={`${d.host} ${d.kind} ${d.name}`}>
+                    <span><strong>{d.host}</strong> <span className="ui-note">{d.kind === 'workers' ? `Worker ${d.name}` : d.kind === 'pages' ? `Pages project ${d.name}` : d.name} · {d.via}</span></span>
+                    {d.kind === 'dns' ? null : isTarget(d.kind, d.name)
+                      ? <Tag tone="ok">Deploy target</Tag>
+                      : <Button size="sm" busy={write.busy} onClick={() => choose({ kind: d.kind, name: d.name, productionBranch: 'main' })}>Deploy here</Button>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {info.pages ? listing('Pages projects', 'pages', info.pages, (p) => [p.productionBranch ? `production ${p.productionBranch}` : null, ...(p.domains ?? [])].filter(Boolean).join(' · ')) : null}
         </>
       ) : null}
