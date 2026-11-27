@@ -31,6 +31,8 @@ test('every operator-facing write asks, and names the object', () => {
     ['admin_project_local', { action: 'configure', projectId: 'p2', path: '/tmp/y' }, /p2 at \/tmp\/y/],
     ['admin_project_local', { action: 'clone', projectId: 'p2' }, /Clone project p2/],
     ['admin_project_operations', { operation: 'project.update', projectId: 'p2' }, /Change project p2/],
+    ['admin_project_operations', { operation: 'project.update', projectId: 'p2', ownerUserId: 'owner@example.com' }, /Make owner@example\.com the owner of project p2\? Deploys and repo access on it will use that person's own Cloudflare and GitHub connections\./],
+    ['admin_project_operations', { operation: 'project.update', projectId: 'p2', ownerUserId: null }, /Clear the owner of project p2\? Deploys lose their credentials until a new owner is set\./],
     ['admin_project_operations', { operation: 'mentions.send', projectId: 'p2' }, /Notify the saved recipients on project p2/],
     ['admin_project_operations', { operation: 'work.draft', projectId: 'p2', title: 'Tidy' }, /draft task “Tidy” on p2/],
     ['admin_project_operations', { operation: 'work.queue', projectId: 'p2', title: 'Tidy' }, /approved task “Tidy” on p2/],

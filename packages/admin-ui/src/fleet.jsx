@@ -807,6 +807,16 @@ function AddPeopleModal({ project, onClose }) {
 export function ProjectPeople({ project: p }) {
   const { api, act, ask, setModal, open } = useAdmin();
   const people = p.clients ?? [];
+  // The list carries owner_user_id; removing the owner clears ownership too.
+  const remove = (person) => ask({
+    title: `Remove ${person.email} from ${p.name}?`,
+    text: p.owner_user_id === person.id
+      ? 'They stop seeing its requests and stop getting its emails. They are the project owner: ownership is cleared, and deploys lose their credentials until a new owner is set.'
+      : 'They stop seeing its requests and stop getting its emails. Their account and their own requests stay.',
+    confirm: 'Remove',
+    danger: true,
+    run: () => act(() => api('DELETE', `/admin/clients/${person.id}/projects/${p.id}`), `Removed ${person.email}.`).catch(() => undefined),
+  });
   return (
     <div className="aw-people">
       <div className="aw-row-h">
@@ -824,6 +834,7 @@ export function ProjectPeople({ project: p }) {
                 {person.name ? `${person.name} · ` : ''}
                 {person.email}
               </button>
+              {p.owner_user_id === person.id ? <Tag tone="ok">Owner</Tag> : null}
               {person.pending ? <Tag tone="warn">invited</Tag> : null}
               <label className="aw-check" title="Mail them about every request on this project, not only the ones they filed">
                 <input
@@ -842,15 +853,7 @@ export function ProjectPeople({ project: p }) {
                 size="sm"
                 kind="ghost"
                 title="Take them off this project"
-                onClick={() =>
-                  ask({
-                    title: `Remove ${person.email} from ${p.name}?`,
-                    text: 'They stop seeing its requests and stop getting its emails. Their account and their own requests stay.',
-                    confirm: 'Remove',
-                    danger: true,
-                    run: () => act(() => api('DELETE', `/admin/clients/${person.id}/projects/${p.id}`), `Removed ${person.email}.`).catch(() => undefined),
-                  })
-                }
+                onClick={() => remove(person)}
               >
                 ✕
               </Button>
@@ -858,7 +861,7 @@ export function ProjectPeople({ project: p }) {
           ))}
         </ul>
       ) : (
-        <p className="aw-muted">Nobody yet. Only you see it.</p>
+        <p className="aw-muted">Nobody yet. Only you see it. An owner must first be added before the project can use anyone’s connections.</p>
       )}
     </div>
   );

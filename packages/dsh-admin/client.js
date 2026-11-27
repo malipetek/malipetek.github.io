@@ -17244,7 +17244,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }
     );
   }
-  function PeopleTable({ project, recipients, clients, memberships, canManage, onPeopleChanged, onRemoveDeveloper, busy }) {
+  function PeopleTable({ project, recipients, clients, memberships, ownerUserId, canManage, canSetOwner, onPeopleChanged, onRemoveDeveloper, busy }) {
     const { api, act, ask, open } = useAdmin();
     const byKey = /* @__PURE__ */ new Map();
     for (const dev of Array.isArray(memberships) ? memberships : []) {
@@ -17274,7 +17274,20 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       byKey.set(key, { key, userId: client.id ?? null, name: client.name || null, email: client.email, role: "Client", client, developer: null });
     }
     const rows = [...byKey.values()];
-    if (!rows.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nobody yet. Only you see this project." });
+    if (!rows.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nobody yet. Only you see this project. An owner must first be added \u2014 invite a person, then make them the owner here." });
+    const makeOwner = (row) => ask({
+      title: `Make ${row.client.email} the owner of ${project.name}?`,
+      text: "Their own Cloudflare and GitHub connections will be used for this project\u2019s deploys and repo access. The previous owner stops providing them.",
+      confirm: "Make owner",
+      run: () => act(() => api("PATCH", pathFor2(project), { ownerUserId: row.client.id }), `${row.client.email} now owns ${project.name}; its deploys use their connections.`).then(onPeopleChanged).catch(() => void 0)
+    });
+    const removeClient = (row) => ask({
+      title: `Remove ${row.client.email} from ${project.name}?`,
+      text: row.client.id === ownerUserId ? "They stop seeing its requests and stop getting its emails. They are the project owner: ownership is cleared, and deploys lose their credentials until a new owner is set." : "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.",
+      confirm: "Remove",
+      danger: true,
+      run: () => act(() => api("DELETE", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => void 0)
+    });
     return /* @__PURE__ */ jsx(
       DataTable,
       {
@@ -17299,6 +17312,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             header: "Role",
             fit: true,
             render: (row) => /* @__PURE__ */ jsxs("span", { className: "aw-project__rolecell", children: [
+              row.userId && row.userId === ownerUserId ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "Owner" }) : null,
               /* @__PURE__ */ jsx(Tag, { tone: row.role === "Trusted developer" ? void 0 : "dash", children: row.role }),
               row.client?.pending ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "invited" }) : null
             ] })
@@ -17309,6 +17323,16 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             label: "Manage",
             fit: true,
             render: (row) => /* @__PURE__ */ jsx("span", { className: "aw-project__peopleact", children: row.client ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+              row.client.id !== ownerUserId && canSetOwner ? /* @__PURE__ */ jsx(
+                Button,
+                {
+                  size: "sm",
+                  kind: "ghost",
+                  title: `Make ${row.client.email} the project owner`,
+                  onClick: () => makeOwner(row),
+                  children: "Make owner"
+                }
+              ) : null,
               /* @__PURE__ */ jsxs("label", { className: "aw-check", title: "Mail them about every request on this project, not only the ones they filed", children: [
                 /* @__PURE__ */ jsx(
                   "input",
@@ -17329,13 +17353,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                   size: "sm",
                   kind: "ghost",
                   title: "Take them off this project",
-                  onClick: () => ask({
-                    title: `Remove ${row.client.email} from ${project.name}?`,
-                    text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.",
-                    confirm: "Remove",
-                    danger: true,
-                    run: () => act(() => api("DELETE", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => void 0)
-                  }),
+                  onClick: () => removeClient(row),
                   children: "\u2715"
                 }
               )
@@ -17366,6 +17384,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const admin = data.access?.superAdmin === true || data.identity?.access?.superAdmin === true || user?.role === "admin";
     const owner = state.value?.ownerUserId && state.value.ownerUserId === user?.id;
     const ownerPerson = (state.value?.clients ?? project.clients ?? []).find((person) => person.id === state.value?.ownerUserId);
+    const attached = state.value?.clients ?? project.clients ?? [];
     const peopleChanged = useCallback(() => {
       void refreshPeople();
       void refreshRecipients();
@@ -17402,18 +17421,24 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         } }) }), children: "Add people" }) : null
       ] }),
       /* @__PURE__ */ jsxs("p", { className: "aw-project__ownership", children: [
-        /* @__PURE__ */ jsx("strong", { children: state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : "Owner not verified yet." }),
+        /* @__PURE__ */ jsx("strong", { children: state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : "No owner set yet." }),
         " ",
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "The client owns the project and can act independently. Select recipients in a work conversation to notify them \u2014 typed @names alone do not send notifications." })
+        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+          state.value?.ownerUserId ? "Their own Cloudflare and GitHub connections carry this project\u2019s deploys and repo access." : attached.length ? "Make one of the people below the owner: their connections then carry this project\u2019s deploys and repo access." : "An owner must first be added to the project \u2014 invite a person below, then make them the owner.",
+          " ",
+          "Select recipients in a work conversation to notify them \u2014 typed @names alone do not send notifications."
+        ] })
       ] }),
       /* @__PURE__ */ jsx(ResourceState, { state: recipients, refresh: refreshRecipients, rows: 3, children: /* @__PURE__ */ jsx(
         PeopleTable,
         {
           project,
           recipients: recipients.value?.recipients,
-          clients: project.clients ?? state.value?.clients ?? [],
+          clients: attached,
           memberships: state.value?.memberships ?? [],
+          ownerUserId: state.value?.ownerUserId ?? null,
           canManage: admin || owner,
+          canSetOwner: admin,
           onPeopleChanged: peopleChanged,
           onRemoveDeveloper: removeDeveloper,
           busy: writeState.busy
@@ -17468,6 +17493,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       ] }, item.name)) })
     ] });
     const accountName = grant?.accounts.find((a) => a.id === info?.accountId)?.name ?? info?.accountId;
+    const attachedClients = Array.isArray(project.clients) ? project.clients : [];
+    const goToPeople = () => {
+      if (typeof document === "undefined") return;
+      document.getElementById("project-people")?.scrollIntoView({ block: "start", behavior: "auto" });
+    };
     return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-hosting", children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
         /* @__PURE__ */ jsx("h3", { children: "Where it goes live" }),
@@ -17480,7 +17510,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         Empty,
         {
           title: "Set the project owner first",
-          hint: "Hosting reads only the owner's Cloudflare connection, and this project has no owner yet. Set one in Admin \u2192 Clients & projects; then their Workers show here.",
+          hint: attachedClients.length ? "Hosting reads only the owner's Cloudflare connection, and this project has no owner yet. Make one of the people below the owner in People & access; then their Workers show here." : "Hosting reads only the owner's Cloudflare connection, and this project has no one attached yet. An owner must first be added to the project in People & access below.",
+          action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: goToPeople, children: "Go to People & access" }),
           inline: true
         }
       ) : null,

@@ -193,6 +193,50 @@ test('brief persistence and project inventory use scoped SQL and parsed response
   const listing=await request('GET','/admin/projects');assert.equal(listing.status,200);assert.deepEqual((await listing.json() as any).projects.map((p:any)=>p.id),['a']);
   const me=await request('GET','/portal/me');assert.equal(me.status,200);const data=await me.json() as any;assert.equal(data.access.canUseWorkbench,true);assert.deepEqual(data.projects.map((p:any)=>p.id),['a']);
 });
+test('the project owner is set from an attached user only, and cleared on demand',async()=>{
+  const {sql,env,request:admin}=await authenticatedFixture('admin');
+  const requestFor=async(id:string)=>{
+    const token=`owner-session-${id}`;
+    sql.prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)').run(await sha256(token),id,Math.floor(Date.now()/1000)+3600,1);
+    return (method:string,path:string,body?:unknown)=>portal.request(path,{method,headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},...(body!==undefined?{body:JSON.stringify(body)}:{})},env,{waitUntil() {},passThroughOnException(){}} as any);
+  };
+  const owner=(id:string)=>(sql.prepare('SELECT owner_user_id FROM projects WHERE id=?').get(id) as any)?.owner_user_id;
+  // Unknown users, and users not attached through user_projects (a trusted
+  // developer is a member, not an attached client): refused, nothing changes.
+  for(const [identifier,error] of [['ghost','owner_not_found'],['other','owner_not_on_project'],['dev','owner_not_on_project']] as const) {
+    const refused=await admin('PATCH','/admin/projects/a',{ownerUserId:identifier});
+    assert.equal(refused.status,400,identifier); assert.deepEqual(await refused.json(),{error});
+  }
+  for(const bad of [5,{id:'owner'},'   ']) assert.equal((await admin('PATCH','/admin/projects/a',{ownerUserId:bad})).status,400);
+  assert.equal(owner('a'),'owner');
+  // Attach first, then set: the response names the owner the admin UI shows.
+  sql.exec("INSERT INTO user_projects(user_id,project_id) VALUES ('other','a')");
+  const set=await admin('PATCH','/admin/projects/a',{ownerUserId:'other'});
+  assert.equal(set.status,200);
+  const setData=await set.json() as any;
+  assert.equal(setData.project.ownerUserId,'other'); assert.equal(setData.project.ownerEmail,'other@example.com');
+  assert.equal(owner('a'),'other');
+  // An address names the same attached user.
+  const byEmail=await admin('PATCH','/admin/projects/a',{ownerUserId:'owner@example.com'});
+  assert.equal(byEmail.status,200); assert.equal(((await byEmail.json()) as any).project.ownerUserId,'owner');
+  // The list and detail the admin UI reads carry the owner's address.
+  const list=await admin('GET','/admin/projects');
+  assert.equal(((await list.json()) as any).projects.find((p:any)=>p.id==='a').owner_email,'owner@example.com');
+  const detail=await admin('GET','/admin/projects/a');
+  assert.equal(((await detail.json()) as any).project.owner_email,'owner@example.com');
+  // null clears the owner; the other fields keep working beside it.
+  const cleared=await admin('PATCH','/admin/projects/a',{ownerUserId:null,name:'Renamed'});
+  assert.equal(cleared.status,200);
+  const clearedData=await cleared.json() as any;
+  assert.equal(clearedData.project.ownerUserId,null); assert.equal(clearedData.project.ownerEmail,null); assert.equal(clearedData.project.name,'Renamed');
+  assert.equal(owner('a'),null);
+  // Ownership is an administrator's decision: a trusted developer keeps the
+  // route for the fields they always had, but cannot move the owner.
+  const dev=await requestFor('dev');
+  assert.equal((await dev('PATCH','/admin/projects/a',{name:'Dev rename'})).status,200);
+  assert.equal((await dev('PATCH','/admin/projects/a',{ownerUserId:'other'})).status,403);
+  assert.equal(owner('a'),null);
+});
 test('trusted project creators immediately gain explicit new-project membership, clients do not',async()=>{
   for(const identity of ['dev','other']) {
     const {sql,request}=await authenticatedFixture(identity);

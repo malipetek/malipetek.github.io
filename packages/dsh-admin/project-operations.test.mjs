@@ -15,3 +15,12 @@ test('coordinator never forwards global, arbitrary request fields or secret oper
  assert.deepEqual(projectOperationRequest('project.update',{projectId:'p',name:'Renamed',role:'admin',secret:'NO',repo:'evil',brief:{goal:'Ship'}}),{method:'PATCH',path:'/admin/projects/p',body:{name:'Renamed',brief:{goal:'Ship'}}});
  assert.deepEqual(projectOperationRequest('mentions.send',{projectId:'p',ticketId:1,messageId:2,recipientUserIds:['u'],requestId:'request_123',email:'evil'}).body,{ticketId:1,messageId:2,recipientUserIds:['u'],requestId:'request_123'});
 });
+test('project.update passes ownerUserId through to the same PATCH, null included',()=>{
+ // Same endpoint, same validation as the UI's Make owner (rule 5).
+ assert.deepEqual(projectOperationRequest('project.update',{projectId:'p',ownerUserId:'u-owner'}),{method:'PATCH',path:'/admin/projects/p',body:{ownerUserId:'u-owner'}});
+ assert.deepEqual(projectOperationRequest('project.update',{projectId:'p',ownerUserId:'owner@example.com'}).body,{ownerUserId:'owner@example.com'});
+ // null clears the owner; it must survive pick() and not be dropped as absent.
+ assert.deepEqual(projectOperationRequest('project.update',{projectId:'p',ownerUserId:null}).body,{ownerUserId:null});
+ // Still the same field list: nothing else may ride along.
+ assert.deepEqual(projectOperationRequest('project.update',{projectId:'p',ownerUserId:'u1',owner:'u2',role:'admin'}).body,{ownerUserId:'u1'});
+});

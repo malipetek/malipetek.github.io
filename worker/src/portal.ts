@@ -31,7 +31,7 @@
  *   POST  /admin/clients                  { email, name?, locale?, projectIds[], note? } → invite
  *   POST  /admin/clients/:userId/invite   send a fresh link, killing the unused ones
  *   DELETE /admin/clients/:userId/invite  revoke the unused links
- *   GET   /admin/projects   POST /admin/projects { name, slug }   PATCH /admin/projects/:id { name?, kind? }
+ *   GET   /admin/projects   POST /admin/projects { name, slug }   PATCH /admin/projects/:id { name?, kind?, ownerUserId? }
  *   PUT   /admin/clients/:userId/projects/:projectId { copy? }   (copy: mail them every request on it)
  *   DELETE /admin/clients/:userId/projects/:projectId
  *
@@ -3469,10 +3469,11 @@ portal.get('/admin/projects', async (c) => {
   const [{ sitesDomain }, projects, slugs, counts, sites, installations, links] = await Promise.all([
     getSettings(c.env),
     c.env.DB.prepare(
-      `SELECT id, slug, name, kind, brief, repo, repo_kind, repo_wanted, repo_error, repo_claim_node, repo_claim_at,
-              github_installation_id, created_by, owner_user_id, onboarded_at, created_at, solutions
-         FROM projects p WHERE ${scope.sql} ORDER BY name`,
-    ).bind(...scope.bindings).all<ProjectRow & { repo_wanted: number; repo_error: string | null; repo_claim_node: string | null; repo_claim_at: number | null; github_installation_id: number | null }>(),
+      `SELECT p.id, p.slug, p.name, p.kind, p.brief, p.repo, p.repo_kind, p.repo_wanted, p.repo_error, p.repo_claim_node, p.repo_claim_at,
+              p.github_installation_id, p.created_by, p.owner_user_id, p.onboarded_at, p.created_at, p.solutions,
+              u.email AS owner_email
+         FROM projects p LEFT JOIN users u ON u.id = p.owner_user_id WHERE ${scope.sql} ORDER BY p.name`,
+    ).bind(...scope.bindings).all<ProjectRow & { repo_wanted: number; repo_error: string | null; repo_claim_node: string | null; repo_claim_at: number | null; github_installation_id: number | null } & { owner_email: string | null }>(),
     onlineSlugs(c.env),
     c.env.DB.prepare(
       `SELECT project_id, count(*) AS n FROM tickets t WHERE project_id IS NOT NULL AND ${ticketScope.sql} GROUP BY project_id`,
@@ -3688,7 +3689,7 @@ portal.post('/admin/projects', async (c) => {
  * The slug stays: nodes map it to a folder and the first site is named after it.
  */
 portal.get('/admin/projects/:id', async (c) => {
-  const project = await c.env.DB.prepare('SELECT id,slug,name,kind,brief,repo,owner_user_id,solutions FROM projects WHERE id=?').bind(c.req.param('id')).first<{brief:string;solutions:string}>();
+  const project = await c.env.DB.prepare('SELECT p.id,p.slug,p.name,p.kind,p.brief,p.repo,p.owner_user_id,p.solutions,u.email AS owner_email FROM projects p LEFT JOIN users u ON u.id=p.owner_user_id WHERE p.id=?').bind(c.req.param('id')).first<{brief:string;solutions:string;owner_email:string|null}>();
   return project ? reply(c,{project:{...project,brief:parseBrief(project.brief),solutions:parseSolutions(project.solutions)}}) : reply(c,{error:'not_found'},404);
 });
 
@@ -3863,8 +3864,16 @@ portal.post('/admin/projects/:id/git-token', async (c) => {
   } catch { return reply(c,{error:'github_token_unavailable'},502); }
 });
 
+/**
+ * One edit endpoint for a project. `ownerUserId` moves ownership (rule 2):
+ * the owner must already be attached to the project through `user_projects`
+ * — an account id or the address of one — and `null` clears it, after which
+ * the project has no client credential until a new owner is set. An
+ * administrator's field: nothing here ever attaches another user's grant;
+ * ownership decides whose are used.
+ */
 portal.patch('/admin/projects/:id', async (c) => {
-  const body = await readJson<{ name?: unknown; kind?: unknown; brief?: unknown; solutions?: unknown }>(c);
+  const body = await readJson<{ name?: unknown; kind?: unknown; brief?: unknown; solutions?: unknown; ownerUserId?: unknown }>(c);
   const current = await c.env.DB.prepare('SELECT kind FROM projects WHERE id = ?').bind(c.req.param('id')).first<{kind:string}>();
   if (!current) return reply(c, { error: 'not_found' }, 404);
   const sets: [string, unknown][] = [];
@@ -3888,12 +3897,34 @@ portal.patch('/admin/projects/:id', async (c) => {
     if (!isProjectKind(body.kind)) return reply(c, { error: 'bad_kind' }, 400);
     sets.push(['kind', body.kind]);
   }
+  if (body?.ownerUserId !== undefined) {
+    // Ownership decides whose connections the project deploys with (rule 2),
+    // so like the deploy-target write it is an administrator's decision, not
+    // a trusted developer's.
+    if (!isSuperAdmin(c.get('user'))) return reply(c, { error: 'forbidden' }, 403);
+    if (body.ownerUserId === null) {
+      sets.push(['owner_user_id', null]);
+    } else if (typeof body.ownerUserId === 'string' && body.ownerUserId.trim()) {
+      const identifier = body.ownerUserId.trim();
+      // The same lookup memberships use: an account id, or the address of one.
+      const owner = await c.env.DB.prepare('SELECT id FROM users WHERE id = ? OR email = ?').bind(identifier, identifier).first<{id:string}>();
+      if (!owner) return reply(c, { error: 'owner_not_found' }, 400);
+      const attached = await c.env.DB.prepare('SELECT 1 FROM user_projects WHERE user_id = ? AND project_id = ?')
+        .bind(owner.id, c.req.param('id')).first();
+      if (!attached) return reply(c, { error: 'owner_not_on_project' }, 400);
+      sets.push(['owner_user_id', owner.id]);
+    } else {
+      return reply(c, { error: 'bad_owner' }, 400);
+    }
+  }
   if (!sets.length) return reply(c, { error: 'nothing_to_change' }, 400);
   const res = await c.env.DB.prepare(`UPDATE projects SET ${sets.map(([k]) => `${k} = ?`).join(', ')} WHERE id = ?`)
     .bind(...sets.map(([, v]) => v), c.req.param('id'))
     .run();
   if (!res.meta.changes) return reply(c, { error: 'not_found' }, 404);
-  const project = await c.env.DB.prepare('SELECT id, slug, name, kind, brief FROM projects WHERE id = ?').bind(c.req.param('id')).first<{id:string;slug:string;name:string;kind:string;brief:string}>();
+  const project = await c.env.DB.prepare(
+    'SELECT p.id, p.slug, p.name, p.kind, p.brief, p.owner_user_id AS ownerUserId, u.email AS ownerEmail FROM projects p LEFT JOIN users u ON u.id = p.owner_user_id WHERE p.id = ?',
+  ).bind(c.req.param('id')).first<{id:string;slug:string;name:string;kind:string;brief:string;ownerUserId:string|null;ownerEmail:string|null}>();
   return reply(c, { ok: true, project: project ? {...project,brief:parseBrief(project.brief)} : null });
 });
 

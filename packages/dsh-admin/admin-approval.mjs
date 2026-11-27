@@ -54,8 +54,16 @@ function describe(tool, action, args) {
       return `Point project ${text(args.projectId) ?? ''} at ${text(args.path) ?? 'a folder'} on this machine?`;
     case 'admin_project_local clone':
       return `Clone project ${text(args.projectId) ?? ''} onto this machine?`;
-    case 'admin_project_operations project.update':
+    case 'admin_project_operations project.update': {
+      // An owner change is a credential decision (rule 2): name the person
+      // whose Cloudflare and GitHub connections the project will use.
+      if (args.ownerUserId !== undefined) {
+        return args.ownerUserId === null
+          ? `Clear the owner of project ${text(args.projectId) ?? ''}? Deploys lose their credentials until a new owner is set.`
+          : `Make ${text(args.ownerUserId) ?? 'this person'} the owner of project ${text(args.projectId) ?? ''}? Deploys and repo access on it will use that person's own Cloudflare and GitHub connections.`;
+      }
       return `Change project ${text(args.projectId) ?? ''}?`;
+    }
     case 'admin_project_operations mentions.send':
       return `Notify the saved recipients on project ${text(args.projectId) ?? ''}?`;
     case 'admin_project_operations work.draft':

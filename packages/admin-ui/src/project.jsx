@@ -954,8 +954,11 @@ function ProjectInviteModal({ project, onClose }) {
 /**
  * One table for everyone attached to the project: clients and trusted developers,
  * told apart by role instead of repeating the same names across multiple blocks.
+ * The owner is whoever `ownerUserId` names: their row is marked, and every
+ * other attached client can be made the owner in place (rule 2 — the owner's
+ * own connections then carry the project's deploys and repo access).
  */
-function PeopleTable({ project, recipients, clients, memberships, canManage, onPeopleChanged, onRemoveDeveloper, busy }) {
+function PeopleTable({ project, recipients, clients, memberships, ownerUserId, canManage, canSetOwner, onPeopleChanged, onRemoveDeveloper, busy }) {
   const { api, act, ask, open } = useAdmin();
   const byKey = new Map();
   for (const dev of Array.isArray(memberships) ? memberships : []) {
@@ -981,7 +984,22 @@ function PeopleTable({ project, recipients, clients, memberships, canManage, onP
     byKey.set(key, { key, userId: client.id ?? null, name: client.name || null, email: client.email, role: 'Client', client, developer: null });
   }
   const rows = [...byKey.values()];
-  if (!rows.length) return <p className="aw-muted">Nobody yet. Only you see this project.</p>;
+  if (!rows.length) return <p className="aw-muted">Nobody yet. Only you see this project. An owner must first be added — invite a person, then make them the owner here.</p>;
+  const makeOwner = row => ask({
+    title: `Make ${row.client.email} the owner of ${project.name}?`,
+    text: 'Their own Cloudflare and GitHub connections will be used for this project’s deploys and repo access. The previous owner stops providing them.',
+    confirm: 'Make owner',
+    run: () => act(() => api('PATCH', pathFor(project), { ownerUserId: row.client.id }), `${row.client.email} now owns ${project.name}; its deploys use their connections.`).then(onPeopleChanged).catch(() => undefined),
+  });
+  const removeClient = row => ask({
+    title: `Remove ${row.client.email} from ${project.name}?`,
+    text: row.client.id === ownerUserId
+      ? 'They stop seeing its requests and stop getting its emails. They are the project owner: ownership is cleared, and deploys lose their credentials until a new owner is set.'
+      : 'They stop seeing its requests and stop getting its emails. Their account and their own requests stay.',
+    confirm: 'Remove',
+    danger: true,
+    run: () => act(() => api('DELETE', `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => undefined),
+  });
   return (
     <DataTable
       className="aw-project__people"
@@ -1006,6 +1024,7 @@ function PeopleTable({ project, recipients, clients, memberships, canManage, onP
           fit: true,
           render: row => (
             <span className="aw-project__rolecell">
+              {row.userId && row.userId === ownerUserId ? <Tag tone="ok">Owner</Tag> : null}
               <Tag tone={row.role === 'Trusted developer' ? undefined : 'dash'}>{row.role}</Tag>
               {row.client?.pending ? <Tag tone="warn">invited</Tag> : null}
             </span>
@@ -1020,6 +1039,16 @@ function PeopleTable({ project, recipients, clients, memberships, canManage, onP
             <span className="aw-project__peopleact">
               {row.client ? (
                 <>
+                  {row.client.id !== ownerUserId && canSetOwner ? (
+                    <Button
+                      size="sm"
+                      kind="ghost"
+                      title={`Make ${row.client.email} the project owner`}
+                      onClick={() => makeOwner(row)}
+                    >
+                      Make owner
+                    </Button>
+                  ) : null}
                   <label className="aw-check" title="Mail them about every request on this project, not only the ones they filed">
                     <input
                       type="checkbox"
@@ -1035,13 +1064,7 @@ function PeopleTable({ project, recipients, clients, memberships, canManage, onP
                     size="sm"
                     kind="ghost"
                     title="Take them off this project"
-                    onClick={() => ask({
-                      title: `Remove ${row.client.email} from ${project.name}?`,
-                      text: 'They stop seeing its requests and stop getting its emails. Their account and their own requests stay.',
-                      confirm: 'Remove',
-                      danger: true,
-                      run: () => act(() => api('DELETE', `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => undefined),
-                    })}
+                    onClick={() => removeClient(row)}
                   >
                     ✕
                   </Button>
@@ -1076,6 +1099,7 @@ function People({ project, refresh }) {
   const admin = data.access?.superAdmin === true || data.identity?.access?.superAdmin === true || user?.role === 'admin';
   const owner = state.value?.ownerUserId && state.value.ownerUserId === user?.id;
   const ownerPerson = (state.value?.clients ?? project.clients ?? []).find(person => person.id === state.value?.ownerUserId);
+  const attached = state.value?.clients ?? project.clients ?? [];
   const peopleChanged = useCallback(() => { void refreshPeople(); void refreshRecipients(); void refresh(); }, [refreshPeople, refreshRecipients, refresh]);
   const grant = event => {
     event.preventDefault();
@@ -1110,16 +1134,25 @@ function People({ project, refresh }) {
         ) : null}
       </div>
       <p className="aw-project__ownership">
-        <strong>{state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : 'Owner not verified yet.'}</strong>{' '}
-        <span className="aw-muted">The client owns the project and can act independently. Select recipients in a work conversation to notify them — typed @names alone do not send notifications.</span>
+        <strong>{state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : 'No owner set yet.'}</strong>{' '}
+        <span className="aw-muted">
+          {state.value?.ownerUserId
+            ? 'Their own Cloudflare and GitHub connections carry this project’s deploys and repo access.'
+            : attached.length
+              ? 'Make one of the people below the owner: their connections then carry this project’s deploys and repo access.'
+              : 'An owner must first be added to the project — invite a person below, then make them the owner.'}
+          {' '}Select recipients in a work conversation to notify them — typed @names alone do not send notifications.
+        </span>
       </p>
       <ResourceState state={recipients} refresh={refreshRecipients} rows={3}>
         <PeopleTable
           project={project}
           recipients={recipients.value?.recipients}
-          clients={project.clients ?? state.value?.clients ?? []}
+          clients={attached}
           memberships={state.value?.memberships ?? []}
+          ownerUserId={state.value?.ownerUserId ?? null}
           canManage={admin || owner}
+          canSetOwner={admin}
           onPeopleChanged={peopleChanged}
           onRemoveDeveloper={removeDeveloper}
           busy={writeState.busy}
@@ -1193,6 +1226,12 @@ function Hosting({ project }) {
     </div>
   );
   const accountName = grant?.accounts.find((a) => a.id === info?.accountId)?.name ?? info?.accountId;
+  const attachedClients = Array.isArray(project.clients) ? project.clients : [];
+  // The owner is made in People & access, one section down on this tab.
+  const goToPeople = () => {
+    if (typeof document === 'undefined') return;
+    document.getElementById('project-people')?.scrollIntoView({ block: 'start', behavior: 'auto' });
+  };
   return (
     <section className="aw-project__section" id="project-hosting">
       <div className="aw-row-h">
@@ -1205,7 +1244,10 @@ function Hosting({ project }) {
       {info?.needsOwner ? (
         <Empty
           title="Set the project owner first"
-          hint="Hosting reads only the owner's Cloudflare connection, and this project has no owner yet. Set one in Admin → Clients & projects; then their Workers show here."
+          hint={attachedClients.length
+            ? "Hosting reads only the owner's Cloudflare connection, and this project has no owner yet. Make one of the people below the owner in People & access; then their Workers show here."
+            : "Hosting reads only the owner's Cloudflare connection, and this project has no one attached yet. An owner must first be added to the project in People & access below."}
+          action={<Button size="sm" onClick={goToPeople}>Go to People & access</Button>}
           inline
         />
       ) : null}
