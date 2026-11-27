@@ -61,6 +61,7 @@ import { uploadDeployBlob, DEPLOY_LIMITS } from './sites.ts';
 import { cleanRepo, parseBrief } from './setup.ts';
 import { INTEGRATION_CATALOG, integrationsFor, parseSolutions } from './solutions.ts';
 import { openProjectSecret } from './projectAccess.ts';
+import { deployTargetEnv, readDeployTarget } from './hosting.ts';
 
 /** A node creating a repo holds the job this long before another may take it. */
 const REPO_CLAIM_SECONDS = 15 * 60;
@@ -556,9 +557,9 @@ node.get('/node/runs/:runId/credentials', async (c) => {
   // Same identity as /node/runs/:runId/release: the node names itself, and it
   // must match the run's holder while the run is live.
   if (run.status !== 'running' || run.node_id !== nodeId) return c.json({ error: 'forbidden' }, 403);
-  const project = await c.env.DB.prepare('SELECT p.id, p.solutions FROM tickets t JOIN projects p ON p.id = t.project_id WHERE t.id = ?')
+  const project = await c.env.DB.prepare('SELECT p.id, p.solutions, p.deploy_target FROM tickets t JOIN projects p ON p.id = t.project_id WHERE t.id = ?')
     .bind(run.ticket_id)
-    .first<{ id: string; solutions: string }>();
+    .first<{ id: string; solutions: string; deploy_target: string | null }>();
   // A ticket without a project has no client accounts to hand out.
   if (!project) return c.json({ error: 'not_found' }, 404);
 
@@ -591,6 +592,8 @@ node.get('/node/runs/:runId/credentials', async (c) => {
   } catch {
     return c.json({ error: 'secrets_unavailable' }, 503);
   }
+  // The target only means something next to the Cloudflare credential it deploys with.
+  if (integrations.some((entry) => entry.id === 'cloudflare')) Object.assign(env, deployTargetEnv(readDeployTarget(project.deploy_target)));
   await c.env.DB.prepare('INSERT INTO credential_access (project_id, run_id, node_id, integrations, at) VALUES (?, ?, ?, ?, ?)')
     .bind(project.id, runId, nodeId, JSON.stringify(integrations.map((entry) => entry.id)), now())
     .run();

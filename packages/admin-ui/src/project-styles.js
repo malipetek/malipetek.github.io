@@ -26,6 +26,10 @@ export default `
 
 /* Sections: separated by hairlines and breathing room, never nested cards */
 .aw-project__actions { display: flex; flex-wrap: wrap; gap: var(--aw-space-2, 8px); align-items: center; }
+.aw-project__hosting-list { margin-top: var(--aw-space-3, 12px); }
+.aw-project__hosting-list h4 { margin: 0 0 var(--aw-space-1, 4px); font-size: var(--aw-type-sm); color: var(--aw-ink-muted); font-weight: 600; }
+.aw-project__hosting-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.aw-project__hosting-items li { display: flex; align-items: center; justify-content: space-between; gap: var(--aw-space-2, 8px); padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline); }
 .aw-project__local-actions { margin-bottom: var(--aw-space-3, 12px); }
 .aw-project__body { min-width: 0; }
 .aw-project__section { padding: var(--aw-space-5, 24px) 0; border-bottom: 1px solid var(--aw-hairline); min-width: 0; }

@@ -23,6 +23,7 @@
     "ticket-thread.mjs",
     "picked-directory.mjs",
     "client-invite.mjs",
+    "project-hosting.mjs",
     "client.js",
     "cordis.patch.yml",
     "icon.svg",

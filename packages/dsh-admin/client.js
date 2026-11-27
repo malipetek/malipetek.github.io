@@ -13842,7 +13842,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         { name: "CLOUDFLARE_ACCOUNT_ID", label: "Account ID", secret: false },
         { name: "CLOUDFLARE_API_TOKEN", label: "API token", secret: true }
       ],
-      steps: ["Copy the Account ID from the Cloudflare dashboard for the account that owns the site.", "Open My Profile \u2192 API Tokens and create a custom token.", "Select only the account and zones for this project. Add the permissions we agree on, such as Workers Scripts: Edit to deploy Workers or DNS: Edit to set up a domain."],
+      steps: ["Copy the Account ID from the Cloudflare dashboard for the account that owns the site.", "Open My Profile \u2192 API Tokens and create a custom token.", "Select only the account and zones for this project. Add Cloudflare Pages: Edit and Workers Scripts: Edit so we can find your site and deploy previews and releases to it, plus DNS: Edit if we set up a domain."],
       docs: "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/",
       scope: "Limit the token to the relevant accounts, zones, and actions; do not share a Global API Key."
     },
@@ -16192,6 +16192,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 
 /* Sections: separated by hairlines and breathing room, never nested cards */
 .aw-project__actions { display: flex; flex-wrap: wrap; gap: var(--aw-space-2, 8px); align-items: center; }
+.aw-project__hosting-list { margin-top: var(--aw-space-3, 12px); }
+.aw-project__hosting-list h4 { margin: 0 0 var(--aw-space-1, 4px); font-size: var(--aw-type-sm); color: var(--aw-ink-muted); font-weight: 600; }
+.aw-project__hosting-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.aw-project__hosting-items li { display: flex; align-items: center; justify-content: space-between; gap: var(--aw-space-2, 8px); padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline); }
 .aw-project__local-actions { margin-bottom: var(--aw-space-3, 12px); }
 .aw-project__body { min-width: 0; }
 .aw-project__section { padding: var(--aw-space-5, 24px) 0; border-bottom: 1px solid var(--aw-hairline); min-width: 0; }
@@ -16754,6 +16758,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsx(ProjectSolutions, { project }) }),
       /* @__PURE__ */ jsx(Resources, { project, refresh, host }),
+      /* @__PURE__ */ jsx(Hosting, { project }),
       /* @__PURE__ */ jsx(People, { project, refresh }),
       /* @__PURE__ */ jsx(Secrets, { project })
     ] });
@@ -17411,6 +17416,50 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         ] }),
         /* @__PURE__ */ jsx(Feedback, { state: writeState })
       ] })
+    ] });
+  }
+  function Hosting({ project }) {
+    const { api } = useAdmin();
+    const load = useCallback(() => api("GET", `/admin/projects/${encodeURIComponent(project.id)}/cloudflare`), [api, project.id]);
+    const [state, reload] = useProjectResource(load);
+    const [write, run] = useWrite();
+    const info = state.value;
+    const target = info?.target ?? null;
+    const choose = (next) => void run(async () => {
+      await api("PUT", `/admin/projects/${encodeURIComponent(project.id)}/deploy-target`, { target: next });
+      await reload();
+    }, next ? `Deploys to ${next.name} now.` : "Deploy target cleared.");
+    const isTarget = (kind, name) => target?.kind === kind && target?.name === name;
+    const listing = (label, kind, section, describe) => /* @__PURE__ */ jsxs("div", { className: "aw-project__hosting-list", children: [
+      /* @__PURE__ */ jsx("h4", { children: label }),
+      !section ? null : !section.ok ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        section.error,
+        section.permission ? ` Ask the client to add ${section.permission} to their token.` : ""
+      ] }) : section.items.length === 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "None in this account." }) : /* @__PURE__ */ jsx("ul", { className: "aw-project__hosting-items", children: section.items.map((item) => /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("strong", { children: item.name }),
+          " ",
+          /* @__PURE__ */ jsx("span", { className: "ui-note", children: describe(item) })
+        ] }),
+        isTarget(kind, item.name) ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "Deploy target" }) : /* @__PURE__ */ jsx(Button, { size: "sm", busy: write.busy, onClick: () => choose({ kind, name: item.name, productionBranch: item.productionBranch || "main" }), children: "Deploy here" })
+      ] }, item.name)) })
+    ] });
+    return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-hosting", children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Where it goes live" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        target ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", busy: write.busy, onClick: () => choose(null), children: "Clear target" }) : null
+      ] }),
+      state.loading && !info ? /* @__PURE__ */ jsx(Skeleton, { label: "Reading the client's Cloudflare\u2026" }) : null,
+      state.error ? /* @__PURE__ */ jsx(ErrorNote, { error: state.error }) : null,
+      info && !info.connected ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No Cloudflare connected. The client adds their account id and an API token under the project's integrations; then their Pages projects and Workers show here." }) : null,
+      info?.connected ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: target ? `Fleet runs deploy previews from ticket branches and production from ${target.productionBranch} to ${target.kind === "pages" ? "Pages project" : "Worker"} ${target.name}.` : "Pick where fleet runs deploy: previews from ticket branches, production from the production branch." }),
+        listing("Pages projects", "pages", info.pages, (p) => [p.productionBranch ? `production ${p.productionBranch}` : null, ...p.domains ?? []].filter(Boolean).join(" \xB7 ")),
+        listing("Worker scripts", "workers", info.workers, (w) => w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : "")
+      ] }) : null,
+      write.error ? /* @__PURE__ */ jsx(ErrorNote, { error: write.error }) : null,
+      write.success ? /* @__PURE__ */ jsx("p", { className: "ui-note", role: "status", children: write.success }) : null
     ] });
   }
   function Secrets({ project }) {

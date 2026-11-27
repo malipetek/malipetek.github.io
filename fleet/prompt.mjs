@@ -120,6 +120,34 @@ export function buildFollowUp(ticket, messages, previousRuns = [], checkout = {}
  * @param integrations - [{ id, label, names }] from /node/runs/:id/credentials.
  * @returns a prompt section, or '' when there are none.
  */
+/**
+ * Where this project's work goes live, when the admin chose a Cloudflare
+ * target: previews from the ticket branch, production only from the
+ * production branch. The target arrives in the run environment beside the
+ * client's Cloudflare credential.
+ * @param {Record<string,string>} env - the run's credential environment.
+ * @returns {string} a prompt section, or '' with no target.
+ */
+export function deploySection(env = {}) {
+  const name = env.PTECH_DEPLOY_NAME;
+  if (!name || !env.CLOUDFLARE_API_TOKEN) return '';
+  const production = env.PTECH_DEPLOY_PRODUCTION_BRANCH || 'main';
+  const pages = env.PTECH_DEPLOY_KIND !== 'workers';
+  return [
+    '## Where this project goes live',
+    pages
+      ? `The site is the Cloudflare Pages project \`${name}\` in the client's account ($CLOUDFLARE_ACCOUNT_ID, token $CLOUDFLARE_API_TOKEN).`
+      : `The site is the Cloudflare Worker \`${name}\` in the client's account ($CLOUDFLARE_ACCOUNT_ID, token $CLOUDFLARE_API_TOKEN).`,
+    pages
+      ? `- Preview: build, then \`npx wrangler pages deploy <build output> --project-name ${name} --branch <this ticket's branch>\`, and put the preview URL wrangler prints in your result.`
+      : `- Preview: \`npx wrangler versions upload --name ${name}\` and put the preview URL it prints in your result.`,
+    pages
+      ? `- Production: deploy with \`--branch ${production}\` only when the ticket says to publish or the work lands on ${production}.`
+      : `- Production: \`npx wrangler deploy --name ${name}\` only when the ticket says to publish or the work lands on ${production}.`,
+    '- If a deploy is refused for a permission, say which one the client token needs; do not try another account or token.',
+  ].join('\n');
+}
+
 export function credentialSection(integrations = []) {
   if (!integrations.length) return '';
   const list = integrations.map((i) => `- ${i.label}: ${i.names.map((n) => `$${n}`).join(', ')}`).join('\n');

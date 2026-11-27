@@ -25,6 +25,7 @@ test('every operator-facing write asks, and names the object', () => {
     ['admin_directory', { action: 'set_folder', slug: 'p2', folder: '/tmp/x' }, /p2 at \/tmp\/x/],
     ['admin_directory', { action: 'link', clientId: 'c1', projectId: 'p2' }, /Give client c1 access to project p2/],
     ['admin_directory', { action: 'unlink', clientId: 'c1', projectId: 'p2' }, /Remove client c1 from project p2/],
+    ['admin_directory', { action: 'set_deploy_target', project: 'petekkoleji', kind: 'pages', target: 'petekkoleji' }, /deploy to Cloudflare Pages project petekkoleji, production from main/],
     ['admin_directory', { action: 'invite', email: 'it@petekkoleji.com', projects: ['petekkoleji'] }, /Invite it@petekkoleji\.com to petekkoleji\? They are emailed/],
     ['admin_project_local', { action: 'configure', projectId: 'p2', path: '/tmp/y' }, /p2 at \/tmp\/y/],
     ['admin_project_local', { action: 'clone', projectId: 'p2' }, /Clone project p2/],

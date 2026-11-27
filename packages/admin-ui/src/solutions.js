@@ -75,7 +75,7 @@ export const INTEGRATION_CATALOG = [
       { name: 'CLOUDFLARE_ACCOUNT_ID', label: 'Account ID', secret: false },
       { name: 'CLOUDFLARE_API_TOKEN', label: 'API token', secret: true },
     ],
-    steps: ['Copy the Account ID from the Cloudflare dashboard for the account that owns the site.', 'Open My Profile → API Tokens and create a custom token.', 'Select only the account and zones for this project. Add the permissions we agree on, such as Workers Scripts: Edit to deploy Workers or DNS: Edit to set up a domain.'],
+    steps: ['Copy the Account ID from the Cloudflare dashboard for the account that owns the site.', 'Open My Profile → API Tokens and create a custom token.', 'Select only the account and zones for this project. Add Cloudflare Pages: Edit and Workers Scripts: Edit so we can find your site and deploy previews and releases to it, plus DNS: Edit if we set up a domain.'],
     docs: 'https://developers.cloudflare.com/fundamentals/api/get-started/create-token/', scope: 'Limit the token to the relevant accounts, zones, and actions; do not share a Global API Key.',
   },
   {

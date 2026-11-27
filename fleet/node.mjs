@@ -44,7 +44,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { ACCOUNT, DSH_FAMILY, DSH_MODELS, EXECUTORS, agentProfileReady, fallbackChain, findSessionLog, isQuotaError, routeTask, run } from './executors.mjs';
 import { landWork, mainBranch, pushTarget, shareWork } from './share.mjs';
 import { health } from './health.mjs';
-import { buildFollowUp, buildPrompt, credentialSection } from './prompt.mjs';
+import { buildFollowUp, buildPrompt, credentialSection, deploySection } from './prompt.mjs';
 import { capture } from './shot.mjs';
 
 const VERSION = '2.11.0';
@@ -891,7 +891,8 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   const credentials = await fetchCredentials(config, claim, ticket);
   if (credentials.integrations.length) steps.push('node', `Client accounts: ${credentials.integrations.map((i) => i.label).join(', ')}`);
   const accounts = credentialSection(credentials.integrations);
-  const prompt = [buildPrompt(ticket, attached.messages, previousRuns, checkout), accounts].filter(Boolean).join('\n\n');
+  const deploy = deploySection(credentials.env);
+  const prompt = [buildPrompt(ticket, attached.messages, previousRuns, checkout), accounts, deploy].filter(Boolean).join('\n\n');
   // A rerun continues the ticket's own conversation when it can, so one ticket
   // is one thread in the sidebar rather than one per run.
   const resume = resumableSession(config, previousRuns, dir);

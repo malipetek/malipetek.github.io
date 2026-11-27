@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { credentialSection } from './prompt.mjs';
+import { credentialSection, deploySection } from './prompt.mjs';
 import { runEnv } from './executors.mjs';
 import { passEnvNames } from '../packages/dsh-external-agents/index.js';
 
@@ -28,4 +28,14 @@ test('credentials go into the child environment only, named for the Harness', ()
 test('the external-agents pass list takes plain names and never routing keys', () => {
   assert.deepEqual(passEnvNames('AWS_ACCESS_KEY_ID, bad-name ,ANTHROPIC_BASE_URL,AWS_ACCESS_KEY_ID'), ['AWS_ACCESS_KEY_ID']);
   assert.deepEqual(passEnvNames(undefined), []);
+});
+
+test('a chosen Cloudflare target tells the agent where previews and production go', () => {
+  const env = { CLOUDFLARE_API_TOKEN: 't', CLOUDFLARE_ACCOUNT_ID: 'a', PTECH_DEPLOY_KIND: 'pages', PTECH_DEPLOY_NAME: 'petekkoleji', PTECH_DEPLOY_PRODUCTION_BRANCH: 'main' };
+  const text = deploySection(env);
+  assert.match(text, /Pages project `petekkoleji`/);
+  assert.match(text, /--project-name petekkoleji --branch <this ticket's branch>/);
+  assert.match(text, /--branch main` only when the ticket says to publish/);
+  assert.equal(deploySection({ PTECH_DEPLOY_NAME: 'x' }), '');
+  assert.equal(deploySection({}), '');
 });

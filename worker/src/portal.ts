@@ -138,6 +138,7 @@ import { ensureRepo, useClientRepo, installationToken } from './ghapp.ts';
 import { accessFor, authorizeWorkbenchRoute, canWorkProject, isSuperAdmin, ownsProject, projectScope, sealProjectSecret, openProjectSecret } from './projectAccess.ts';
 import { moveSite, moveTicket, promotePrimary } from './move.ts';
 import { runIntake } from './intake.ts';
+import { listPages, listWorkers, parseDeployTarget, readDeployTarget } from './hosting.ts';
 import { isAudioType, transcribe } from './transcribe.ts';
 import { checkUploads, fileCount, fileResponse, FILE_LIMITS, sizeText, storeFiles, withFiles, type FileMeta, type Upload } from './files.ts';
 
@@ -3689,6 +3690,48 @@ portal.post('/admin/projects', async (c) => {
 portal.get('/admin/projects/:id', async (c) => {
   const project = await c.env.DB.prepare('SELECT id,slug,name,kind,brief,repo,owner_user_id,solutions FROM projects WHERE id=?').bind(c.req.param('id')).first<{brief:string;solutions:string}>();
   return project ? reply(c,{project:{...project,brief:parseBrief(project.brief),solutions:parseSolutions(project.solutions)}}) : reply(c,{error:'not_found'},404);
+});
+
+/**
+ * What the project's own Cloudflare credential can see: its Pages projects and
+ * Worker scripts, and the deploy target already chosen. The client's token is
+ * used here, server side, and never returned; a section the token may not
+ * read says which permission it lacks.
+ */
+portal.get('/admin/projects/:id/cloudflare', async (c) => {
+  const id = c.req.param('id');
+  const project = await c.env.DB.prepare('SELECT id, deploy_target FROM projects WHERE id=?').bind(id).first<{ id: string; deploy_target: string | null }>();
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  const target = readDeployTarget(project.deploy_target);
+  const rows = (await c.env.DB.prepare(`SELECT name, value_enc FROM project_secrets WHERE project_id=? AND name IN ('CLOUDFLARE_ACCOUNT_ID','CLOUDFLARE_API_TOKEN')`)
+    .bind(id).all<{ name: string; value_enc: string }>()).results ?? [];
+  if (rows.length < 2) return reply(c, { connected: false, target });
+  if (!c.env.SESSION_SECRET) return reply(c, { error: 'secrets_unavailable' }, 503);
+  let accountId = '';
+  let token = '';
+  try {
+    for (const row of rows) {
+      const value = await openProjectSecret(c.env, id, row.name, row.value_enc);
+      if (row.name === 'CLOUDFLARE_ACCOUNT_ID') accountId = value.trim();
+      else token = value.trim();
+    }
+  } catch {
+    return reply(c, { error: 'secrets_unavailable' }, 503);
+  }
+  const [pages, workers] = await Promise.all([listPages(accountId, token), listWorkers(accountId, token)]);
+  c.header('Cache-Control', 'no-store');
+  return reply(c, { connected: true, accountId, pages, workers, target });
+});
+
+/** Choose (or clear, with `null`) where this project's work goes live. */
+portal.put('/admin/projects/:id/deploy-target', async (c) => {
+  const id = c.req.param('id');
+  const body = await readJson<{ target?: unknown }>(c);
+  const parsed = parseDeployTarget(body?.target === undefined ? undefined : body.target);
+  if (parsed && 'error' in parsed) return reply(c, { error: parsed.error }, 400);
+  const result = await c.env.DB.prepare('UPDATE projects SET deploy_target=? WHERE id=?').bind(parsed ? JSON.stringify(parsed) : null, id).run();
+  if (!result.meta.changes) return reply(c, { error: 'not_found' }, 404);
+  return reply(c, { target: parsed });
 });
 
 portal.get('/admin/projects/:id/memberships', async (c) => {

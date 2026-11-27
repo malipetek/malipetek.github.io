@@ -420,6 +420,7 @@ function Setup({ project, refresh, host }) {
     <>
       <section className="aw-project__section"><ProjectSolutions project={project} /></section>
       <Resources project={project} refresh={refresh} host={host} />
+      <Hosting project={project} />
       <People project={project} refresh={refresh} />
       <Secrets project={project} />
     </>
@@ -1141,6 +1142,73 @@ function People({ project, refresh }) {
         )}
         <Feedback state={writeState} />
       </div>
+    </section>
+  );
+}
+
+/**
+ * Where the work goes live on the client's own Cloudflare: the portal reads the
+ * account with the token the client stored on this project, and the chosen
+ * Pages project or Worker becomes the fleet's deploy target.
+ */
+function Hosting({ project }) {
+  const { api } = useAdmin();
+  const load = useCallback(() => api('GET', `/admin/projects/${encodeURIComponent(project.id)}/cloudflare`), [api, project.id]);
+  const [state, reload] = useProjectResource(load);
+  const [write, run] = useWrite();
+  const info = state.value;
+  const target = info?.target ?? null;
+  const choose = (next) => void run(async () => {
+    await api('PUT', `/admin/projects/${encodeURIComponent(project.id)}/deploy-target`, { target: next });
+    await reload();
+  }, next ? `Deploys to ${next.name} now.` : 'Deploy target cleared.');
+  const isTarget = (kind, name) => target?.kind === kind && target?.name === name;
+  const listing = (label, kind, section, describe) => (
+    <div className="aw-project__hosting-list">
+      <h4>{label}</h4>
+      {!section ? null : !section.ok ? (
+        <p className="aw-warn">{section.error}{section.permission ? ` Ask the client to add ${section.permission} to their token.` : ''}</p>
+      ) : section.items.length === 0 ? (
+        <p className="aw-muted">None in this account.</p>
+      ) : (
+        <ul className="aw-project__hosting-items">
+          {section.items.map((item) => (
+            <li key={item.name}>
+              <span><strong>{item.name}</strong> <span className="ui-note">{describe(item)}</span></span>
+              {isTarget(kind, item.name)
+                ? <Tag tone="ok">Deploy target</Tag>
+                : <Button size="sm" busy={write.busy} onClick={() => choose({ kind, name: item.name, productionBranch: item.productionBranch || 'main' })}>Deploy here</Button>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+  return (
+    <section className="aw-project__section" id="project-hosting">
+      <div className="aw-row-h">
+        <h3>Where it goes live</h3>
+        <span className="aw-toolbar__fill" />
+        {target ? <Button size="sm" kind="ghost" busy={write.busy} onClick={() => choose(null)}>Clear target</Button> : null}
+      </div>
+      {state.loading && !info ? <Skeleton label="Reading the client's Cloudflare…" /> : null}
+      {state.error ? <ErrorNote error={state.error} /> : null}
+      {info && !info.connected ? (
+        <p className="aw-muted">No Cloudflare connected. The client adds their account id and an API token under the project's integrations; then their Pages projects and Workers show here.</p>
+      ) : null}
+      {info?.connected ? (
+        <>
+          <p className="aw-muted">
+            {target
+              ? `Fleet runs deploy previews from ticket branches and production from ${target.productionBranch} to ${target.kind === 'pages' ? 'Pages project' : 'Worker'} ${target.name}.`
+              : 'Pick where fleet runs deploy: previews from ticket branches, production from the production branch.'}
+          </p>
+          {listing('Pages projects', 'pages', info.pages, (p) => [p.productionBranch ? `production ${p.productionBranch}` : null, ...(p.domains ?? [])].filter(Boolean).join(' · '))}
+          {listing('Worker scripts', 'workers', info.workers, (w) => (w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : ''))}
+        </>
+      ) : null}
+      {write.error ? <ErrorNote error={write.error} /> : null}
+      {write.success ? <p className="ui-note" role="status">{write.success}</p> : null}
     </section>
   );
 }
