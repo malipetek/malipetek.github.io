@@ -9,7 +9,41 @@
  * as a named missing permission, not as an empty list.
  */
 
-export type DeployTarget = { provider: 'cloudflare'; kind: 'pages' | 'workers'; name: string; productionBranch: string };
+/**
+ * `connectionId` and `accountId` name the client's Cloudflare OAuth grant
+ * (cloudflare_connections) and the account in it the target lives in; without
+ * them the target deploys with a token stored on the project.
+ */
+export type DeployTarget = {
+  provider: 'cloudflare';
+  kind: 'pages' | 'workers';
+  name: string;
+  productionBranch: string;
+  connectionId?: number;
+  accountId?: string;
+};
+
+/** A client's Cloudflare grant, as the admin sees it when choosing one for a project. */
+export type ConnectionSummary = { id: number; email: string; accounts: { id: string; name: string }[]; onProject: boolean };
+
+/**
+ * Which grant a project's hosting is read with: the one asked for, else the
+ * one the target already uses, else one of the project's own clients', else
+ * one whose owner or account names the project (a school that connected with
+ * petekkoleji2023@ for the project petekkoleji). Null when none fits.
+ */
+export function pickConnection(
+  connections: ConnectionSummary[],
+  { requested, target, slug }: { requested?: number | null; target?: DeployTarget | null; slug: string },
+): ConnectionSummary | null {
+  const byId = (id: number | null | undefined) => (id ? connections.find((c) => c.id === id) ?? null : null);
+  const key = slug.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const names = (c: ConnectionSummary) => [c.email, ...c.accounts.map((a) => a.name)].map((s) => s.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  return byId(requested)
+    ?? byId(target?.connectionId)
+    ?? connections.find((c) => c.onProject)
+    ?? (key.length >= 4 ? connections.find((c) => names(c).some((n) => n.includes(key))) ?? null : null);
+}
 
 export type Listing<T> = { ok: true; items: T[] } | { ok: false; error: string; permission?: string };
 
@@ -85,7 +119,15 @@ export function parseDeployTarget(raw: unknown): DeployTarget | null | { error: 
   if (!NAME.test(name)) return { error: 'bad_name' };
   const branch = body.productionBranch === undefined || body.productionBranch === '' ? 'main' : body.productionBranch;
   if (typeof branch !== 'string' || !BRANCH.test(branch)) return { error: 'bad_branch' };
-  return { provider: 'cloudflare', kind, name, productionBranch: branch };
+  const target: DeployTarget = { provider: 'cloudflare', kind, name, productionBranch: branch };
+  if (body.connectionId !== undefined && body.connectionId !== null) {
+    const connectionId = Number(body.connectionId);
+    const accountId = typeof body.accountId === 'string' ? body.accountId.trim() : '';
+    if (!Number.isInteger(connectionId) || connectionId <= 0) return { error: 'bad_connection' };
+    if (!/^[0-9a-f]{32}$/.test(accountId)) return { error: 'bad_account' };
+    Object.assign(target, { connectionId, accountId });
+  }
+  return target;
 }
 
 /** The stored column, read back; anything unreadable is no target. */

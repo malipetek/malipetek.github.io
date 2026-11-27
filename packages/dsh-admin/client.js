@@ -17420,21 +17420,29 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   }
   function Hosting({ project }) {
     const { api } = useAdmin();
-    const load = useCallback(() => api("GET", `/admin/projects/${encodeURIComponent(project.id)}/cloudflare`), [api, project.id]);
+    const [picked, setPicked] = useState(null);
+    const load = useCallback(
+      () => api("GET", `/admin/projects/${encodeURIComponent(project.id)}/cloudflare${picked ? `?connection=${picked}` : ""}`),
+      [api, project.id, picked]
+    );
     const [state, reload] = useProjectResource(load);
     const [write, run] = useWrite();
     const info = state.value;
     const target = info?.target ?? null;
+    const connections = info?.connections ?? [];
+    const grant = connections.find((c) => c.id === info?.connectionId) ?? null;
     const choose = (next) => void run(async () => {
-      await api("PUT", `/admin/projects/${encodeURIComponent(project.id)}/deploy-target`, { target: next });
+      await api("PUT", `/admin/projects/${encodeURIComponent(project.id)}/deploy-target`, {
+        target: next && info?.via === "oauth" ? { ...next, connectionId: info.connectionId, accountId: info.accountId } : next
+      });
       await reload();
     }, next ? `Deploys to ${next.name} now.` : "Deploy target cleared.");
     const isTarget = (kind, name) => target?.kind === kind && target?.name === name;
     const listing = (label, kind, section, describe) => /* @__PURE__ */ jsxs("div", { className: "aw-project__hosting-list", children: [
       /* @__PURE__ */ jsx("h4", { children: label }),
-      !section ? null : !section.ok ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+      !section.ok ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
         section.error,
-        section.permission ? ` Ask the client to add ${section.permission} to their token.` : ""
+        section.permission ? ` It needs ${section.permission}.` : ""
       ] }) : section.items.length === 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "None in this account." }) : /* @__PURE__ */ jsx("ul", { className: "aw-project__hosting-items", children: section.items.map((item) => /* @__PURE__ */ jsxs("li", { children: [
         /* @__PURE__ */ jsxs("span", { children: [
           /* @__PURE__ */ jsx("strong", { children: item.name }),
@@ -17444,6 +17452,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         isTarget(kind, item.name) ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "Deploy target" }) : /* @__PURE__ */ jsx(Button, { size: "sm", busy: write.busy, onClick: () => choose({ kind, name: item.name, productionBranch: item.productionBranch || "main" }), children: "Deploy here" })
       ] }, item.name)) })
     ] });
+    const accountName = grant?.accounts.find((a) => a.id === info?.accountId)?.name ?? info?.accountId;
     return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-hosting", children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
         /* @__PURE__ */ jsx("h3", { children: "Where it goes live" }),
@@ -17452,11 +17461,27 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       ] }),
       state.loading && !info ? /* @__PURE__ */ jsx(Skeleton, { label: "Reading the client's Cloudflare\u2026" }) : null,
       state.error ? /* @__PURE__ */ jsx(ErrorNote, { error: state.error }) : null,
-      info && !info.connected ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No Cloudflare connected. The client adds their account id and an API token under the project's integrations; then their Pages projects and Workers show here." }) : null,
+      connections.length > 1 || connections.length === 1 && !grant ? /* @__PURE__ */ jsx(Field, { label: "Cloudflare connection", children: /* @__PURE__ */ jsxs("select", { value: info?.connectionId ?? "", onChange: (event) => setPicked(Number(event.target.value) || null), children: [
+        !grant ? /* @__PURE__ */ jsx("option", { value: "", children: "Choose a client's connection" }) : null,
+        connections.map((c) => /* @__PURE__ */ jsxs("option", { value: c.id, children: [
+          c.email,
+          c.onProject ? " (on this project)" : "",
+          " \xB7 ",
+          c.accounts.map((a) => a.name).join(", ")
+        ] }, c.id))
+      ] }) }) : null,
+      info && !info.connected && info.lapsed ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        grant?.email ?? "The client",
+        "'s Cloudflare connection has lapsed. They reconnect it on the portal's Connections page."
+      ] }) : null,
+      info && !info.connected && !info.lapsed ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No Cloudflare connected. The client connects their account on the portal's Connections page; then its Workers show here." }) : null,
       info?.connected ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: target ? `Fleet runs deploy previews from ticket branches and production from ${target.productionBranch} to ${target.kind === "pages" ? "Pages project" : "Worker"} ${target.name}.` : "Pick where fleet runs deploy: previews from ticket branches, production from the production branch." }),
-        listing("Pages projects", "pages", info.pages, (p) => [p.productionBranch ? `production ${p.productionBranch}` : null, ...p.domains ?? []].filter(Boolean).join(" \xB7 ")),
-        listing("Worker scripts", "workers", info.workers, (w) => w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : "")
+        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          info.via === "oauth" ? `Through ${grant?.email}'s Cloudflare connection, account ${accountName}${grant && !grant.onProject ? " (this client is not on the project yet)" : ""}. ` : "",
+          target ? `Fleet runs deploy previews from ticket branches and production from ${target.productionBranch} to ${target.kind === "pages" ? "Pages project" : "Worker"} ${target.name}.` : "Pick where fleet runs deploy: previews from ticket branches, production from the production branch."
+        ] }),
+        info.workers ? listing("Worker scripts", "workers", info.workers, (w) => w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : "") : null,
+        info.pages ? listing("Pages projects", "pages", info.pages, (p) => [p.productionBranch ? `production ${p.productionBranch}` : null, ...p.domains ?? []].filter(Boolean).join(" \xB7 ")) : null
       ] }) : null,
       write.error ? /* @__PURE__ */ jsx(ErrorNote, { error: write.error }) : null,
       write.success ? /* @__PURE__ */ jsx("p", { className: "ui-note", role: "status", children: write.success }) : null

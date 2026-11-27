@@ -138,7 +138,7 @@ import { ensureRepo, useClientRepo, installationToken } from './ghapp.ts';
 import { accessFor, authorizeWorkbenchRoute, canWorkProject, isSuperAdmin, ownsProject, projectScope, sealProjectSecret, openProjectSecret } from './projectAccess.ts';
 import { moveSite, moveTicket, promotePrimary } from './move.ts';
 import { runIntake } from './intake.ts';
-import { listPages, listWorkers, parseDeployTarget, readDeployTarget } from './hosting.ts';
+import { listPages, listWorkers, parseDeployTarget, pickConnection, readDeployTarget, type ConnectionSummary } from './hosting.ts';
 import { isAudioType, transcribe } from './transcribe.ts';
 import { checkUploads, fileCount, fileResponse, FILE_LIMITS, sizeText, storeFiles, withFiles, type FileMeta, type Upload } from './files.ts';
 
@@ -3693,19 +3693,42 @@ portal.get('/admin/projects/:id', async (c) => {
 });
 
 /**
- * What the project's own Cloudflare credential can see: its Pages projects and
- * Worker scripts, and the deploy target already chosen. The client's token is
- * used here, server side, and never returned; a section the token may not
- * read says which permission it lacks.
+ * What the project can deploy to on the client's Cloudflare: their Worker
+ * scripts (and Pages projects, where the credential may read them) and the
+ * deploy target already chosen.
+ *
+ * The credential is the client's OAuth grant from the portal's Connections
+ * page — the project's own clients' grant first, or another client's grant the
+ * admin picks (`?connection=`) — or, failing that, an account id and token
+ * stored on the project. Tokens are used here, server side, and never returned.
  */
 portal.get('/admin/projects/:id/cloudflare', async (c) => {
   const id = c.req.param('id');
-  const project = await c.env.DB.prepare('SELECT id, deploy_target FROM projects WHERE id=?').bind(id).first<{ id: string; deploy_target: string | null }>();
+  const project = await c.env.DB.prepare('SELECT id, slug, owner_user_id, deploy_target FROM projects WHERE id=?')
+    .bind(id).first<{ id: string; slug: string; owner_user_id: string | null; deploy_target: string | null }>();
   if (!project) return reply(c, { error: 'not_found' }, 404);
   const target = readDeployTarget(project.deploy_target);
+  const grants = (await c.env.DB.prepare(
+    `SELECT cc.id, cc.accounts, u.email,
+            (EXISTS (SELECT 1 FROM user_projects up WHERE up.user_id = cc.user_id AND up.project_id = ?) OR cc.user_id = ?) AS on_project
+       FROM cloudflare_connections cc JOIN users u ON u.id = cc.user_id
+      WHERE cc.revoked_at IS NULL ORDER BY cc.created_at DESC`,
+  ).bind(id, project.owner_user_id ?? '').all<{ id: number; accounts: string; email: string; on_project: number }>()).results ?? [];
+  const connections: ConnectionSummary[] = grants.map((g) => ({ id: g.id, email: g.email, accounts: grantedAccounts(g), onProject: g.on_project === 1 }));
+  const requested = Number(c.req.query('connection')) || null;
+  const chosen = pickConnection(connections, { requested, target, slug: project.slug });
+  c.header('Cache-Control', 'no-store');
+  if (chosen) {
+    const token = await cloudflareAccess(c.env, chosen.id).catch(() => null);
+    if (!token) return reply(c, { connected: false, via: 'oauth', lapsed: true, connectionId: chosen.id, connections, target });
+    const accountId = (requested ? null : target?.connectionId === chosen.id ? target.accountId : null) ?? chosen.accounts[0]?.id ?? '';
+    // Our OAuth client asks for Workers, not Pages: listing Pages would only say "not allowed".
+    const workers = await listWorkers(accountId, token);
+    return reply(c, { connected: true, via: 'oauth', connectionId: chosen.id, accountId, connections, pages: null, workers, target });
+  }
   const rows = (await c.env.DB.prepare(`SELECT name, value_enc FROM project_secrets WHERE project_id=? AND name IN ('CLOUDFLARE_ACCOUNT_ID','CLOUDFLARE_API_TOKEN')`)
     .bind(id).all<{ name: string; value_enc: string }>()).results ?? [];
-  if (rows.length < 2) return reply(c, { connected: false, target });
+  if (rows.length < 2) return reply(c, { connected: false, connections, target });
   if (!c.env.SESSION_SECRET) return reply(c, { error: 'secrets_unavailable' }, 503);
   let accountId = '';
   let token = '';
@@ -3719,8 +3742,7 @@ portal.get('/admin/projects/:id/cloudflare', async (c) => {
     return reply(c, { error: 'secrets_unavailable' }, 503);
   }
   const [pages, workers] = await Promise.all([listPages(accountId, token), listWorkers(accountId, token)]);
-  c.header('Cache-Control', 'no-store');
-  return reply(c, { connected: true, accountId, pages, workers, target });
+  return reply(c, { connected: true, via: 'token', accountId, connections, pages, workers, target });
 });
 
 /** Choose (or clear, with `null`) where this project's work goes live. */
@@ -3729,6 +3751,11 @@ portal.put('/admin/projects/:id/deploy-target', async (c) => {
   const body = await readJson<{ target?: unknown }>(c);
   const parsed = parseDeployTarget(body?.target === undefined ? undefined : body.target);
   if (parsed && 'error' in parsed) return reply(c, { error: parsed.error }, 400);
+  if (parsed?.connectionId) {
+    const grant = await connectionRow(c.env, parsed.connectionId);
+    if (!grant) return reply(c, { error: 'unknown_connection' }, 400);
+    if (!grantedAccounts(grant).some((a) => a.id === parsed.accountId)) return reply(c, { error: 'account_not_in_grant' }, 400);
+  }
   const result = await c.env.DB.prepare('UPDATE projects SET deploy_target=? WHERE id=?').bind(parsed ? JSON.stringify(parsed) : null, id).run();
   if (!result.meta.changes) return reply(c, { error: 'not_found' }, 404);
   return reply(c, { target: parsed });

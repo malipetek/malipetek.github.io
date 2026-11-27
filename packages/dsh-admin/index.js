@@ -1173,7 +1173,8 @@ const linkProject = (config, userId, projectId) =>
 const inviteClient = (config, invite) => request(config, '/admin/clients', { method: 'POST', body: invite });
 
 /** What the project's own Cloudflare credential can see, read by the portal on our behalf. */
-const projectCloudflare = (config, projectId) => request(config, `/admin/projects/${encodeURIComponent(projectId)}/cloudflare`);
+const projectCloudflare = (config, projectId, connectionId) =>
+  request(config, `/admin/projects/${encodeURIComponent(projectId)}/cloudflare${connectionId ? `?connection=${encodeURIComponent(connectionId)}` : ''}`);
 
 /** Where the project's work goes live; `null` clears it. */
 const setDeployTarget = (config, projectId, target) =>
@@ -2502,7 +2503,7 @@ export function apply(ctx) {
           'The PTech client portal directory (ptechsolutions.net): clients, projects, and which projects a client may file against.',
           'A project slug is what the local runner maps to a folder on disk, so a ticket is only workable once its project exists and the runner knows the slug.',
           'Action "set_folder" writes that slug → folder mapping into the local runner config; without an entry the runner falls back to <projectsRoot>/<slug>.',
-          'Action "hosting" reads what the project\'s own client-connected Cloudflare account has deployed (Pages projects and Worker scripts) and the current deploy target; use it, not a local token, to find where a client site lives.',
+          'Action "hosting" reads the client\'s Cloudflare through the OAuth grant they connected on the portal (their Workers, the current deploy target, and every client grant with its accounts); use it, never a local token or wrangler login, to find where a client site lives. It picks the project\'s own client\'s grant, or a grant named after the project; pass connection to read another one.',
           'Action "set_deploy_target" records which of those the project deploys to (kind pages|workers, name, productionBranch): fleet runs then get the target beside the client\'s Cloudflare credential and deploy previews to their ticket branch and releases to the production branch.',
           'Action "invite" gives an email address access to one or more projects whether or not that person has an account yet: the portal makes the client account if needed, links the projects and emails a week-long sign-in link. Use it instead of waiting for someone to sign up.',
         ].join(' '),
@@ -2518,6 +2519,7 @@ export function apply(ctx) {
             },
             email: { type: 'string', description: 'Email address to invite, for invite.' },
             project: { type: 'string', description: 'Project id or slug, for hosting and set_deploy_target.' },
+            connection: { type: 'number', description: 'A client Cloudflare grant id from hosting\'s list, to read or deploy with that grant instead of the one picked.' },
             kind: { type: 'string', enum: ['pages', 'workers', 'none'], description: 'Cloudflare Pages project or Worker script, for set_deploy_target; "none" clears the target.' },
             target: { type: 'string', description: 'The Pages project or Worker script name, for set_deploy_target.' },
             productionBranch: { type: 'string', description: 'Branch that publishes to production, for set_deploy_target. Defaults to main.' },
@@ -2612,10 +2614,18 @@ export function apply(ctx) {
               const snapshot = await refresh(config);
               const project = snapshot.projects.find((p) => p.id === key || p.slug === key.toLowerCase());
               if (project === undefined) throw new Error(`No project "${key}". List them with action "projects".`);
-              if (args.action === 'hosting') return { message: hostingMessage(project, await projectCloudflare(config, project.id)) };
+              const connection = Number(args.connection) || null;
+              const hosting = await projectCloudflare(config, project.id, connection);
+              if (args.action === 'hosting') return { message: hostingMessage(project, hosting) };
               const target = args.kind === 'none'
                 ? null
-                : { kind: args.kind, name: typeof args.target === 'string' ? args.target.trim() : '', productionBranch: typeof args.productionBranch === 'string' ? args.productionBranch.trim() : '' };
+                : {
+                    kind: args.kind,
+                    name: typeof args.target === 'string' ? args.target.trim() : '',
+                    productionBranch: typeof args.productionBranch === 'string' ? args.productionBranch.trim() : '',
+                    // Deploy with the client's OAuth grant the hosting read used.
+                    ...(hosting?.via === 'oauth' ? { connectionId: hosting.connectionId, accountId: hosting.accountId } : {}),
+                  };
               const saved = await setDeployTarget(config, project.id, target);
               return { message: saved.target ? `${project.name} now deploys to Cloudflare ${saved.target.kind === 'pages' ? 'Pages project' : 'Worker'} ${saved.target.name}: previews from ticket branches, production from ${saved.target.productionBranch}.` : `${project.name} has no deploy target now.` };
             }

@@ -1153,21 +1153,29 @@ function People({ project, refresh }) {
  */
 function Hosting({ project }) {
   const { api } = useAdmin();
-  const load = useCallback(() => api('GET', `/admin/projects/${encodeURIComponent(project.id)}/cloudflare`), [api, project.id]);
+  const [picked, setPicked] = useState(null);
+  const load = useCallback(
+    () => api('GET', `/admin/projects/${encodeURIComponent(project.id)}/cloudflare${picked ? `?connection=${picked}` : ''}`),
+    [api, project.id, picked],
+  );
   const [state, reload] = useProjectResource(load);
   const [write, run] = useWrite();
   const info = state.value;
   const target = info?.target ?? null;
+  const connections = info?.connections ?? [];
+  const grant = connections.find((c) => c.id === info?.connectionId) ?? null;
   const choose = (next) => void run(async () => {
-    await api('PUT', `/admin/projects/${encodeURIComponent(project.id)}/deploy-target`, { target: next });
+    await api('PUT', `/admin/projects/${encodeURIComponent(project.id)}/deploy-target`, {
+      target: next && info?.via === 'oauth' ? { ...next, connectionId: info.connectionId, accountId: info.accountId } : next,
+    });
     await reload();
   }, next ? `Deploys to ${next.name} now.` : 'Deploy target cleared.');
   const isTarget = (kind, name) => target?.kind === kind && target?.name === name;
   const listing = (label, kind, section, describe) => (
     <div className="aw-project__hosting-list">
       <h4>{label}</h4>
-      {!section ? null : !section.ok ? (
-        <p className="aw-warn">{section.error}{section.permission ? ` Ask the client to add ${section.permission} to their token.` : ''}</p>
+      {!section.ok ? (
+        <p className="aw-warn">{section.error}{section.permission ? ` It needs ${section.permission}.` : ''}</p>
       ) : section.items.length === 0 ? (
         <p className="aw-muted">None in this account.</p>
       ) : (
@@ -1184,6 +1192,7 @@ function Hosting({ project }) {
       )}
     </div>
   );
+  const accountName = grant?.accounts.find((a) => a.id === info?.accountId)?.name ?? info?.accountId;
   return (
     <section className="aw-project__section" id="project-hosting">
       <div className="aw-row-h">
@@ -1193,18 +1202,32 @@ function Hosting({ project }) {
       </div>
       {state.loading && !info ? <Skeleton label="Reading the client's Cloudflare…" /> : null}
       {state.error ? <ErrorNote error={state.error} /> : null}
-      {info && !info.connected ? (
-        <p className="aw-muted">No Cloudflare connected. The client adds their account id and an API token under the project's integrations; then their Pages projects and Workers show here.</p>
+      {connections.length > 1 || (connections.length === 1 && !grant) ? (
+        <Field label="Cloudflare connection">
+          <select value={info?.connectionId ?? ''} onChange={(event) => setPicked(Number(event.target.value) || null)}>
+            {!grant ? <option value="">Choose a client's connection</option> : null}
+            {connections.map((c) => (
+              <option key={c.id} value={c.id}>{c.email}{c.onProject ? ' (on this project)' : ''} · {c.accounts.map((a) => a.name).join(', ')}</option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
+      {info && !info.connected && info.lapsed ? (
+        <p className="aw-warn">{grant?.email ?? 'The client'}'s Cloudflare connection has lapsed. They reconnect it on the portal's Connections page.</p>
+      ) : null}
+      {info && !info.connected && !info.lapsed ? (
+        <p className="aw-muted">No Cloudflare connected. The client connects their account on the portal's Connections page; then its Workers show here.</p>
       ) : null}
       {info?.connected ? (
         <>
           <p className="aw-muted">
+            {info.via === 'oauth' ? `Through ${grant?.email}'s Cloudflare connection, account ${accountName}${grant && !grant.onProject ? ' (this client is not on the project yet)' : ''}. ` : ''}
             {target
               ? `Fleet runs deploy previews from ticket branches and production from ${target.productionBranch} to ${target.kind === 'pages' ? 'Pages project' : 'Worker'} ${target.name}.`
               : 'Pick where fleet runs deploy: previews from ticket branches, production from the production branch.'}
           </p>
-          {listing('Pages projects', 'pages', info.pages, (p) => [p.productionBranch ? `production ${p.productionBranch}` : null, ...(p.domains ?? [])].filter(Boolean).join(' · '))}
-          {listing('Worker scripts', 'workers', info.workers, (w) => (w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : ''))}
+          {info.workers ? listing('Worker scripts', 'workers', info.workers, (w) => (w.modifiedOn ? `changed ${w.modifiedOn.slice(0, 10)}` : '')) : null}
+          {info.pages ? listing('Pages projects', 'pages', info.pages, (p) => [p.productionBranch ? `production ${p.productionBranch}` : null, ...(p.domains ?? [])].filter(Boolean).join(' · ')) : null}
         </>
       ) : null}
       {write.error ? <ErrorNote error={write.error} /> : null}

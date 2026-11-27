@@ -62,6 +62,7 @@ import { cleanRepo, parseBrief } from './setup.ts';
 import { INTEGRATION_CATALOG, integrationsFor, parseSolutions } from './solutions.ts';
 import { openProjectSecret } from './projectAccess.ts';
 import { deployTargetEnv, readDeployTarget } from './hosting.ts';
+import { cloudflareAccess } from './cfaccess.ts';
 
 /** A node creating a repo holds the job this long before another may take it. */
 const REPO_CLAIM_SECONDS = 15 * 60;
@@ -592,8 +593,21 @@ node.get('/node/runs/:runId/credentials', async (c) => {
   } catch {
     return c.json({ error: 'secrets_unavailable' }, 503);
   }
-  // The target only means something next to the Cloudflare credential it deploys with.
-  if (integrations.some((entry) => entry.id === 'cloudflare')) Object.assign(env, deployTargetEnv(readDeployTarget(project.deploy_target)));
+  // The deploy target only means something next to the credential it deploys
+  // with: the client's OAuth grant when the target names one (a fresh access
+  // token, refreshed if it is about to lapse), else the token on the project.
+  const target = readDeployTarget(project.deploy_target);
+  if (target?.connectionId && target.accountId) {
+    const access = await cloudflareAccess(c.env, target.connectionId).catch(() => null);
+    if (access) {
+      env.CLOUDFLARE_API_TOKEN = access;
+      env.CLOUDFLARE_ACCOUNT_ID = target.accountId;
+      const others = integrations.filter((entry) => entry.id !== 'cloudflare');
+      integrations.length = 0;
+      integrations.push(...others, { id: 'cloudflare', label: "Cloudflare (the client's connected account)", names: ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID'] });
+      Object.assign(env, deployTargetEnv(target));
+    }
+  } else if (integrations.some((entry) => entry.id === 'cloudflare')) Object.assign(env, deployTargetEnv(target));
   await c.env.DB.prepare('INSERT INTO credential_access (project_id, run_id, node_id, integrations, at) VALUES (?, ?, ?, ?, ?)')
     .bind(project.id, runId, nodeId, JSON.stringify(integrations.map((entry) => entry.id)), now())
     .run();
