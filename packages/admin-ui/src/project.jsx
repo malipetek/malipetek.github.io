@@ -447,7 +447,7 @@ function Code({ project, refresh }) {
           {href ? <a href={href} target="_blank" rel="noreferrer">{repo.host}/{repo.slug}</a> : `${repo.host}/${repo.slug}`}
           {project.githubAccount
             ? <span className="aw-muted"> · through @{project.githubAccount}’s GitHub</span>
-            : repo.host === 'github.com' ? <span className="aw-muted"> · through the owner’s GitHub</span> : null}
+            : repo.host === 'github.com' ? <span className="aw-muted"> · the owner has not connected GitHub yet, so fleet runs reach it with a node’s own Git access</span> : null}
         </p>
       ) : (
         <p className="aw-muted">

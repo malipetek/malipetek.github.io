@@ -16794,7 +16794,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           " \xB7 through @",
           project.githubAccount,
           "\u2019s GitHub"
-        ] }) : repo.host === "github.com" ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: " \xB7 through the owner\u2019s GitHub" }) : null
+        ] }) : repo.host === "github.com" ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: " \xB7 the owner has not connected GitHub yet, so fleet runs reach it with a node\u2019s own Git access" }) : null
       ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: href ? /* @__PURE__ */ jsx("a", { href, target: "_blank", rel: "noreferrer", children: href }) : project.repo ? "Repository configured for Git access." : "No repository yet \u2014 the project owner connects GitHub on the portal\u2019s Connections page, and the repository shows here." }),
       project.repo_error ? /* @__PURE__ */ jsx("p", { role: "alert", className: "aw-project__error", children: project.repo_error }) : null,
       project.repoStatus?.label ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: project.repoStatus.label }) : null,
