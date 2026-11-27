@@ -239,7 +239,7 @@ oauth.post('/oauth/approve', async (c) => {
     .run();
   const back = new URL(redirect);
   back.searchParams.set('code', code);
-  if (typeof body?.state === 'string' && body.state.length <= 500) back.searchParams.set('state', body.state);
+  if (typeof body?.state === 'string' && body.state.length <= 4096) back.searchParams.set('state', body.state);
   back.searchParams.set('iss', issuer(env)); // RFC 9207: say which server answered
   return portalReply(c, { redirect: back.toString() });
 });
