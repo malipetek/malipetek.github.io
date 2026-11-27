@@ -1,6 +1,6 @@
 /*
  * A client connects their own Cloudflare account, through Cloudflare's OAuth
- * and our client `malipetek` (docs/plans/hosting-and-connections.md, phase 4),
+ * and our client `Ptech Solutions` (docs/plans/hosting-and-connections.md, phase 4),
  * so a site can be hosted there and Cloudflare bills them directly.
  *
  *   GET    /portal/cloudflare            the client's grants + a signed connect link
