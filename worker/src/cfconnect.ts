@@ -44,6 +44,8 @@ export const CLOUDFLARE_SCOPES = [
   'workers-routes.write',
   'zone.read',
   'dns.write',
+  // Deploy previews and releases to a site the client already runs on Pages.
+  'page.write',
   // A refresh token; the client now allows it, so a grant no longer dies after an hour.
   'offline_access',
 ];
