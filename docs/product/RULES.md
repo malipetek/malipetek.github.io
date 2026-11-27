@@ -43,6 +43,12 @@ A change that breaks a rule is not done, even if its tests pass.
   prompts or UI copy.
 - One rule for every provider: ticket work deploys to a preview from the
   ticket branch; only the production branch goes live, and only on publish.
+- Onboarding adopts what the client already has. Their existing hosting
+  (e.g. a Pages project in their own Cloudflare account) is used as it is,
+  through their OAuth connection; onboarding never requires a new
+  deployment, a new hosting project or a change to how their site is built.
+  Where the code lives is the project's recorded repository; a repository
+  created for a project must actually hold its code before work runs there.
 
 ## 5. The superagent is a second interface to the same app
 
