@@ -26,6 +26,9 @@ function remote(t) {
   sh(work, 'checkout', '-q', 'main');
   const bare = join(base, 'remote.git');
   sh(base, 'clone', '-q', '--bare', work, bare);
+  // Serve partial clones like GitHub does, so a history-only folder really lacks file contents.
+  sh(bare, 'config', 'uploadpack.allowFilter', 'true');
+  sh(bare, 'config', 'uploadpack.allowAnySHA1InWant', 'true');
   return { base, repo: `file://${bare}`, root: join(base, 'threads') };
 }
 

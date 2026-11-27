@@ -1731,10 +1731,12 @@ function apply(ctx) {
         onError?.(out?.error ? `Could not open the ticket folder: ${out.error}` : 'Could not open the ticket folder.');
         return false;
       }
-      // A failed clone leaves an empty folder: say why instead of opening a chat with no history.
+      // A failed clone still opens the ticket's chat, the same view as every
+      // other ticket: its bar says the folder is not cloned and offers Clone
+      // from remote. Falling back to the old ticket page made tickets of one
+      // project look like two different products.
       if (out.state === 'none' && out.hasRepo) {
         onError?.(`Could not clone the repository${out.error ? `: ${out.error}` : '.'}`);
-        return false;
       }
       const rows = Object.values(ctx.sessions?.list?.getSnapshot?.()?.byId ?? {});
       const existing = rows.find((row) => typeof row?.cwd === 'string' && row.cwd.replace(/\/+$/, '') === out.dir);

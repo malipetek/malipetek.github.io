@@ -15,8 +15,8 @@
  *
  * Pulling is a decision about the project, not one ticket: once any ticket
  * folder of a project is a full checkout, its other tickets open as full
- * checkouts too (a new clone borrows the pulled folder's objects, then drops
- * the link; a history-only folder is pulled when it is opened again).
+ * checkouts too (a new clone checks out the whole tree; a history-only
+ * folder is pulled when it is opened again).
  *
  * @module @malipetek/dsh-admin/ticket-thread
  */
@@ -129,9 +129,11 @@ export async function prepareThread({ root = TICKET_THREADS, slug, ticketId, rep
     await mkdir(dir, { recursive: true });
     return { dir, state: 'none', branch: null };
   }
-  const how = sibling
-    ? ['--reference-if-able', sibling, '--dissociate']
-    : ['--filter=blob:none', '--sparse'];
+  // A pulled sibling means the project is being worked on here: check the
+  // whole tree out (file contents fetched as needed). Never borrow the
+  // sibling's objects with --reference: a sibling that began history-only
+  // lacks file contents, and --dissociate then fails ("cannot repack").
+  const how = sibling ? ['--filter=blob:none'] : ['--filter=blob:none', '--sparse'];
   const cloned = await git(['clone', ...how, '--quiet', repo, dir], { cwd: root, timeoutMs: 300_000 });
   if (cloned.code !== 0) {
     await mkdir(dir, { recursive: true });
