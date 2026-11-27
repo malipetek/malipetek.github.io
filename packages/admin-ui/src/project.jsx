@@ -1175,7 +1175,7 @@ function Hosting({ project }) {
     <div className="aw-project__hosting-list">
       <h4>{label}</h4>
       {!section.ok ? (
-        <p className="aw-warn">{section.error}{section.permission ? ` It needs ${section.permission}.` : ''}</p>
+        <p className="aw-warn">{section.error}{section.permission ? ` It needs ${section.permission}.` : ''}{section.permission && info?.via === 'oauth' ? " The client reconnects Cloudflare on the portal's Connections page to grant it." : ''}</p>
       ) : section.items.length === 0 ? (
         <p className="aw-muted">None in this account.</p>
       ) : (

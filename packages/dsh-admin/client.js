@@ -17442,7 +17442,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       /* @__PURE__ */ jsx("h4", { children: label }),
       !section.ok ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
         section.error,
-        section.permission ? ` It needs ${section.permission}.` : ""
+        section.permission ? ` It needs ${section.permission}.` : "",
+        section.permission && info?.via === "oauth" ? " The client reconnects Cloudflare on the portal's Connections page to grant it." : ""
       ] }) : section.items.length === 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "None in this account." }) : /* @__PURE__ */ jsx("ul", { className: "aw-project__hosting-items", children: section.items.map((item) => /* @__PURE__ */ jsxs("li", { children: [
         /* @__PURE__ */ jsxs("span", { children: [
           /* @__PURE__ */ jsx("strong", { children: item.name }),
