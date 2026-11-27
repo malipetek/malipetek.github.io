@@ -27,6 +27,8 @@ test('every operator-facing write asks, and names the object', () => {
     ['admin_directory', { action: 'link', clientId: 'c1', projectId: 'p2' }, /Give client c1 access to project p2/],
     ['admin_directory', { action: 'unlink', clientId: 'c1', projectId: 'p2' }, /Remove client c1 from project p2/],
     ['admin_directory', { action: 'set_deploy_target', project: 'petekkoleji', kind: 'pages', target: 'petekkoleji' }, /deploy to Cloudflare Pages project petekkoleji, production from main/],
+    ['admin_directory', { action: 'set_repo', project: 'petekkoleji', repo: 'https://github.com/petekkoleji/petekkoleji.com' }, /Make project petekkoleji work on https:\/\/github\.com\/petekkoleji\/petekkoleji\.com\?/],
+    ['admin_directory', { action: 'adopt_hosting', project: 'petekkoleji' }, /Make project petekkoleji work on the repository Cloudflare builds its live site from/],
     ['admin_directory', { action: 'invite', email: 'it@petekkoleji.com', projects: ['petekkoleji'] }, /Invite it@petekkoleji\.com to petekkoleji\? They are emailed a sign-in link\. They are copied on every request email/],
     ['admin_directory', { action: 'invite', email: 'a@b.co', projects: ['x'], copy: false }, /Invite a@b\.co to x\? They are emailed a sign-in link\.$/],
     ['admin_project_local', { action: 'configure', projectId: 'p2', path: '/tmp/y' }, /p2 at \/tmp\/y/],

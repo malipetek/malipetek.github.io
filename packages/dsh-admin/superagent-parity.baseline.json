@@ -48,7 +48,6 @@
   {"endpoint": "POST /portal/projects", "area": "projects"},
   {"endpoint": "PUT /admin/i18n", "area": "i18n"},
   {"endpoint": "PUT /admin/marketing/settings", "area": "marketing"},
-  {"endpoint": "PUT /admin/projects/:param/repo", "area": "projects"},
   {"endpoint": "PUT /admin/projects/:param/secrets/:param", "area": "projects"},
   {"endpoint": "PUT /admin/projects/:param/solutions", "area": "solutions"}
 ]

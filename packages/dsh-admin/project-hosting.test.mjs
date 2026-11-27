@@ -54,6 +54,18 @@ test('a provider-built Pages project is detected and the target says who builds'
   assert.doesNotMatch(fleet, /provider builds/);
 });
 
+test('a live site built from another repo says so and names adopt_hosting', () => {
+  const text = hostingMessage(project, {
+    connected: true, via: 'oauth', connectionId: 9, accountId: '3b10da48', connections: [school], owner,
+    projectRepo: 'malipetek/petekkoleji',
+    detected: { provider: 'cloudflare', kind: 'pages', name: 'petekkoleji', productionBranch: 'main', builds: 'provider', repo: 'petekkoleji/petekkoleji.com', repoDiffers: true },
+    target: { kind: 'pages', name: 'petekkoleji', productionBranch: 'main', connectionId: 9, builds: 'fleet' },
+  });
+  assert.match(text, /live site is Pages project petekkoleji, which Cloudflare builds from petekkoleji\/petekkoleji\.com — not from malipetek\/petekkoleji/);
+  assert.match(text, /Action "adopt_hosting" records petekkoleji\/petekkoleji\.com/);
+  assert.doesNotMatch(text, /Set the deploy target's builds/);
+});
+
 test('a refused section names the permission', () => {
   const text = hostingMessage(project, {
     connected: true,

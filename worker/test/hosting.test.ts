@@ -63,7 +63,7 @@ test('hosting: detected is the one Pages project the provider builds from the pr
   const upload = { name: 'uploads', subdomain: 'uploads.pages.dev', productionBranch: 'main', domains: [], source: { type: null, repo: null, productionBranch: null, previews: false } };
   assert.deepEqual(
     detectProviderBuild([connected('petekkoleji', 'petekkoleji/petekkoleji.com'), upload], 'petekkoleji/petekkoleji.com'),
-    { provider: 'cloudflare', kind: 'pages', name: 'petekkoleji', productionBranch: 'main', builds: 'provider' },
+    { provider: 'cloudflare', kind: 'pages', name: 'petekkoleji', productionBranch: 'main', builds: 'provider', repo: 'petekkoleji/petekkoleji.com' },
   );
   // The compare is case-insensitive, as GitHub names are.
   assert.equal(detectProviderBuild([connected('p', 'PETEKKOLEJI/Petekkoleji.com')], 'petekkoleji/petekkoleji.com')?.name, 'p');
@@ -72,6 +72,31 @@ test('hosting: detected is the one Pages project the provider builds from the pr
   assert.equal(detectProviderBuild([connected('p', 'a/b'), upload], 'c/d'), null);
   assert.equal(detectProviderBuild([connected('p', 'a/b'), connected('q', 'a/b')], 'a/b'), null);
   assert.equal(detectProviderBuild([], 'a/b'), null);
+});
+
+test('hosting: a live Pages site built from another repo is named with repoDiffers', () => {
+  const pages = (name: string, repo: string | null, domains: string[] = []) => ({
+    name, subdomain: `${name}.pages.dev`, productionBranch: 'main', domains: [`${name}.pages.dev`, ...domains],
+    source: { type: repo ? 'github' as const : null, repo, productionBranch: repo ? 'main' : null, previews: Boolean(repo) },
+  });
+  // The project records an empty onboarding stub; the school's site is built from its own repo.
+  const live = pages('petekkoleji', 'petekkoleji/petekkoleji.com', ['petekkoleji.com']);
+  assert.deepEqual(detectProviderBuild([live], 'malipetek/petekkoleji'), {
+    provider: 'cloudflare', kind: 'pages', name: 'petekkoleji', productionBranch: 'main', builds: 'provider',
+    repo: 'petekkoleji/petekkoleji.com', repoDiffers: true,
+  });
+  // No recorded repo at all: the same answer.
+  assert.equal(detectProviderBuild([live], null)?.repoDiffers, true);
+  // Served through DNS only, or already the deploy target: still the live site.
+  const bare = pages('site', 'o/site');
+  assert.equal(detectProviderBuild([bare], 'x/y', { served: ['site'] })?.name, 'site');
+  assert.equal(detectProviderBuild([bare], 'x/y', { target: { provider: 'cloudflare', kind: 'pages', name: 'site', productionBranch: 'main' } })?.name, 'site');
+  // A git-built project that serves nothing, or two live ones, or a direct upload: nothing to say.
+  assert.equal(detectProviderBuild([bare], 'x/y'), null);
+  assert.equal(detectProviderBuild([live, pages('other', 'o/other', ['other.com'])], 'x/y'), null);
+  assert.equal(detectProviderBuild([pages('upload', null, ['petekkoleji.com'])], 'x/y'), null);
+  // An exact repo match still wins over a live site built elsewhere.
+  assert.equal(detectProviderBuild([live, pages('mine', 'x/y')], 'x/y')?.name, 'mine');
 });
 
 test('hosting: a refused call names the permission the token lacks, and never echoes the token', async () => {

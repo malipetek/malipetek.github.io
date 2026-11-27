@@ -15,7 +15,7 @@
 /** Write actions per tool. Anything not listed is a read and passes through. */
 export const WRITE_ACTIONS = {
   admin_tickets: ['reply', 'note', 'set_status'],
-  admin_directory: ['create_project', 'set_folder', 'link', 'unlink', 'invite', 'set_deploy_target'],
+  admin_directory: ['create_project', 'set_folder', 'link', 'unlink', 'invite', 'set_deploy_target', 'adopt_hosting', 'set_repo'],
   admin_project_local: ['configure', 'clone'],
   admin_project_operations: ['project.update', 'mentions.send', 'work.draft', 'work.queue'],
   admin_fleet: ['file_task', 'route', 'cancel', 'drain', 'undrain', 'node_control'],
@@ -49,6 +49,10 @@ function describe(tool, action, args) {
       return args.kind === 'none'
         ? `Clear where project ${text(args.project) ?? ''} deploys?`
         : `Make project ${text(args.project) ?? ''} deploy to Cloudflare ${args.kind === 'workers' ? 'Worker' : 'Pages project'} ${text(args.target) ?? ''}, production from ${text(args.productionBranch) ?? 'main'}?`;
+    case 'admin_directory set_repo':
+      return `Make project ${text(args.project) ?? ''} work on ${text(args.repo) ?? 'that repository'}?`;
+    case 'admin_directory adopt_hosting':
+      return `Make project ${text(args.project) ?? ''} work on the repository Cloudflare builds its live site from, and let Cloudflare build its ticket branches (preview) and production branch (live)? Nothing is deployed now.`;
     case 'admin_directory invite': {
       const projects = Array.isArray(args.projects) ? args.projects.filter((p) => text(p)).join(', ') : '';
       const copies = args.copy !== false ? ' They are copied on every request email on those projects.' : '';

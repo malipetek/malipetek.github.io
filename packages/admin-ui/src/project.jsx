@@ -421,7 +421,7 @@ function Setup({ project, refresh, host }) {
       <section className="aw-project__section"><ProjectSolutions project={project} /></section>
       <People project={project} refresh={refresh} />
       <Code project={project} refresh={refresh} />
-      <Hosting project={project} />
+      <Hosting project={project} refresh={refresh} />
       <Resources project={project} refresh={refresh} host={host} />
       <Secrets project={project} />
     </>
@@ -1219,7 +1219,7 @@ function People({ project, refresh }) {
  * on the portal's Connections page; no one else's is ever used), and the
  * chosen Pages project or Worker becomes the fleet's deploy target.
  */
-function Hosting({ project }) {
+function Hosting({ project, refresh }) {
   const { api, ask } = useAdmin();
   const load = useCallback(
     () => api('GET', `/admin/projects/${encodeURIComponent(project.id)}/cloudflare`),
@@ -1254,6 +1254,23 @@ function Hosting({ project }) {
     text: `Cloudflare already builds it from ${projectRepo ?? 'this project’s repo'}: each ticket branch gets a preview, ${detected.productionBranch || 'main'} goes live.`,
     confirm: 'Use it',
     run: () => choose({ provider: detected.provider ?? 'cloudflare', kind: detected.kind, name: detected.name, productionBranch: detected.productionBranch || 'main', builds: 'provider' }, `Cloudflare builds ${detected.name} now.`),
+  });
+  // The site is live on a Pages project Cloudflare builds from another repo
+  // than the one recorded here (an onboarding stub, a fork): adopting it
+  // records that repo and lets Cloudflare build the ticket branches.
+  const adoptDetected = () => ask({
+    title: `Work on ${detected.repo}?`,
+    text: `Cloudflare builds ${detected.name} from ${detected.repo}. This project's repository becomes ${detected.repo}${projectRepo ? ` instead of ${projectRepo}` : ''}; each ticket branch gets a preview there, ${detected.productionBranch || 'main'} goes live. Nothing is deployed now.`,
+    confirm: `Use ${detected.repo}`,
+    run: () => run(async () => {
+      await api('PUT', `/admin/projects/${encodeURIComponent(project.id)}/repo`, { repo: `https://github.com/${detected.repo}` });
+      const next = { provider: detected.provider ?? 'cloudflare', kind: detected.kind, name: detected.name, productionBranch: detected.productionBranch || 'main', builds: 'provider' };
+      await api('PUT', `/admin/projects/${encodeURIComponent(project.id)}/deploy-target`, {
+        target: info?.via === 'oauth' ? { ...next, connectionId: info.connectionId, accountId: info.accountId } : next,
+      });
+      await reload();
+      await refresh?.();
+    }, `Works on ${detected.repo} now; Cloudflare builds ${detected.name}.`),
   });
   const clearTarget = () => ask({
     title: `Clear the deploy target for ${project.name}?`,
@@ -1332,7 +1349,18 @@ function Hosting({ project }) {
           <p className="aw-muted">
             {info.via === 'oauth' ? `Through the owner's Cloudflare connection (${grant?.email ?? info.owner ?? 'the owner'}), account ${accountName}.` : 'Through the Cloudflare credentials stored on this project.'}
           </p>
-          {target?.builds === 'provider' ? (
+          {detected?.repoDiffers ? (
+            <div className="aw-project__connect">
+              <p><strong>Cloudflare builds {detected.name} from {detected.repo}.</strong></p>
+              <p className="aw-muted">
+                {projectRepo ? `This project records ${projectRepo}, so its work would not reach the live site.` : 'This project records no repository yet.'}
+                {' '}Use {detected.repo}: each ticket branch gets a preview, {detected.productionBranch || 'main'} goes live.
+              </p>
+              <div className="aw-project__actions">
+                <Button size="sm" kind="primary" busy={write.busy} onClick={adoptDetected}>Use {detected.repo}</Button>
+              </div>
+            </div>
+          ) : target?.builds === 'provider' ? (
             <div className="aw-project__hosting-list">
               <p>
                 <strong>{target.name}</strong>{' '}

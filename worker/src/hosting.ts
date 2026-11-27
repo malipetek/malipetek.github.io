@@ -190,18 +190,48 @@ export function normalizeRepo(repo: string | null | undefined): string | null {
 }
 
 /**
- * The Pages project the provider itself builds from the project's repo, said
- * the way the fleet and the superagent need it. Only an unambiguous answer
- * counts: exactly one git-connected Pages project whose repo is the project's.
+ * The Pages project the provider itself builds, said the way the fleet and the
+ * superagent need it. Only an unambiguous answer counts.
+ *
+ * First choice: exactly one git-connected Pages project whose repo is the
+ * project's. Otherwise, when the project's site is already live there (exactly
+ * one git-connected Pages project serves a custom domain, or is the current
+ * deploy target) from another repo, that project is named with `repoDiffers`:
+ * the code lives in `repo`, not in what the project records (an onboarding
+ * stub, a fork), and adopting it means recording `repo` too (rule 4: onboarding
+ * adopts what the client already has).
  */
-export type ProviderBuilt = { provider: 'cloudflare'; kind: 'pages'; name: string; productionBranch: string | null; builds: 'provider' };
+export type ProviderBuilt = {
+  provider: 'cloudflare';
+  kind: 'pages';
+  name: string;
+  productionBranch: string | null;
+  builds: 'provider';
+  /** `owner/name` the provider builds from, lowercased. */
+  repo: string;
+  /** The provider builds from `repo`, which is not the project's recorded repo. */
+  repoDiffers?: true;
+};
 
-export function detectProviderBuild(pages: PagesProject[] | null | undefined, projectRepo: string | null): ProviderBuilt | null {
-  if (!projectRepo || !pages?.length) return null;
-  const matches = pages.filter((p) => typeof p.source.repo === 'string' && p.source.repo.toLowerCase() === projectRepo);
-  if (matches.length !== 1) return null;
-  const only = matches[0];
-  return { provider: 'cloudflare', kind: 'pages', name: only.name, productionBranch: only.source.productionBranch ?? only.productionBranch, builds: 'provider' };
+const servesCustomDomain = (p: PagesProject) => p.domains.some((d) => !/\.pages\.dev$/i.test(d));
+
+export function detectProviderBuild(
+  pages: PagesProject[] | null | undefined,
+  projectRepo: string | null,
+  { served = [], target = null }: { served?: string[]; target?: DeployTarget | null } = {},
+): ProviderBuilt | null {
+  if (!pages?.length) return null;
+  const built = pages.filter((p) => typeof p.source.repo === 'string' && p.source.repo !== '');
+  const said = (p: PagesProject, extra: Partial<ProviderBuilt> = {}): ProviderBuilt => ({
+    provider: 'cloudflare', kind: 'pages', name: p.name, productionBranch: p.source.productionBranch ?? p.productionBranch,
+    builds: 'provider', repo: String(p.source.repo).toLowerCase(), ...extra,
+  });
+  const matches = projectRepo ? built.filter((p) => String(p.source.repo).toLowerCase() === projectRepo) : [];
+  if (matches.length === 1) return said(matches[0]);
+  if (matches.length > 1) return null;
+  const servedNames = new Set(served.map((n) => n.toLowerCase()));
+  const live = built.filter((p) => servesCustomDomain(p) || servedNames.has(p.name.toLowerCase()) || (target?.kind === 'pages' && target.name === p.name));
+  return live.length === 1 ? said(live[0], { repoDiffers: true }) : null;
 }
 
 const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;

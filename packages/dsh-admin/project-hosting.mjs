@@ -49,7 +49,9 @@ export function hostingMessage(project, result) {
     result.via === 'oauth'
       ? `${project.name}: read through the owner's Cloudflare connection #${result.connectionId} (${grant?.email ?? result.owner ?? 'the owner'}), account ${result.accountId}.`
       : `${project.name}: read with the Cloudflare token stored on the project, account ${result.accountId}.`,
-    result.detected
+    result.detected?.repoDiffers
+      ? `Detected: the live site is Pages project ${result.detected.name}, which Cloudflare builds from ${result.detected.repo} — not from ${result.projectRepo ?? 'a repository recorded on this project'}, so work on the recorded repo never reaches it. Action "adopt_hosting" records ${result.detected.repo} as the project's repository and sets the deploy target to ${result.detected.name} built by the provider: pushing a ticket branch makes the preview, landing on ${result.detected.productionBranch ?? 'main'} publishes.`
+      : result.detected
       ? `Detected: Cloudflare builds this from ${result.projectRepo ?? 'the connected repository'} (Pages project ${result.detected.name}, production branch ${result.detected.productionBranch ?? 'unknown'}) — pushing a branch makes a preview, landing on the production branch publishes. Set the deploy target's builds to "provider" so runs push branches instead of deploying.`
       : null,
     result.workers ? section('Worker scripts', result.workers, (w) => `${w.name}${w.modifiedOn ? ` (changed ${w.modifiedOn.slice(0, 10)})` : ''}`) : null,

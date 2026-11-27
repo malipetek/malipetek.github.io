@@ -3750,10 +3750,9 @@ portal.get('/admin/projects/:id/cloudflare', async (c) => {
     const accountId = (requested ? null : target?.connectionId === chosen.id ? target.accountId : null) ?? chosen.accounts[0]?.id ?? '';
     // A grant from before Pages was asked for answers "not allowed": the client reconnects.
     const [pages, workers, domains] = await Promise.all([listPages(accountId, token), listWorkers(accountId, token), listDomains(accountId, token)]);
-    // When the account's Pages list names exactly one project the provider
-    // itself builds from this project's repo, say so: such a site deploys by
-    // pushing branches, not by handing a run a deploy token.
-    const detected = detectProviderBuild(pages.ok ? pages.items : null, projectRepo);
+    // When the provider itself builds the site from a Git repo, say so: such a
+    // site deploys by pushing branches, not by handing a run a deploy token.
+    const detected = detectProviderBuild(pages.ok ? pages.items : null, projectRepo, { served: servedPages(domains), target });
     return reply(c, { connected: true, via: 'oauth', connectionId: chosen.id, accountId, connections, owner: project.owner_email, projectRepo, detected, pages, workers, domains, target });
   }
   const rows = (await c.env.DB.prepare(`SELECT name, value_enc FROM project_secrets WHERE project_id=? AND name IN ('CLOUDFLARE_ACCOUNT_ID','CLOUDFLARE_API_TOKEN')`)
@@ -3772,9 +3771,13 @@ portal.get('/admin/projects/:id/cloudflare', async (c) => {
     return reply(c, { error: 'secrets_unavailable' }, 503);
   }
   const [pages, workers, domains] = await Promise.all([listPages(accountId, token), listWorkers(accountId, token), listDomains(accountId, token)]);
-  const detected = detectProviderBuild(pages.ok ? pages.items : null, projectRepo);
+  const detected = detectProviderBuild(pages.ok ? pages.items : null, projectRepo, { served: servedPages(domains), target });
   return reply(c, { connected: true, via: 'token', accountId, connections, owner: project.owner_email, projectRepo, detected, pages, workers, domains, target });
 });
+
+/** Pages projects the account's DNS points one of its hosts at. */
+const servedPages = (domains: Awaited<ReturnType<typeof listDomains>>) =>
+  domains.ok ? domains.items.filter((d) => d.kind === 'pages').map((d) => d.name) : [];
 
 /** Choose (or clear, with `null`) where this project's work goes live. */
 portal.put('/admin/projects/:id/deploy-target', async (c) => {

@@ -1180,6 +1180,10 @@ const projectCloudflare = (config, projectId) =>
 const setDeployTarget = (config, projectId, target) =>
   request(config, `/admin/projects/${encodeURIComponent(projectId)}/deploy-target`, { method: 'PUT', body: { target } });
 
+/** Record the project's repository (a GitHub URL). */
+const setProjectRepo = (config, projectId, repo) =>
+  request(config, `/admin/projects/${encodeURIComponent(projectId)}/repo`, { method: 'PUT', body: { repo } });
+
 const unlinkProject = (config, userId, projectId) =>
   request(config, `/admin/clients/${encodeURIComponent(userId)}/projects/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',
@@ -2505,6 +2509,8 @@ export function apply(ctx) {
           'Action "set_folder" writes that slug → folder mapping into the local runner config; without an entry the runner falls back to <projectsRoot>/<slug>.',
           'Action "hosting" reads the client\'s Cloudflare through the project owner\'s OAuth grant (their Workers, the current deploy target, and the owner\'s grants with their accounts); use it, never a local token or wrangler login, to find where a client site lives. Only the owner\'s grant is ever used — never another user\'s — and a project without an owner says so: set the owner first, and the owner connects Cloudflare on the portal\'s Connections page.',
           'Action "set_deploy_target" records which of those the project deploys to (kind pages|workers, name, productionBranch, builds): fleet runs then get the target beside the client\'s Cloudflare credential and deploy previews to their ticket branch and releases to the production branch — or, when the provider builds the connected Git repo itself (builds "provider"), runs just push the ticket branch and the provider builds the preview.',
+          'Action "adopt_hosting" is the hosting read\'s fix when it says the live site is built by the provider from another repository than the project records (an onboarding stub): it records that repository on the project and sets the deploy target to that Pages project, built by the provider — the same as the project page\'s "Use <repo>" button.',
+          'Action "set_repo" records the project\'s repository (repo: a GitHub URL), the same as the project page\'s repo dialog; work, ticket folders and provider detection all read it.',
           'Action "invite" gives an email address access to one or more projects whether or not that person has an account yet: the portal makes the client account if needed, links the projects and emails a week-long sign-in link. Use it instead of waiting for someone to sign up. Like the UI\'s Add people, they are copied on every client request email on those projects unless copy is false.',
         ].join(' '),
         parameters: {
@@ -2514,11 +2520,12 @@ export function apply(ctx) {
           properties: {
             action: {
               type: 'string',
-              enum: ['clients', 'projects', 'create_project', 'set_folder', 'link', 'unlink', 'invite', 'hosting', 'set_deploy_target'],
+              enum: ['clients', 'projects', 'create_project', 'set_folder', 'link', 'unlink', 'invite', 'hosting', 'set_deploy_target', 'adopt_hosting', 'set_repo'],
               description: 'List clients, list projects, create a project, point a project at a local folder, link/unlink a project to an existing client, or invite an email address to projects.',
             },
             email: { type: 'string', description: 'Email address to invite, for invite.' },
-            project: { type: 'string', description: 'Project id or slug, for hosting and set_deploy_target.' },
+            repo: { type: 'string', description: 'The repository URL, e.g. https://github.com/owner/name, for set_repo.' },
+            project: { type: 'string', description: 'Project id or slug, for hosting, set_deploy_target and adopt_hosting.' },
             kind: { type: 'string', enum: ['pages', 'workers', 'none'], description: 'Cloudflare Pages project or Worker script, for set_deploy_target; "none" clears the target.' },
             target: { type: 'string', description: 'The Pages project or Worker script name, for set_deploy_target.' },
             productionBranch: { type: 'string', description: 'Branch that publishes to production, for set_deploy_target. Defaults to main.' },
@@ -2618,20 +2625,42 @@ export function apply(ctx) {
               return { message: args.action === 'link' ? 'Project linked.' : 'Project unlinked.' };
             }
             case 'hosting':
-            case 'set_deploy_target': {
+            case 'set_deploy_target':
+            case 'adopt_hosting':
+            case 'set_repo': {
               const key = typeof args.project === 'string' ? args.project.trim() : '';
               if (!key) throw new Error('project is required: an id or slug.');
               const snapshot = await refresh(config);
               const project = snapshot.projects.find((p) => p.id === key || p.slug === key.toLowerCase());
               if (project === undefined) throw new Error(`No project "${key}". List them with action "projects".`);
+              if (args.action === 'set_repo') {
+                const repo = typeof args.repo === 'string' ? args.repo.trim() : '';
+                if (!repo) throw new Error('repo is required: the repository URL.');
+                const saved = await setProjectRepo(config, project.id, repo);
+                await refresh(config);
+                return { message: `${project.name} now records ${saved.repo ?? repo}.` };
+              }
               const hosting = await projectCloudflare(config, project.id);
               if (args.action === 'hosting') return { message: hostingMessage(project, hosting) };
+              if (args.action === 'adopt_hosting') {
+                const found = hosting?.detected;
+                if (!found?.repoDiffers) {
+                  return { message: `Nothing to adopt for ${project.name}: the hosting read names no live site built from another repository.\n${hostingMessage(project, hosting)}` };
+                }
+                await setProjectRepo(config, project.id, `https://github.com/${found.repo}`);
+                const saved = await setDeployTarget(config, project.id, {
+                  provider: found.provider ?? 'cloudflare', kind: found.kind, name: found.name, productionBranch: found.productionBranch || 'main', builds: 'provider',
+                  ...(hosting.via === 'oauth' ? { connectionId: hosting.connectionId, accountId: hosting.accountId } : {}),
+                });
+                await refresh(config);
+                return { message: `${project.name} now works on ${found.repo}, and Cloudflare builds Pages project ${saved.target?.name ?? found.name} from it: pushing a ticket branch makes the preview, landing on ${saved.target?.productionBranch ?? 'main'} publishes. Nothing was deployed.` };
+              }
               const name = typeof args.target === 'string' ? args.target.trim() : '';
               // Who builds the deploys: asked for explicitly, else the hosting
               // read's own detection when it names this same project.
               const builds = args.builds === 'provider' || args.builds === 'fleet'
                 ? args.builds
-                : hosting?.detected?.builds === 'provider' && hosting.detected.name === name ? 'provider' : undefined;
+                : hosting?.detected?.builds === 'provider' && !hosting.detected.repoDiffers && hosting.detected.name === name ? 'provider' : undefined;
               const target = args.kind === 'none'
                 ? null
                 : {

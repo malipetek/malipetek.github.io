@@ -138,8 +138,14 @@ test('the hosting read names the project repo and the one Pages project the prov
     assert.equal(res.status, 200);
     const body = await res.json() as any;
     assert.equal(body.projectRepo, 'petekkoleji/petekkoleji.com');
-    assert.deepEqual(body.detected, { provider: 'cloudflare', kind: 'pages', name: 'petekkoleji', productionBranch: 'main', builds: 'provider' });
+    assert.deepEqual(body.detected, { provider: 'cloudflare', kind: 'pages', name: 'petekkoleji', productionBranch: 'main', builds: 'provider', repo: 'petekkoleji/petekkoleji.com' });
     assert.deepEqual(body.pages.items[1].source, { type: null, repo: null, productionBranch: null, previews: false });
+    // The project records an empty onboarding stub instead: the live site is
+    // still named, with the repo Cloudflare really builds from.
+    f.sql.exec("UPDATE projects SET repo='https://github.com/malipetek/petekkoleji' WHERE id='a'");
+    const stub = await (await request('GET', '/admin/projects/a/cloudflare')).json() as any;
+    assert.equal(stub.projectRepo, 'malipetek/petekkoleji');
+    assert.deepEqual(stub.detected, { provider: 'cloudflare', kind: 'pages', name: 'petekkoleji', productionBranch: 'main', builds: 'provider', repo: 'petekkoleji/petekkoleji.com', repoDiffers: true });
   } finally {
     globalThis.fetch = real;
   }
