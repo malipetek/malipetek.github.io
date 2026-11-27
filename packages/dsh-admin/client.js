@@ -1248,7 +1248,8 @@ var __awPlugin = (() => {
     pause: "M9 5v14M15 5v14",
     branch: "M6 3v12a3 3 0 1 0 3 3M6 9h8a4 4 0 0 0 4-4M18 3v4M4 3h4",
     globe: "M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0M3 12h18M12 3c4 5 4 13 0 18-4-5-4-13 0-18",
-    file: "M14 3H5v18h14V8l-5-5v5h5M8 12h8M8 16h8"
+    file: "M14 3H5v18h14V8l-5-5v5h5M8 12h8M8 16h8",
+    download: "M12 3v12M7 10l5 5 5-5M4 19h16"
   };
   var WEIGHT = { more: 2.6, pause: 2.2 };
   function Icon({ name, size = 16 }) {
@@ -10601,6 +10602,13 @@ ${SITE_LINK}` : SITE_LINK;
     ] });
   }
 
+  // packages/admin-ui/src/desktop-app.js
+  var DESKTOP_APP = Object.freeze({
+    url: "https://downloads.ptechsolutions.net/ptech-admin-mac-arm64.dmg",
+    label: "PTech Admin for Mac",
+    requirement: "Apple Silicon Macs (M1 or newer)"
+  });
+
   // packages/admin-ui/src/fleet.jsx
   var pct3 = (a, b) => b ? Math.round(a / b * 100) : 0;
   var capabilityLabel = (id, caps) => caps.find((c) => c.id === id)?.label ?? ({
@@ -12021,6 +12029,19 @@ ${SITE_LINK}` : SITE_LINK;
           /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "Running in" }),
           /* @__PURE__ */ jsx("span", { children: desktop ? "The desktop app" : "The web admin" })
         ] }),
+        desktop ? null : /* @__PURE__ */ jsxs("div", { className: "aw-field", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "Desktop app" }),
+          /* @__PURE__ */ jsxs("span", { children: [
+            /* @__PURE__ */ jsxs("a", { href: DESKTOP_APP.url, children: [
+              "Download ",
+              DESKTOP_APP.label
+            ] }),
+            /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+              " \xB7 ",
+              DESKTOP_APP.requirement
+            ] })
+          ] })
+        ] }),
         host?.version ? /* @__PURE__ */ jsxs("div", { className: "aw-field", children: [
           /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "Version" }),
           /* @__PURE__ */ jsx("span", { className: "aw-mono", children: host.version })
@@ -12339,6 +12360,8 @@ ${SITE_LINK}` : SITE_LINK;
 .aw-status > .aw-status__fill { flex: 1; }
 .aw-status button { border: 0; background: none; padding: 0 var(--aw-space-2); height: var(--aw-status-h); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: inherit; font-size: inherit; border-radius: 0; }
 .aw-status button:hover { background: var(--aw-hover); color: var(--aw-ink); }
+.aw-status a { padding: 0 var(--aw-space-2); height: var(--aw-status-h); display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none; }
+.aw-status a:hover { background: var(--aw-hover); color: var(--aw-ink); }
 .aw-status__item { display: inline-flex; align-items: center; gap: 6px; padding: 0 var(--aw-space-2); }
 .aw-status__err { color: var(--aw-bad-ink); }
 .aw-status kbd, .aw-kbd { font: inherit; font-size: var(--aw-type-xs); color: var(--aw-ink-2); padding: 0 5px; border: 1px solid var(--aw-hairline); border-radius: var(--aw-radius-sm); background: var(--aw-surface); line-height: 16px; display: inline-block; min-width: 18px; text-align: center; }

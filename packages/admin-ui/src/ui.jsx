@@ -615,6 +615,7 @@ const PATHS = {
   branch: 'M6 3v12a3 3 0 1 0 3 3M6 9h8a4 4 0 0 0 4-4M18 3v4M4 3h4',
   globe: 'M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0M3 12h18M12 3c4 5 4 13 0 18-4-5-4-13 0-18',
   file: 'M14 3H5v18h14V8l-5-5v5h5M8 12h8M8 16h8',
+  download: 'M12 3v12M7 10l5 5 5-5M4 19h16',
 };
 /** Glyphs drawn heavier than the 1.5 default so they read at small sizes. */
 const WEIGHT = { more: 2.6, pause: 2.2 };

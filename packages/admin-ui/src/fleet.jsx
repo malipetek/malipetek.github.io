@@ -33,6 +33,7 @@ import { ToolboxPanel } from './toolbox.jsx';
 import { MarketingSettings } from './marketing.jsx';
 import { SeoSettings } from './seo.jsx';
 import { onSettingsSection, openSettings, settingsSection, takePendingSection } from './settings-link.js';
+import { DESKTOP_APP } from './desktop-app.js';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
@@ -1674,6 +1675,15 @@ function AccountSettings() {
           <span className="aw-field__label">Running in</span>
           <span>{desktop ? 'The desktop app' : 'The web admin'}</span>
         </div>
+        {desktop ? null : (
+          <div className="aw-field">
+            <span className="aw-field__label">Desktop app</span>
+            <span>
+              <a href={DESKTOP_APP.url}>Download {DESKTOP_APP.label}</a>
+              <span className="aw-muted"> · {DESKTOP_APP.requirement}</span>
+            </span>
+          </div>
+        )}
         {host?.version ? (
           <div className="aw-field">
             <span className="aw-field__label">Version</span>

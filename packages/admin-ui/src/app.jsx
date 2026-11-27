@@ -19,6 +19,7 @@ import { TicketDetails, TicketView } from './ticket.jsx';
 import { InjectedStyles } from './ui/injected-styles.js';
 import { ClientView, ClientsView, FleetView, SettingsView } from './fleet.jsx';
 import { isSettingsKey, settingsSection } from './settings-link.js';
+import { DESKTOP_APP } from './desktop-app.js';
 import { MachineOnboarding, MachineStatusPill } from './machine.jsx';
 import { MarketingView } from './marketing.jsx';
 import { SeoView } from './seo.jsx';
@@ -701,6 +702,12 @@ function StatusBar({ onPalette, onKeys }) {
       )}
       {platform === 'dsh' ? <MachineStatusPill /> : null}
       <span className="aw-status__fill" />
+      {platform === 'web' ? (
+        <a href={DESKTOP_APP.url} title={`Download ${DESKTOP_APP.label} (${DESKTOP_APP.requirement})`}>
+          <Icon name="download" size={12} />
+          Mac app
+        </a>
+      ) : null}
       <button type="button" onClick={sync} disabled={syncing} title="Refresh now (it also refreshes every 15 seconds)" className={data.error ? 'aw-status__err' : undefined}>
         <Icon name="refresh" size={12} />
         {syncing ? 'Syncing…' : data.error ? 'Sync failed · retry' : time ? `Synced ${time}` : 'Not synced yet'}
@@ -745,6 +752,7 @@ function Palette({ onClose, onKeys, toggleExplorer }) {
       { label: 'Toggle explorer', hint: `${MOD}B`, run: toggleExplorer },
       ...(activeTab ? [{ label: 'Close tab', hint: closeKey(platform), run: () => closeTab(activeTab) }] : []),
       { label: 'Keyboard shortcuts', hint: '?', run: onKeys },
+      ...(platform === 'web' ? [{ label: `Download ${DESKTOP_APP.label}`, hint: DESKTOP_APP.requirement, run: () => { window.location.href = DESKTOP_APP.url; } }] : []),
       ...VIEWS.filter((v) => viewOffered(v, data.access, host)).map((v) => ({ label: `Go to ${v.label}`, hint: viewKey(platform, VIEWS.indexOf(v) + 1), run: () => open(v.key) })),
       ...data.projects.map((p) => ({ label: p.name, hint: 'project', run: () => open(`p:${p.id}`) })),
       ...data.clients.map((c) => ({ label: c.name || c.email, hint: c.name ? `client · ${c.email}` : 'client', run: () => open(`c:${c.id}`) })),

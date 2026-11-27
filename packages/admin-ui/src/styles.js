@@ -218,6 +218,8 @@ export const STYLES = `
 .aw-status > .aw-status__fill { flex: 1; }
 .aw-status button { border: 0; background: none; padding: 0 var(--aw-space-2); height: var(--aw-status-h); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: inherit; font-size: inherit; border-radius: 0; }
 .aw-status button:hover { background: var(--aw-hover); color: var(--aw-ink); }
+.aw-status a { padding: 0 var(--aw-space-2); height: var(--aw-status-h); display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none; }
+.aw-status a:hover { background: var(--aw-hover); color: var(--aw-ink); }
 .aw-status__item { display: inline-flex; align-items: center; gap: 6px; padding: 0 var(--aw-space-2); }
 .aw-status__err { color: var(--aw-bad-ink); }
 .aw-status kbd, .aw-kbd { font: inherit; font-size: var(--aw-type-xs); color: var(--aw-ink-2); padding: 0 5px; border: 1px solid var(--aw-hairline); border-radius: var(--aw-radius-sm); background: var(--aw-surface); line-height: 16px; display: inline-block; min-width: 18px; text-align: center; }
