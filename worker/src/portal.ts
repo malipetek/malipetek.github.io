@@ -56,7 +56,7 @@ import { i18nStatus, requestI18nSync, setI18nAuto } from './i18nSync.ts';
 import { healthMail, healthView, markHealthAlerted, runHealthChecks } from './health.ts';
 import { latestReview, reviewLine, reviewRun } from './review.ts';
 import { maybeAutoApprove } from './approve.ts';
-import { completeFirstPreview } from './firstPreview.ts';
+import { completeFirstPreview, limitCentsFor } from './firstPreview.ts';
 import { apiBase, cloudflareAccess } from './cfaccess.ts';
 import { screenshotResponse, screenshotsFor, verifyShotToken } from './screenshots.ts';
 import {
@@ -1311,7 +1311,7 @@ portal.post('/auth/device/token', async (c) => {
 portal.get('/portal/me', async (c) => {
   const user = c.get('user');
   const env = c.env;
-  const [projects, slugs, counts, sites, settings, usage] = await Promise.all([
+  const [projects, slugs, counts, sites, settings, usage, accountRow] = await Promise.all([
     userProjects(env, user.id),
     onlineSlugs(env),
     env.DB.prepare(
@@ -1325,7 +1325,13 @@ portal.get('/portal/me', async (c) => {
     sitesByProject(env),
     getSettings(env),
     usageByUser(env, user.id),
+    env.DB.prepare('SELECT verified_at, first_preview_at, first_preview_limit_usd FROM users WHERE id = ?')
+      .bind(user.id)
+      .first<{ verified_at: number | null; first_preview_at: number | null; first_preview_limit_usd: number | null }>(),
   ]);
+  const account = accountRow ?? null;
+  // The one free first preview: whether this account still has it, and its cap.
+  const firstPreviewLimit = limitCentsFor(account?.first_preview_limit_usd ?? null, settings.first_preview_limit_usd);
   const filed = new Map((counts.results ?? []).map((row) => [row.project_id, row.n]));
 
   // How many times each site has gone live: a building gains a floor per
@@ -1350,6 +1356,10 @@ portal.get('/portal/me', async (c) => {
     canPublish: settings.clientPublish,
     canConnectAssistant: canUseAssistant(env, user),
     usage: usage.get(user.id) ?? NO_USAGE,
+    firstPreview: {
+      available: firstPreviewLimit > 0 && account?.verified_at != null && account?.first_preview_at == null,
+      limitUsd: firstPreviewLimit / 100,
+    },
     projects: (projects ?? []).map((project) => {
       const kind = isProjectKind(project.kind) ? project.kind : 'existing';
       const repoKind = isRepoKind(project.repo_kind) ? project.repo_kind : 'none';
@@ -1396,6 +1406,26 @@ portal.get('/portal/me', async (c) => {
     }),
     lanes: (projects ?? []).map((project) => {
       const rows = sites.get(project.id) ?? [];
+      // No hosted site yet but the project adopted live hosting: the target is
+      // the lane's one live pod.
+      if (rows.length === 0) {
+        const target = readDeployTarget(project.deploy_target);
+        if (target) {
+          return {
+            id: project.id,
+            name: project.name,
+            sites: [
+              {
+                id: `target:${target.kind}:${target.name}`,
+                name: target.name,
+                url: target.kind === 'pages' ? `https://${target.name}.pages.dev` : null,
+                live: true,
+                deploys: 1,
+              },
+            ],
+          };
+        }
+      }
       return {
         id: project.id,
         name: project.name,

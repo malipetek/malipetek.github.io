@@ -117,6 +117,31 @@ test('GET /portal/me exposes a client-safe deployTarget, null without one', asyn
   assert.equal(plain.deployTarget, null);
 });
 
+test('GET /portal/me exposes firstPreview eligibility and the adopted target as a lane pod', async () => {
+  const { sql, request } = await fixture();
+  const res = await request('GET', '/portal/me');
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as any;
+
+  // The fixture user is verified and has never used a first preview.
+  assert.deepEqual(body.firstPreview, { available: true, limitUsd: 2 });
+
+  // The project with adopted hosting and no site rows gets one live pod.
+  const lane = body.lanes.find((l: any) => l.id === 'a');
+  assert.deepEqual(lane.sites, [
+    { id: 'target:pages:petekkoleji', name: 'petekkoleji', url: 'https://petekkoleji.pages.dev', live: true, deploys: 1 },
+  ]);
+  // A project with neither sites nor a target keeps an empty lane.
+  const plain = body.lanes.find((l: any) => l.id === 'b');
+  assert.deepEqual(plain.sites, []);
+
+  // Once the account used its preview it is no longer available.
+  sql.exec(`UPDATE users SET first_preview_at = 1 WHERE id = 'client'`);
+  const used = (await (await request('GET', '/portal/me')).json()) as any;
+  assert.equal(used.firstPreview.available, false);
+  assert.equal(used.firstPreview.limitUsd, 2);
+});
+
 test('GET /portal/tickets/:id hands an intake ticket off to the request it filed', async () => {
   const { sql, request } = await fixture();
   sql.exec(`INSERT INTO tickets(user_id,project_id,title,status,kind,created_at,updated_at) VALUES
