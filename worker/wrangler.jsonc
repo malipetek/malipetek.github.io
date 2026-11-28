@@ -17,7 +17,13 @@
 
   // Workers Logs: request lines and console output, queryable after the fact
   // (what ChatGPT asked /mcp for when it refused the server, for instance).
-  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  // Kept in sync with the dashboard's Observability settings, so a deploy never
+  // turns persisted logs off. Every request is logged (sampling 1).
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": { "enabled": true, "invocation_logs": true, "persist": true },
+  },
 
   // Non-secret configuration. Secrets (API keys, tokens) are NEVER listed
   // here — set them with `wrangler secret put NAME` (see README.md).
