@@ -958,11 +958,15 @@ export async function syncTemplates(env: Env): Promise<TemplateSyncResult> {
       WHERE channel = 'email' AND status = 'scheduled' AND edited_at IS NOT NULL AND body LIKE '%malipetek.dev%'`,
   ).first<{ n: number }>();
 
+  // The index is pinned: left to itself SQLite walks the (status, scheduled_at)
+  // index once per contact, about 3M rows and 1.8s in production.
   const { results: emptied } = await env.DB.prepare(
     `SELECT c.* FROM marketing_contacts c
       WHERE c.status = 'queued'
-        AND NOT EXISTS (SELECT 1 FROM marketing_messages m WHERE m.contact_id = c.id AND m.channel = 'email' AND m.status = 'scheduled')
-        AND NOT EXISTS (SELECT 1 FROM marketing_messages m WHERE m.contact_id = c.id AND m.channel = 'email' AND m.status = 'sent')`,
+        AND NOT EXISTS (SELECT 1 FROM marketing_messages m INDEXED BY marketing_messages_contact
+                         WHERE m.contact_id = c.id AND m.channel = 'email' AND m.status = 'scheduled')
+        AND NOT EXISTS (SELECT 1 FROM marketing_messages m INDEXED BY marketing_messages_contact
+                         WHERE m.contact_id = c.id AND m.channel = 'email' AND m.status = 'sent')`,
   ).all<Contact>();
   const settings = await readMarketingSettings(env);
   const groups = new Map<SequenceKind, Contact[]>();
@@ -2360,13 +2364,25 @@ marketing.get('/admin/marketing/contacts', async (c) => {
   const offset = Math.max(0, Math.min(1_000_000, Number(c.req.query('offset')) || 0));
   const filter = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const [{ results }, total] = await Promise.all([
+    // The page is chosen first, then counted. Counting in the outer select ran
+    // both subqueries for every contact before the sort, and SQLite answered
+    // MIN(scheduled_at) from the (status, scheduled_at) index: every scheduled
+    // message, once per contact. In production that was 3M rows and 2.6s for one
+    // page, enough to overload D1 for every other route in the same window.
+    // INDEXED BY pins the per-contact index so the plan cannot drift back.
     c.env.DB.prepare(
-      `SELECT c.*,
-              (SELECT COUNT(*) FROM marketing_messages m WHERE m.contact_id = c.id AND m.status = 'sent') AS sent_count,
-              (SELECT MIN(m.scheduled_at) FROM marketing_messages m WHERE m.contact_id = c.id AND m.status = 'scheduled') AS next_at
-         FROM marketing_contacts c
-         ${filter}
-        ORDER BY c.updated_at DESC, c.id DESC LIMIT ${PAGE} OFFSET ?`,
+      `WITH page AS (
+         SELECT * FROM marketing_contacts c
+          ${filter}
+          ORDER BY c.updated_at DESC, c.id DESC LIMIT ${PAGE} OFFSET ?
+       )
+       SELECT page.*,
+              (SELECT COUNT(*) FROM marketing_messages m INDEXED BY marketing_messages_contact
+                WHERE m.contact_id = page.id AND m.status = 'sent') AS sent_count,
+              (SELECT MIN(m.scheduled_at) FROM marketing_messages m INDEXED BY marketing_messages_contact
+                WHERE m.contact_id = page.id AND m.status = 'scheduled') AS next_at
+         FROM page
+        ORDER BY page.updated_at DESC, page.id DESC`,
     )
       .bind(...binds, offset)
       .all<Contact & { sent_count: number; next_at: number | null }>(),
