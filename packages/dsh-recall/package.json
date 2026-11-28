@@ -1,6 +1,6 @@
 {
   "name": "@malipetek/dsh-recall",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One thread across every project: search and read past conversations from any session, and catch up on a project without switching windows.",
   "type": "module",
   "main": "index.js",
