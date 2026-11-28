@@ -193,6 +193,18 @@ export interface SetupInput {
   clientCreated: boolean;
   /** The hosted site, when the project has one (sites.ts). */
   site?: SiteView | null;
+  /**
+   * Adopted hosting: a deploy target recorded on the project (hosting.ts).
+   * When it is set, hosting lives on the named provider even without a site
+   * row, so the preview check reads ready instead of missing.
+   */
+  deployTarget?: {
+    provider: string;
+    kind: 'pages' | 'workers';
+    name: string;
+    productionBranch: string;
+    builds?: 'provider' | 'fleet';
+  } | null;
 }
 
 /** The code check: where the working copy comes from, and who supplies it. */
@@ -226,27 +238,33 @@ function siteChecks(input: SetupInput): SetupCheck[] {
     owner,
     blocking,
   });
+  // Adopted hosting: the project deploys to a named provider target, so the
+  // hosting check is ready even when no site row of ours is (yet) there.
+  const target = input.deployTarget ?? null;
+  const adopted = target
+    ? make('preview', 'Live hosting', 'us', true, 'ready', target.kind === 'pages' ? `Cloudflare Pages (${target.name})` : `Cloudflare Workers (${target.name})`)
+    : null;
   if (!site) {
     if (input.kind !== 'new') {
       return [
-        make('preview', 'Preview URL', 'us', true, 'unknown', 'Only for sites we host.'),
+        adopted ?? make('preview', 'Preview URL', 'us', true, 'unknown', 'Only for sites we host.'),
         make('domain', 'Your domain', 'you', false, 'unknown', 'Only for sites we host.'),
       ];
     }
     return [
-      make('preview', 'Preview URL', 'you', true, 'missing', 'Set up your site to get a preview link.'),
+      adopted ?? make('preview', 'Preview URL', 'you', true, 'missing', 'Set up your site to get a preview link.'),
       make('domain', 'Your domain', 'you', false, 'pending', 'Comes after your site is set up.'),
     ];
   }
   if (site.state === 'failed') {
     return [
-      make('preview', 'Preview URL', 'us', true, 'missing', 'Setting up your site stopped. We have been told and will retry.'),
+      adopted ?? make('preview', 'Preview URL', 'us', true, 'missing', 'Setting up your site stopped. We have been told and will retry.'),
       make('domain', 'Your domain', 'you', false, 'pending', 'Comes after your site is set up.'),
     ];
   }
   if (site.state !== 'ready') {
     return [
-      make('preview', 'Preview URL', 'us', true, 'pending', 'Your site is being made. The placeholder page is already up; the code follows.'),
+      adopted ?? make('preview', 'Preview URL', 'us', true, 'pending', 'Your site is being made. The placeholder page is already up; the code follows.'),
       make('domain', 'Your domain', 'you', false, 'pending', 'Comes after your site is set up.'),
     ];
   }

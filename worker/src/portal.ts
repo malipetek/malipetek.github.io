@@ -621,12 +621,13 @@ type ProjectRow = {
   github_installation_id: number | null;
   created_by: string | null;
   created_at: number;
+  deploy_target: string | null;
 };
 
 async function userProjects(env: Env, userId: string) {
   const { results } = await env.DB.prepare(
     `SELECT p.id, p.slug, p.name, p.kind, p.brief, p.repo, p.repo_kind, p.repo_wanted, p.repo_error,
-            p.github_installation_id, p.created_by, p.created_at, p.solutions
+            p.github_installation_id, p.created_by, p.created_at, p.solutions, p.deploy_target
        FROM projects p
       WHERE EXISTS (SELECT 1 FROM user_projects up WHERE up.project_id=p.id AND up.user_id=?)
          OR p.owner_user_id=? OR EXISTS (SELECT 1 FROM project_memberships pm WHERE pm.project_id=p.id AND pm.user_id=? AND pm.member_type='trusted_developer')
@@ -1354,6 +1355,17 @@ portal.get('/portal/me', async (c) => {
       const repoKind = isRepoKind(project.repo_kind) ? project.repo_kind : 'none';
       const rows = sites.get(project.id) ?? [];
       const site = siteView(rows[0], settings.sitesDomain);
+      // Adopted hosting, client-safe: no connection id or account id leaves here.
+      const target = readDeployTarget(project.deploy_target);
+      const deployTarget = target
+        ? {
+            provider: target.provider,
+            kind: target.kind,
+            name: target.name,
+            productionBranch: target.productionBranch,
+            builds: target.builds ?? 'fleet',
+          }
+        : null;
       return {
         id: project.id,
         slug: project.slug,
@@ -1365,6 +1377,7 @@ portal.get('/portal/me', async (c) => {
         repoWanted: Boolean(project.repo_wanted),
         repoError: project.repo_error,
         githubInstallationId: project.github_installation_id,
+        deployTarget,
         site,
         sites: rows.map((row) => siteView(row, settings.sitesDomain)),
         setup: setupFor({
@@ -1377,6 +1390,7 @@ portal.get('/portal/me', async (c) => {
           ticketCount: filed.get(project.id) ?? 0,
           clientCreated: project.created_by !== null,
           site,
+          deployTarget,
         }),
       };
     }),
@@ -2517,7 +2531,30 @@ portal.get('/portal/tickets/:id', async (c) => {
   );
   // The unread mark belongs to the author, so another reader leaves it alone.
   if (mine) c.executionCtx.waitUntil(c.env.DB.prepare('UPDATE tickets SET client_seen_at = ? WHERE id = ?').bind(now(), ticket.id).run());
-  return reply(c, { ticket: { ...visible, mine }, messages: await withFiles(c.env, ticket.id, messages, false) });
+  // An intake ticket hands off to the real request it filed: the newest
+  // file_request action names the spawned ticket, when there is one.
+  let spawnedTicket: { id: number; title: string; status: string; first_preview: number | null; project_id: string | null } | null = null;
+  if (ticket.kind === 'intake') {
+    const action = await c.env.DB.prepare(
+      `SELECT result_json FROM ticket_actions WHERE ticket_id = ? AND action = 'file_request' ORDER BY id DESC LIMIT 1`,
+    )
+      .bind(ticket.id)
+      .first<{ result_json: string }>();
+    let childId: number | null = null;
+    try {
+      const result = action?.result_json ? (JSON.parse(action.result_json) as { ticket?: { id?: unknown } }) : null;
+      if (typeof result?.ticket?.id === 'number') childId = result.ticket.id;
+    } catch {
+      /* a malformed action row reads as no spawned ticket */
+    }
+    if (childId !== null) {
+      spawnedTicket =
+        (await c.env.DB.prepare('SELECT id, title, status, first_preview, project_id FROM tickets WHERE id = ? AND user_id = ?')
+          .bind(childId, user_id)
+          .first<{ id: number; title: string; status: string; first_preview: number | null; project_id: string | null }>()) ?? null;
+    }
+  }
+  return reply(c, { ticket: { ...visible, mine }, spawnedTicket, messages: await withFiles(c.env, ticket.id, messages, false) });
 });
 
 /* A file from the thread. Only files on messages the caller can see. */

@@ -15,6 +15,7 @@ import { portalLinks } from './links.ts';
 import { briefText, cleanBrief, cleanRepo, parseBrief, uniqueSlug } from './setup.ts';
 import { ensureRepo, repoParts, useClientRepo } from './ghapp.ts';
 import { deleteSite, getSiteById, getSites, setSiteHost, startSite, type SiteHost } from './sites.ts';
+import { readDeployTarget } from './hosting.ts';
 import { grantedAccounts } from './cfaccess.ts';
 import { moveSite, moveTicket } from './move.ts';
 import { DEFAULT_ATTENTION } from '../../src/lib/pricing.js';
@@ -60,7 +61,7 @@ async function stateFor(env: Env, userId: string) {
   const [{ results: projects }, { results: sites }, { results: installations }, { results: cloudflare }, { results: tickets }, account, settings] =
     await Promise.all([
       env.DB.prepare(
-        `SELECT p.id, p.slug, p.name, p.kind, p.repo, p.repo_kind, p.repo_wanted, p.repo_error, p.github_installation_id
+        `SELECT p.id, p.slug, p.name, p.kind, p.repo, p.repo_kind, p.repo_wanted, p.repo_error, p.github_installation_id, p.deploy_target
            FROM projects p JOIN user_projects up ON up.project_id = p.id
           WHERE up.user_id = ? ORDER BY p.name`,
       )
@@ -100,8 +101,21 @@ async function stateFor(env: Env, userId: string) {
   return {
     projects: (projects ?? []).map((p) => {
       const repo = typeof p.repo === 'string' ? p.repo : null;
+      // Adopted hosting, without the raw column: the model needs the target,
+      // never the connection or account ids stored with it.
+      const target = readDeployTarget(typeof p.deploy_target === 'string' ? p.deploy_target : null);
+      const { deploy_target: _, ...rest } = p;
       return {
-        ...p,
+        ...rest,
+        deployTarget: target
+          ? {
+              provider: target.provider,
+              kind: target.kind,
+              name: target.name,
+              productionBranch: target.productionBranch,
+              builds: target.builds ?? 'fleet',
+            }
+          : null,
         repoState: p.repo_error ? 'clone failed' : repo ? (p.github_installation_id ? 'in the client GitHub' : 'set') : 'none',
         sites: (sites ?? []).filter((s) => s.project_id === p.id),
       };
@@ -608,7 +622,7 @@ What to do, in order:
 1. Read the state below. If the client already has the right project/site, use it.
 2. If they need a project, create one with a short human name (the business or the thing, never a ticket title). Write the brief from what they said; do not ask for information you can infer.
 3. Where the code lives: if GitHub is connected, create the repo in their account with set_project_repo mode github. If they named an existing repo, use mode existing. Otherwise use mode ours. Never create a client's repo under malipetek/.
-4. Add a site with add_site when the project needs an address. The address comes from the project name, not the request title. If Cloudflare is connected and not lapsed, offer it; otherwise host with us. An expired connection gets the reconnect link and our hosting meanwhile.
+4. Add a site with add_site when the project needs an address. The address comes from the project name, not the request title. If Cloudflare is connected and not lapsed, offer it; otherwise host with us. An expired connection gets the reconnect link and our hosting meanwhile. If a project already has a deployTarget, do not call add_site — its existing hosting is already adopted.
 5. File the real work with file_request on the right project (and site if it matters). This is what a developer sees.
 6. finish_intake when setup is done and the first request is filed.
 
