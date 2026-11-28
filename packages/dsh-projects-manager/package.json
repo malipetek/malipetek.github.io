@@ -1,6 +1,6 @@
 {
   "name": "@malipetek/dsh-projects-manager",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Projects manager: smarter per-project metadata, per-baseline stall scoring, a cron-triggered review and stall reminders.",
   "type": "module",
   "main": "index.js",
