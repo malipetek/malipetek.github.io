@@ -255,7 +255,21 @@ const node = (id, slugs, { running = [], slots = 1, executors = ['claude'] } = {
     body: { node: { id, hostname: id, os: 'macos', capabilities: ['os:macos'], executors, slugs, slots, version: 'e2e' }, running },
   });
 const claim = async (nodeId) => (await call('/node/claim', { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId } })).data;
-const approve = (admin, id) => call(`/admin/tickets/${id}`, { method: 'PATCH', auth: admin, body: { status: 'approved' } });
+const requeue = (admin, id) => call(`/admin/tickets/${id}`, { method: 'PATCH', auth: admin, body: { status: 'approved' } });
+/**
+ * Approve, or send finished work back. Finished work (review or done) only goes
+ * back with something new since its last run, so this adds Ali's private note
+ * first, as the dialog does.
+ */
+const approve = async (admin, id, note = 'Try again: tighten what the last run changed.') => {
+  const current = (await call(`/admin/tickets/${id}`, { auth: admin })).data?.ticket?.status;
+  if (current === 'review' || current === 'done') {
+    // Times are whole seconds; a note in the run's own second counts as read.
+    await new Promise((r) => setTimeout(r, 1100));
+    await call(`/admin/tickets/${id}/messages`, { method: 'POST', auth: admin, body: { body: note, internal: true } });
+  }
+  return requeue(admin, id);
+};
 const newProject = (session, body) => call('/portal/projects', { method: 'POST', auth: session, body });
 const NEW_BRIEF = { what: 'A small bakery', manual: 'Orders by phone', goal: 'Customers order online' };
 const OLD_BRIEF = { what: 'A shop', where: 'GitHub', goal: 'Faster checkout' };
@@ -1132,8 +1146,17 @@ const groups = {
     check('a node fills a blank repo', (await share('git@github.com:acme/queue-shop.git')).data?.updated === true && (await repoOf()) === 'git@github.com:acme/queue-shop.git');
     check('…but never overwrites one', (await share('https://github.com/evil/other.git')).data?.updated === false && (await repoOf()) === 'git@github.com:acme/queue-shop.git');
 
+    // Finished work goes back only with something new to act on.
+    const bare = await requeue(admin, ticketId);
+    check('sending finished work back with nothing new is refused', bare.status === 409 && bare.data?.error === 'nothing_new', JSON.stringify(bare.data));
+    check('…and the ticket stays in review', (await call(`/admin/tickets/${ticketId}`, { auth: admin })).data.ticket.status === 'review');
+    await new Promise((r) => setTimeout(r, 1100));
+    await call(`/portal/tickets/${ticketId}/messages`, { method: 'POST', auth: a.session, body: { body: 'One more thing: the logo is blurry.' } });
+    const fromClient = await requeue(admin, ticketId);
+    check('a client message since the last run is enough to send it back', fromClient.status === 200, JSON.stringify(fromClient.data));
+
     // A node restart hands the run back: straight to the queue, and no attempt spent.
-    await approve(admin, ticketId);
+    await call(`/admin/tickets/${ticketId}`, { method: 'PATCH', auth: admin, body: { status: 'approved' } });
     const r1 = await claim(nodeId);
     const release = (runId, who) => call(`/node/runs/${runId}/release`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId: who } });
     check('another node cannot hand back a run', (await release(r1.runId, 'someone-else')).status === 409);

@@ -38,3 +38,14 @@ test('what was added since the last run is counted by kind; status lines and run
 test('a ticket that never ran just goes to the fleet', () => {
   assert.equal(requeueBrief({ messages: [], runs: [] }).fresh, true);
 });
+
+test('the portal stores Unix seconds: an old client message is not new input', () => {
+  // Production rows carry integer seconds, not ISO strings.
+  const intRuns = [{ id: 7, started_at: 1791631000 }, { id: 8, started_at: 1791632000 }];
+  assert.equal(lastRun(intRuns).id, 8);
+  const old = [{ author: 'client', created_at: 1791631500, body: 'before run 8' }];
+  assert.equal(requeueBrief({ messages: old, runs: intRuns }).fresh, false);
+  const added = [...old, { author: 'ali', internal: 1, created_at: 1791632100, body: 'fix the header' }];
+  assert.deepEqual(addedSince(added, intRuns[1]), { client: 0, replies: 0, notes: 1 });
+  assert.equal(requeueBrief({ messages: added, runs: intRuns }).fresh, true);
+});

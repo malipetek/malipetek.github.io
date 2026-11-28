@@ -817,6 +817,7 @@ function explain(code, status) {
     forbidden: 'That session is not an admin session.',
     not_found: 'That ticket or client no longer exists.',
     bad_status: 'That is not a status the portal accepts.',
+    nothing_new: 'Nothing was added since the last run, so the agent would get the same instructions. Add a note saying what should change.',
     bad_message: 'The message needs some text.',
     bad_project: 'Unknown project.',
     slug_taken: 'A project with that slug already exists.',
@@ -2425,7 +2426,11 @@ export function apply(ctx) {
               enum: STATUSES,
               description: `New status, for set_status. One of: ${STATUSES.join(', ')}.`,
             },
-            text: { type: 'string', description: 'Message body for reply and note.' },
+            text: {
+              type: 'string',
+              description:
+                'Message body for reply and note. For set_status "approved" on finished work (review or done): a private note saying what should change, saved first. The portal refuses to send work back with nothing new since the last run.',
+            },
             fileId: { type: 'string', description: 'For file: an attachment id from get. Saves it locally and returns the path to read.' },
           },
         },
@@ -2483,9 +2488,15 @@ export function apply(ctx) {
               if (typeof args.status !== 'string' || !STATUSES.includes(args.status)) {
                 throw new Error(`status must be one of: ${STATUSES.join(', ')}`);
               }
+              // Sending finished work back carries what should change: the
+              // agent resumes its last run and reads only what was added since.
+              const note = args.status === 'approved' && typeof args.text === 'string' ? args.text.trim() : '';
+              if (note) await postMessage(config, args.ticketId, note, true);
               await setStatus(config, args.ticketId, args.status);
               await refresh(config);
-              return { message: `#${args.ticketId} is now ${STATUS_LABEL[args.status] ?? args.status}.` };
+              return {
+                message: `${note ? `Private note saved on #${args.ticketId}. ` : ''}#${args.ticketId} is now ${STATUS_LABEL[args.status] ?? args.status}.`,
+              };
             }
             default:
               throw new Error(`Unknown action "${args.action}".`);

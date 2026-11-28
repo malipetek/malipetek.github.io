@@ -12,22 +12,31 @@
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+/**
+ * A row's time in seconds. The portal stores Unix seconds; an ISO string is
+ * read too. Anything else is NaN, which never counts as "after".
+ */
+export const seconds = (value) =>
+  typeof value === 'number' ? value : typeof value === 'string' && value ? Date.parse(value) / 1000 : NaN;
+
 /** The run that started last, or null. */
 export function lastRun(runs = []) {
   let best = null;
   for (const run of runs) {
-    if (!run?.started_at) continue;
-    if (!best || Date.parse(run.started_at) > Date.parse(best.started_at)) best = run;
+    if (!Number.isFinite(seconds(run?.started_at))) continue;
+    if (!best || seconds(run.started_at) > seconds(best.started_at)) best = run;
   }
   return best;
 }
 
 /** Thread entries a resumed run would read for the first time. */
 export function addedSince(messages = [], run = null) {
-  const since = run ? Date.parse(run.started_at) : -Infinity;
+  const since = run ? seconds(run.started_at) : -Infinity;
   const added = { client: 0, replies: 0, notes: 0 };
   for (const m of messages) {
-    if (!m || Date.parse(m.created_at) <= since) continue;
+    const at = seconds(m?.created_at);
+    // Whole seconds: a message in the run's own second counts as already read, like the server.
+    if (!m || !(at > since)) continue;
     if (m.author === 'client') added.client += 1;
     else if (m.author === 'ali' && m.internal === 1) added.notes += 1;
     else if (m.author === 'ali') added.replies += 1;

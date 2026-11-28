@@ -49,12 +49,8 @@ export const CLIENT_VISIBLE = ['approved', 'declined', 'done'];
 export const clientWaiting = (t) =>
   Boolean(t.client_waiting_since) && !['new', 'done', 'declined'].includes(t.status);
 
-/** One label for sending work back to the queue, wherever it appears. */
 /** Queue a ticket for the fleet again; it resumes the last run with what was added since. */
 export const RUN_AGAIN = 'Send back to fleet';
-/** Why queueing again asks first: the fleet may resume the old session. */
-export const REQUEUE_WARNING =
-  'This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.';
 /** Work Ali filed for himself, one label wherever it is tagged. */
 export const MINE_LABEL = 'My task';
 
@@ -117,6 +113,7 @@ const ERRORS = {
   not_found: 'That no longer exists.',
   open_tickets: 'This project still has open requests. Finish, decline or move them first.',
   bad_status: 'That is not a status the portal accepts.',
+  nothing_new: 'Nothing was added since the last run, so the agent would get the same instructions. Add a note saying what should change.',
   bad_message: 'Write something first.',
   bad_project: 'Pick a project.',
   bad_budget: 'That budget is not valid.',

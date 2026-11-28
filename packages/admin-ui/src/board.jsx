@@ -5,9 +5,9 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin, useTicket } from './store.js';
+import { SendBackDialog } from './send-back.jsx';
 import {
   MINE_LABEL,
-  REQUEUE_WARNING,
   RUN_AGAIN,
   STATUSES,
   STATUS_HINT,
@@ -126,20 +126,16 @@ function BoardFilters({ f, extra }) {
 }
 
 /**
- * A status move, with the rerun warning the ticket page shows: queueing again
- * is deliberate, because the fleet may resume the old session. Approving a
- * new ticket, and any move on system work (no client to notify), stays plain.
+ * A status move. Sending finished work back to the fleet opens the same
+ * dialog the ticket page uses: the agent resumes its last run and needs
+ * something new to act on, so it asks what should change. Rows carry no
+ * thread, so the portal decides whether a note is required.
  */
 function useMove() {
-  const { api, setStatus, act, ask } = useAdmin();
+  const { setStatus, setModal, reload } = useAdmin();
   return (t, s) => {
-    if (s === 'approved' && t.status !== 'new' && t.kind !== 'system') {
-      ask({
-        title: `${RUN_AGAIN} for #${t.id}?`,
-        text: REQUEUE_WARNING,
-        confirm: RUN_AGAIN,
-        run: () => act(() => api('PATCH', `/admin/tickets/${t.id}`, { status: 'approved' })),
-      });
+    if (s === 'approved' && (t.status === 'review' || t.status === 'done')) {
+      setModal({ kind: 'custom', render: (close) => <SendBackDialog ticket={t} onClose={close} onDone={reload} /> });
       return;
     }
     return setStatus(t, s);
@@ -686,7 +682,7 @@ export function InboxView() {
     { key: 'waiting', title: 'Answer the client', hint: 'They wrote last and have heard nothing since.', items: n.waiting, actions: () => [], extra: (t) => [['No reply needed', () => answered(t)]] },
     { key: 'review', title: 'Check the agent’s work', hint: 'Finished runs waiting for you.', items: n.review, actions: () => [['done', 'Done'], ['approved', RUN_AGAIN]] },
     { key: 'new', title: 'Approve or decline', hint: 'New requests. Nothing runs until you approve.', items: n.new, actions: () => [['approved', 'Approve'], ['declined', 'Decline']] },
-    { key: 'stalled', title: 'Stalled', hint: 'In progress for 45+ minutes without a report.', items: n.stalled, actions: () => [['approved', RUN_AGAIN]] },
+    { key: 'stalled', title: 'Stalled', hint: 'In progress for 45+ minutes without a report.', items: n.stalled, actions: () => [['approved', 'Restart run']] },
     { key: 'stuck', title: 'No node can take these', hint: 'Approved, but nothing eligible.', items: n.stuck, actions: () => [] },
   ];
   // The keyboard order is the reading order: every group's tickets, then the failed runs.

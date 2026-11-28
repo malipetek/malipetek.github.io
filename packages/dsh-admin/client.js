@@ -130,10 +130,10 @@ var __awPlugin = (() => {
     if (!detail) return [];
     const rows = /* @__PURE__ */ new Map();
     const { ticket } = detail;
-    const add = (source, seconds, label, text, kind, author) => {
-      const time = seconds * 1e3;
+    const add = (source, seconds2, label, text, kind, author) => {
+      const time = seconds2 * 1e3;
       const id = `ticket:${ticket.id}:${source}`;
-      if (typeof seconds === "number" && seconds > 0 && time <= 864e13 && !rows.has(id)) {
+      if (typeof seconds2 === "number" && seconds2 > 0 && time <= 864e13 && !rows.has(id)) {
         rows.set(id, { id, time, label, text, kind, ...author ? { author } : {} });
       }
     };
@@ -436,7 +436,7 @@ var __awPlugin = (() => {
   }
   function useMeter(api, ticket, active) {
     const open = Boolean(ticket) && ticket.status !== "done" && ticket.status !== "declined";
-    const [seconds, setSeconds] = useState(ticket?.human_seconds ?? 0);
+    const [seconds2, setSeconds] = useState(ticket?.human_seconds ?? 0);
     const [running, setRunning] = useState(false);
     const pending2 = useRef(0);
     const id = ticket?.id;
@@ -463,7 +463,7 @@ var __awPlugin = (() => {
         flush();
       };
     }, [api, id, open, active]);
-    return { seconds, running, open };
+    return { seconds: seconds2, running, open };
   }
 
   // src/lib/pricing.js
@@ -493,8 +493,8 @@ var __awPlugin = (() => {
     }
   ];
   var ATTENTION_KEYS = ATTENTION.map((a) => a.key);
-  function timeCents(seconds) {
-    return Math.ceil(Math.max(0, seconds) * HOURLY_USD * 100 / 3600);
+  function timeCents(seconds2) {
+    return Math.ceil(Math.max(0, seconds2) * HOURLY_USD * 100 / 3600);
   }
   function aiCents(microUsd) {
     return Math.ceil(Math.max(0, microUsd) / 1e4);
@@ -511,8 +511,8 @@ var __awPlugin = (() => {
   function money(cents) {
     return `$${(cents / 100).toFixed(2)}`;
   }
-  function clock(seconds) {
-    const s = Math.max(0, Math.round(seconds));
+  function clock(seconds2) {
+    const s = Math.max(0, Math.round(seconds2));
     if (s < 60) return `${s}s`;
     if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
     return `${Math.floor(s / 3600)}h ${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}m`;
@@ -552,7 +552,6 @@ var __awPlugin = (() => {
   var CLIENT_VISIBLE = ["approved", "declined", "done"];
   var clientWaiting = (t) => Boolean(t.client_waiting_since) && !["new", "done", "declined"].includes(t.status);
   var RUN_AGAIN = "Send back to fleet";
-  var REQUEUE_WARNING = "This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.";
   var MINE_LABEL = "My task";
   var PRIORITIES = [
     { value: -10, label: "Low" },
@@ -570,8 +569,8 @@ var __awPlugin = (() => {
     { value: "dsh-devin", label: "SWE-2", hint: "Devin SWE-2, free." }
   ];
   var agentOptions = (current) => current && !AGENTS.some((a) => a.value === current) ? [...AGENTS, { value: current, label: current, hint: "An older pin" }] : AGENTS;
-  function span(seconds) {
-    const s = Math.max(0, Math.floor(seconds));
+  function span(seconds2) {
+    const s = Math.max(0, Math.floor(seconds2));
     if (s < 60) return `${s}s`;
     if (s < 3600) return `${Math.floor(s / 60)}m`;
     if (s < 86400) return `${Math.floor(s / 3600)}h`;
@@ -599,6 +598,7 @@ var __awPlugin = (() => {
     not_found: "That no longer exists.",
     open_tickets: "This project still has open requests. Finish, decline or move them first.",
     bad_status: "That is not a status the portal accepts.",
+    nothing_new: "Nothing was added since the last run, so the agent would get the same instructions. Add a note saying what should change.",
     bad_message: "Write something first.",
     bad_project: "Pick a project.",
     bad_budget: "That budget is not valid.",
@@ -1254,6 +1254,117 @@ var __awPlugin = (() => {
   var WEIGHT = { more: 2.6, pause: 2.2 };
   function Icon({ name, size = 16 }) {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: WEIGHT[name] ?? 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", focusable: "false", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] ?? PATHS.list }) });
+  }
+
+  // packages/admin-ui/src/requeue.mjs
+  var plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  var seconds = (value) => typeof value === "number" ? value : typeof value === "string" && value ? Date.parse(value) / 1e3 : NaN;
+  function lastRun(runs = []) {
+    let best = null;
+    for (const run of runs) {
+      if (!Number.isFinite(seconds(run?.started_at))) continue;
+      if (!best || seconds(run.started_at) > seconds(best.started_at)) best = run;
+    }
+    return best;
+  }
+  function addedSince(messages = [], run = null) {
+    const since = run ? seconds(run.started_at) : -Infinity;
+    const added = { client: 0, replies: 0, notes: 0 };
+    for (const m of messages) {
+      const at = seconds(m?.created_at);
+      if (!m || !(at > since)) continue;
+      if (m.author === "client") added.client += 1;
+      else if (m.author === "ali" && m.internal === 1) added.notes += 1;
+      else if (m.author === "ali") added.replies += 1;
+    }
+    return added;
+  }
+  function requeueBrief({ messages = [], runs = [] } = {}) {
+    const run = lastRun(runs);
+    if (!run) {
+      return { fresh: true, text: "A fleet node picks it up and works from the request and its thread. This can change the status and notify the client." };
+    }
+    const added = addedSince(messages, run);
+    const parts = [
+      added.client ? plural(added.client, "client message") : null,
+      added.replies ? plural(added.replies, "reply", "replies") : null,
+      added.notes ? plural(added.notes, "private note") : null
+    ].filter(Boolean);
+    if (!parts.length) {
+      return {
+        fresh: false,
+        text: `Nothing was added since run #${run.id}, so the agent gets the same instructions as last time. Add a private note saying what to change first. This can change the status and notify the client.`
+      };
+    }
+    return {
+      fresh: true,
+      text: `A fleet node resumes run #${run.id} with what was added since: ${parts.join(", ")}. This can change the status and notify the client.`
+    };
+  }
+
+  // packages/admin-ui/src/send-back.jsx
+  function SendBackDialog({ ticket, messages = null, runs = [], onClose, onDone }) {
+    const { api, notify } = useAdmin();
+    const brief = messages ? requeueBrief({ messages, runs }) : null;
+    const needsNote = Boolean(brief && !brief.fresh);
+    const [note, setNote] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const text = note.trim();
+    const submit = async () => {
+      if (busy || needsNote && !text) return;
+      setBusy(true);
+      setError(null);
+      try {
+        if (text) await api("POST", `/admin/tickets/${ticket.id}/messages`, { body: text, internal: true });
+        await api("PATCH", `/admin/tickets/${ticket.id}`, { status: "approved" });
+        notify(text ? `#${ticket.id}: note saved and sent back to the fleet.` : `#${ticket.id} sent back to the fleet.`);
+        onClose();
+        onDone?.();
+      } catch (failure) {
+        setError(failure);
+      } finally {
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        kind: "confirm",
+        title: `${RUN_AGAIN}: #${ticket.id}`,
+        subtitle: brief ? brief.fresh ? brief.text : "Nothing was added since the last run. Say what should change, or the agent repeats the same work." : "The agent resumes its last run and reads only what was added since. This can change the status and notify the client.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(
+            Button,
+            {
+              kind: "primary",
+              busy,
+              disabled: needsNote && !text,
+              disabledReason: "Write what the agent should change.",
+              onClick: () => void submit(),
+              children: text ? "Save note and send back" : RUN_AGAIN
+            }
+          )
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "What should change", hint: "A private note. The client never sees it; the agent reads it first.", children: /* @__PURE__ */ jsx(
+            "textarea",
+            {
+              rows: 4,
+              value: note,
+              onChange: (e) => setNote(e.target.value),
+              onKeyDown: (e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit();
+              },
+              placeholder: needsNote ? "For example: the header still overlaps on mobile; fix that and keep the rest." : "Optional: anything the agent should do differently."
+            }
+          ) }),
+          error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null
+        ]
+      }
+    );
   }
 
   // packages/admin-ui/src/row-navigation.mjs
@@ -2101,15 +2212,10 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
   function useMove() {
-    const { api, setStatus, act, ask } = useAdmin();
+    const { setStatus, setModal: setModal2, reload } = useAdmin();
     return (t, s) => {
-      if (s === "approved" && t.status !== "new" && t.kind !== "system") {
-        ask({
-          title: `${RUN_AGAIN} for #${t.id}?`,
-          text: REQUEUE_WARNING,
-          confirm: RUN_AGAIN,
-          run: () => act(() => api("PATCH", `/admin/tickets/${t.id}`, { status: "approved" }))
-        });
+      if (s === "approved" && (t.status === "review" || t.status === "done")) {
+        setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(SendBackDialog, { ticket: t, onClose: close, onDone: reload }) });
         return;
       }
       return setStatus(t, s);
@@ -2562,7 +2668,7 @@ ${block(Object.entries(TOKENS))}
       { key: "waiting", title: "Answer the client", hint: "They wrote last and have heard nothing since.", items: n.waiting, actions: () => [], extra: (t) => [["No reply needed", () => answered(t)]] },
       { key: "review", title: "Check the agent\u2019s work", hint: "Finished runs waiting for you.", items: n.review, actions: () => [["done", "Done"], ["approved", RUN_AGAIN]] },
       { key: "new", title: "Approve or decline", hint: "New requests. Nothing runs until you approve.", items: n.new, actions: () => [["approved", "Approve"], ["declined", "Decline"]] },
-      { key: "stalled", title: "Stalled", hint: "In progress for 45+ minutes without a report.", items: n.stalled, actions: () => [["approved", RUN_AGAIN]] },
+      { key: "stalled", title: "Stalled", hint: "In progress for 45+ minutes without a report.", items: n.stalled, actions: () => [["approved", "Restart run"]] },
       { key: "stuck", title: "No node can take these", hint: "Approved, but nothing eligible.", items: n.stuck, actions: () => [] }
     ];
     const ids = [];
@@ -3463,50 +3569,6 @@ ${String(text)}` : String(text);
     return name === null ? null : `Filed by the client's assistant (${name}) through PTech's MCP server`;
   }
 
-  // packages/admin-ui/src/requeue.mjs
-  var plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-  function lastRun(runs = []) {
-    let best = null;
-    for (const run of runs) {
-      if (!run?.started_at) continue;
-      if (!best || Date.parse(run.started_at) > Date.parse(best.started_at)) best = run;
-    }
-    return best;
-  }
-  function addedSince(messages = [], run = null) {
-    const since = run ? Date.parse(run.started_at) : -Infinity;
-    const added = { client: 0, replies: 0, notes: 0 };
-    for (const m of messages) {
-      if (!m || Date.parse(m.created_at) <= since) continue;
-      if (m.author === "client") added.client += 1;
-      else if (m.author === "ali" && m.internal === 1) added.notes += 1;
-      else if (m.author === "ali") added.replies += 1;
-    }
-    return added;
-  }
-  function requeueBrief({ messages = [], runs = [] } = {}) {
-    const run = lastRun(runs);
-    if (!run) {
-      return { fresh: true, text: "A fleet node picks it up and works from the request and its thread. This can change the status and notify the client." };
-    }
-    const added = addedSince(messages, run);
-    const parts = [
-      added.client ? plural(added.client, "client message") : null,
-      added.replies ? plural(added.replies, "reply", "replies") : null,
-      added.notes ? plural(added.notes, "private note") : null
-    ].filter(Boolean);
-    if (!parts.length) {
-      return {
-        fresh: false,
-        text: `Nothing was added since run #${run.id}, so the agent gets the same instructions as last time. Add a private note saying what to change first. This can change the status and notify the client.`
-      };
-    }
-    return {
-      fresh: true,
-      text: `A fleet node resumes run #${run.id} with what was added since: ${parts.join(", ")}. This can change the status and notify the client.`
-    };
-  }
-
   // packages/admin-ui/src/project-picker-model.mjs
   var norm = (value) => typeof value === "string" ? value.trim().toLowerCase() : "";
   var clientLabel = (client) => client?.name || client?.email || "Unnamed client";
@@ -3804,16 +3866,11 @@ ${String(text)}` : String(text);
   }
   function TicketActions({ ticket, runs, land, reload, messages = null }) {
     const { api, setStatus, act, ask } = useAdmin();
+    const [sendingBack, setSendingBack] = useState(false);
     const live = runs.find((r) => r.status === "running");
     const move = (s) => {
-      if (s === "approved" && ticket.status !== "new" && ticket.kind !== "system") {
-        const brief = messages ? requeueBrief({ messages, runs }) : { fresh: true, text: REQUEUE_WARNING };
-        ask({
-          title: `${RUN_AGAIN} for #${ticket.id}?`,
-          text: brief.text,
-          confirm: brief.fresh ? RUN_AGAIN : "Send anyway",
-          run: () => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, { status: "approved" })).then(reload)
-        });
+      if (s === "approved" && (ticket.status === "review" || ticket.status === "done")) {
+        setSendingBack(true);
         return;
       }
       return setStatus(ticket, s).then(reload);
@@ -3827,7 +3884,7 @@ ${String(text)}` : String(text);
           kind,
           size: "sm",
           onClick: () => void move(s),
-          title: label === RUN_AGAIN ? "Queue it for a fleet node, which resumes the last run with every message and private note added since." : void 0,
+          title: label === RUN_AGAIN ? "Send it back with a note on what should change. The agent resumes its last run and reads what was added since." : void 0,
           children: label
         },
         s
@@ -3888,7 +3945,8 @@ ${String(text)}` : String(text);
         " ",
         land.ref,
         land.sha ? ` (${String(land.sha).slice(0, 8)})` : ""
-      ] }) : null
+      ] }) : null,
+      sendingBack ? /* @__PURE__ */ jsx(SendBackDialog, { ticket, messages, runs, onClose: () => setSendingBack(false), onDone: reload }) : null
     ] });
   }
   function ReviewCard({ review, ticket, runs, latestRunId, screenshots = [] }) {
@@ -4564,8 +4622,8 @@ ${String(text)}` : String(text);
       /* @__PURE__ */ jsx("input", { inputMode: "decimal", value, placeholder: "no cap", onChange: (e) => setValue(e.target.value), onBlur: save, onKeyDown: (e) => e.key === "Enter" && save() })
     ] });
   }
-  function TimeModal({ seconds, onClose, onSave }) {
-    const [minutes, setMinutes] = useState(String(Math.round(seconds / 6) / 10));
+  function TimeModal({ seconds: seconds2, onClose, onSave }) {
+    const [minutes, setMinutes] = useState(String(Math.round(seconds2 / 6) / 10));
     const ok = Number.isFinite(Number(minutes)) && Number(minutes) >= 0;
     return /* @__PURE__ */ jsx(
       Modal,
@@ -18408,9 +18466,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   var BATCH = 20;
   var EMPTY2 = Object.freeze({ status: null, seconds: null, phase: "paused", notice: null, needsRead: false });
   var closed = (status) => status === "done" || status === "declined";
-  var recorded = (seconds) => Number.isSafeInteger(seconds) && seconds >= 0;
-  function formatRecordedTime(seconds) {
-    return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map((value) => String(value).padStart(2, "0")).join(":");
+  var recorded = (seconds2) => Number.isSafeInteger(seconds2) && seconds2 >= 0;
+  function formatRecordedTime(seconds2) {
+    return [Math.floor(seconds2 / 3600), Math.floor(seconds2 / 60) % 60, seconds2 % 60].map((value) => String(value).padStart(2, "0")).join(":");
   }
   function createConversationMeter({ api, locks, now, foreground }) {
     const views = /* @__PURE__ */ new Map();
@@ -18444,11 +18502,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         stop(lease, { discard: true });
         return;
       }
-      const seconds = lease.pending;
+      const seconds2 = lease.pending;
       lease.pending = 0;
       lease.saving = true;
       try {
-        const result = await api("POST", `/admin/tickets/${view.id}/time`, { seconds });
+        const result = await api("POST", `/admin/tickets/${view.id}/time`, { seconds: seconds2 });
         if (!recorded(result?.humanSeconds)) throw new Error("Missing meter acknowledgement");
         revision++;
         for (const matching of views.values()) {
@@ -20560,10 +20618,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       useEffect(() => {
         if (snapshot.notice === "unconfirmed") refresh.current?.();
       }, [snapshot.notice]);
-      const { phase, notice, seconds, status, needsRead } = snapshot;
+      const { phase, notice, seconds: seconds2, status, needsRead } = snapshot;
       const enabled2 = phase === "running" || phase === "waiting";
       const busy = phase === "starting" || phase === "saving";
-      const recorded2 = seconds === null ? "\u2014" : formatRecordedTime(seconds);
+      const recorded2 = seconds2 === null ? "\u2014" : formatRecordedTime(seconds2);
       const hint = meterNotices[notice] ?? (phase === "waiting" ? "Time waits while this conversation is idle or out of focus." : "Recorded human time");
       const via = assistantBadge({ assistant_app: assistantApp });
       return /* @__PURE__ */ jsxs("span", { ref: root, className: "pta-chat-ticket", title: hint, children: [
@@ -20575,11 +20633,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         /* @__PURE__ */ jsx("span", { className: "pta-chat-ticket__status", children: status ? STATUS_LABEL[status] ?? status : needsRead ? "Unavailable" : "Loading\u2026" }),
         via ? /* @__PURE__ */ jsx("span", { className: "pta-tag pta-tag--client", title: assistantBadgeTitle({ assistant_app: assistantApp }), children: via }) : null,
         desktop ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsxs("span", { className: "pta-chat-ticket__time", "aria-label": `Recorded human time: ${seconds === null ? "unavailable" : recorded2}`, children: [
+          /* @__PURE__ */ jsxs("span", { className: "pta-chat-ticket__time", "aria-label": `Recorded human time: ${seconds2 === null ? "unavailable" : recorded2}`, children: [
             /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "\u23F1 " }),
             recorded2
           ] }),
-          status && seconds !== null && phase !== "closed" ? /* @__PURE__ */ jsx(
+          status && seconds2 !== null && phase !== "closed" ? /* @__PURE__ */ jsx(
             PtaButton,
             {
               className: "pta-chat-ticket__action",

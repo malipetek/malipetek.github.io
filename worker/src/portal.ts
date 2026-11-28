@@ -2830,6 +2830,27 @@ portal.get('/admin/tickets/:id/files/:fileId', async (c) => {
   return res || reply(c, { error: 'not_found' }, 404);
 });
 
+/**
+ * The newest run on a ticket, and whether anything a person wrote reached the
+ * thread after it started: a client message, or our reply or private note.
+ * Status lines (system) and run reports (runner) are not new input. Sending
+ * finished work back to the fleet with nothing new gives the agent the same
+ * instructions again, so that move is refused. Times are whole seconds: a
+ * message in the run's own second counts as already read, like the brief.
+ */
+async function newInputSinceLastRun(env: Env, ticketId: number): Promise<{ fresh: boolean; runId: number | null }> {
+  const run = await env.DB.prepare('SELECT id, started_at FROM ticket_runs WHERE ticket_id = ? ORDER BY started_at DESC, id DESC LIMIT 1')
+    .bind(ticketId)
+    .first<{ id: number; started_at: number }>();
+  if (!run) return { fresh: true, runId: null };
+  const added = await env.DB.prepare(
+    `SELECT 1 AS n FROM ticket_messages WHERE ticket_id = ? AND created_at > ? AND author IN ('client', 'ali') LIMIT 1`,
+  )
+    .bind(ticketId, run.started_at)
+    .first<{ n: number }>();
+  return { fresh: Boolean(added), runId: run.id };
+}
+
 portal.patch('/admin/tickets/:id', async (c) => {
   const env = c.env;
   const ticket = await loadTicket(c, true);
@@ -2869,6 +2890,11 @@ portal.patch('/admin/tickets/:id', async (c) => {
       ? (body.status as Status)
       : null;
   if (body?.status !== undefined && !status) return reply(c, { error: 'bad_status' }, 400);
+  // Finished work goes back to the fleet only with something new to act on.
+  if (status === 'approved' && (ticket.status === 'review' || ticket.status === 'done')) {
+    const input = await newInputSinceLastRun(env, ticket.id);
+    if (!input.fresh) return reply(c, { error: 'nothing_new', runId: input.runId }, 409);
+  }
 
   let projectId: string | null | undefined;
   if (body?.projectId !== undefined) {

@@ -9,7 +9,6 @@ import {
   AGENTS,
   MINE_LABEL,
   PRIORITIES,
-  REQUEUE_WARNING,
   RUN_AGAIN,
   agentOptions,
   STATUSES,
@@ -33,7 +32,7 @@ import { createStepRequest } from './request-state.js';
 import { MentionRecipients } from './mention-recipients.jsx';
 import { createMentionDelivery } from './mention-delivery.js';
 import { assistantBadge, assistantBadgeTitle } from './ticket-assistant.mjs';
-import { requeueBrief } from './requeue.mjs';
+import { SendBackDialog } from './send-back.jsx';
 import { ProjectPicker } from './project-picker.jsx';
 
 /** The obvious next moves for each status; anything else is in the Status select. */
@@ -173,18 +172,13 @@ export function TicketView({ id, active, details = true, chrome = true, thread =
  */
 function TicketActions({ ticket, runs, land, reload, messages = null }) {
   const { api, setStatus, act, ask } = useAdmin();
+  const [sendingBack, setSendingBack] = useState(false);
   const live = runs.find((r) => r.status === 'running');
   const move = (s) => {
-    // Queueing again is deliberate: the fleet may resume the old session. System
-    // work has no client to notify, so it just goes back to the queue.
-    if (s === 'approved' && ticket.status !== 'new' && ticket.kind !== 'system') {
-      const brief = messages ? requeueBrief({ messages, runs }) : { fresh: true, text: REQUEUE_WARNING };
-      ask({
-        title: `${RUN_AGAIN} for #${ticket.id}?`,
-        text: brief.text,
-        confirm: brief.fresh ? RUN_AGAIN : 'Send anyway',
-        run: () => act(() => api('PATCH', `/admin/tickets/${ticket.id}`, { status: 'approved' })).then(reload),
-      });
+    // Finished work goes back with something new for the agent to act on: the
+    // dialog asks for it, and the portal refuses a requeue with nothing new.
+    if (s === 'approved' && (ticket.status === 'review' || ticket.status === 'done')) {
+      setSendingBack(true);
       return;
     }
     return setStatus(ticket, s).then(reload);
@@ -197,7 +191,7 @@ function TicketActions({ ticket, runs, land, reload, messages = null }) {
       <StatusPill status={ticket.status} />
       {(PRIMARY[ticket.status] ?? []).map(([s, label, kind]) => (
         <Button key={s} kind={kind} size="sm" onClick={() => void move(s)}
-          title={label === RUN_AGAIN ? 'Queue it for a fleet node, which resumes the last run with every message and private note added since.' : undefined}>
+          title={label === RUN_AGAIN ? 'Send it back with a note on what should change. The agent resumes its last run and reads what was added since.' : undefined}>
           {label}
         </Button>
       ))}
@@ -261,6 +255,9 @@ function TicketActions({ ticket, runs, land, reload, messages = null }) {
           {canLand ? 'last landed on' : 'landed on'} {land.ref}
           {land.sha ? ` (${String(land.sha).slice(0, 8)})` : ''}
         </span>
+      ) : null}
+      {sendingBack ? (
+        <SendBackDialog ticket={ticket} messages={messages} runs={runs} onClose={() => setSendingBack(false)} onDone={reload} />
       ) : null}
     </div>
   );
